@@ -30,7 +30,7 @@ function markdown(text,width){
   }
   return output;
 }
-export const commands=[['/new','새 대화'],['/models','모델 선택'],['/connect opencode','OpenCode 모델 연결'],['/history','이전 대화'],['/settings','대화 설정'],['/retry','마지막 답변 다시 생성'],['/copy','마지막 답변 복사'],['/export','Markdown으로 내보내기'],['/help','키보드 도움말'],['/exit','종료']];
+export const commands=[['/new','새 대화'],['/models','모델 선택'],['/priority','Auto 모델 우선순위'],['/connect opencode','OpenCode 모델 연결'],['/history','이전 대화'],['/settings','대화 설정'],['/retry','마지막 답변 다시 생성'],['/copy','마지막 답변 복사'],['/export','Markdown으로 내보내기'],['/help','키보드 도움말'],['/exit','종료']];
 
 export class TerminalUI {
   constructor({input=process.stdin,output=process.stdout,version='0.4.0',onAction=()=>{}}={}){
@@ -50,7 +50,7 @@ export class TerminalUI {
   dispatch(action,value){Promise.resolve(this.onAction(action,value)).catch(e=>this.notify(e.message,true));}
   setInput(text){this.input=text;this.cursor=text.length;this.render();}
   openModal(title,items,{placeholder='검색어 입력',onSelect,columns=['NAME','DESCRIPTION'],selectedValue}={}){this.modal={title,items,index:Math.max(0,items.findIndex(i=>i.value===selectedValue)),query:'',placeholder,onSelect,columns};this.render();}
-  filtered(){const m=this.modal;return m?m.items.filter(item=>(item.label+' '+(item.detail||'')+' '+(item.value||'')).toLocaleLowerCase().includes(m.query.toLocaleLowerCase())):[];}
+  filtered(){const m=this.modal;return m?m.items.filter(item=>(item.label+' '+(item.detail||'')+' '+(item.value||'')+' '+(item.search||'')).toLocaleLowerCase().includes(m.query.toLocaleLowerCase())):[];}
   selectItem(item){if(!item)return;if(item.disabled){this.notify(item.disabledReason||'현재 선택할 수 없는 항목입니다.',true);return;}const callback=this.modal.onSelect;this.modal=null;Promise.resolve(callback?.(item)).catch(e=>this.notify(e.message,true));}
   insert(text){text=cleanTerminal(text);if(!text)return;if(this.modal){this.modal.query+=text.replace(/\n/g,'');this.modal.index=0;}else if(!this.busy&&this.input.length+text.length<=150000){this.input=this.input.slice(0,this.cursor)+text+this.input.slice(this.cursor);this.cursor+=text.length;}this.schedule();}
   key(str,key){

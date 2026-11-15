@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { chatToMarkdown } from '../public/chat-render.mjs';
 import { modelItems } from './model-menu.mjs';
+import { modelReference, rankedGroups, stateModelGroups } from './model-groups.mjs';
 
 export async function runTuiSession({client,state,model,system,maxTokens,temperature,chat:initialChat,save=true,version,timeout=150}){
   let chat=initialChat,controller,requestTask,exiting=false;
@@ -11,8 +12,8 @@ export async function runTuiSession({client,state,model,system,maxTokens,tempera
   ui.messages=chat?.messages.map(m=>({...m,status:m.status==='streaming'?'stopped':m.status}))||[];
   ui.title=chat?.title||'새 대화';ui.model=model;let stateCache=state;
   let finish;const finished=new Promise(resolve=>{finish=resolve;});
-  const modelLabel=id=>id==='free/auto'?'품질 우선 Auto':stateCache.models.find(m=>m.id===id)?.name||id.replace(/^kilo\//,'');
-  function chrome(){ui.model=model;ui.modelName=modelLabel(model);ui.modelNames=new Map(stateCache.models.map(m=>[m.id,m.name]));ui.saveLabel=save?(chat?'로컬 저장됨 · '+chat.id.slice(0,8):'대화 자동 저장'):'이 세션 저장 안 함';ui.render();}
+  const modelLabel=id=>id==='free/auto'?'품질 우선 Auto':[...stateModelGroups(stateCache),...stateCache.models].find(m=>m.id===id)?.name||id.replace(/^kilo\//,'');
+  function chrome(){ui.model=model;ui.modelName=modelLabel(model);ui.modelNames=new Map([...stateCache.models,...stateModelGroups(stateCache)].map(m=>[m.id,m.name]));ui.saveLabel=save?(chat?'로컬 저장됨 · '+chat.id.slice(0,8):'대화 자동 저장'):'이 세션 저장 안 함';ui.render();}
   async function persist(){
     if(!save)return;
     if(!chat)chat=await client.api('/api/chats',{method:'POST',body:{title:ui.messages.find(m=>m.role==='user')?.content.replace(/\s+/g,' ').slice(0,45)||'새 대화',model,systemPrompt:system,settings:{maxTokens,temperature}}});
@@ -41,7 +42,7 @@ export async function runTuiSession({client,state,model,system,maxTokens,tempera
   }
   async function modelPicker(){
     stateCache=await client.state();
-    ui.openModal('모델 전체 목록 · 무료 호출',modelItems(stateCache,model),{columns:['MODEL','DESCRIPTION / STATUS'],selectedValue:model,placeholder:'모델 또는 공급처 검색',onSelect:async item=>{model=item.value;chrome();if(chat)await persist();ui.notify(modelLabel(model)+' 선택됨');}});
+    ui.openModal('모델 전체 목록 · 중복 통합',modelItems(stateCache,model),{columns:['MODEL','DESCRIPTION / STATUS'],selectedValue:modelReference(model,stateCache.catalog||stateCache.models),placeholder:'모델 또는 공급처 검색',onSelect:async item=>{model=item.value;chrome();if(chat)await persist();ui.notify(modelLabel(model)+' 선택됨');}});
   }
   async function historyPicker(){
     const records=(await client.api('/api/chats')).data;
@@ -66,10 +67,18 @@ export async function runTuiSession({client,state,model,system,maxTokens,tempera
     if(name==='retry'){await generate('',{retry:true});return;}
     if(name==='new'){chat=null;ui.messages=[];ui.title='새 대화';ui.scrollOffset=0;ui.setInput('');chrome();return;}
     if(name==='models'){await modelPicker();return;}
+    if(name==='priority'){
+      stateCache=await client.state();
+      const order=rankedGroups(stateModelGroups(stateCache),stateCache.settings.preferredModels).filter(m=>m.free);
+      ui.openModal('Auto 우선순위 · 선택한 모델을 1순위로',order.map(m=>({label:m.name,detail:m.id,value:m.id})),{onSelect:async item=>{
+        const preferredModels=[item.value,...order.filter(m=>m.id!==item.value).map(m=>m.id)].slice(0,20);
+        await client.api('/api/settings',{method:'PUT',body:{preferredModels}});stateCache=await client.state();model='free/auto';chrome();if(chat)await persist();ui.notify(item.label+' 1순위 · Auto 선택됨');
+      }});return;
+    }
     if(name==='history'){await historyPicker();return;}
     if(name==='settings'){settingsPicker();return;}
     if(name==='connect'){if(value!=='opencode')throw new Error('사용법: /connect opencode');ui.notify('OpenCode 연결 중…');const result=await client.api('/api/opencode/start',{method:'POST',body:{}});stateCache=await client.state();chrome();ui.notify('OpenCode 무료 모델 '+result.count+'개 연결됨');await modelPicker();return;}
-    if(name==='model'){if(!value){await modelPicker();return;}stateCache=await client.state();if(value!=='free/auto'&&!stateCache.models.some(m=>m.id===value&&m.ready))throw new Error('연결된 무료 모델 ID를 선택하세요.');model=value;chrome();if(chat)await persist();return;}
+    if(name==='model'){if(!value){await modelPicker();return;}stateCache=await client.state();if(value!=='free/auto'&&![...stateCache.models,...stateModelGroups(stateCache)].some(m=>m.id===value&&m.ready&&m.free))throw new Error('연결된 무료 모델 ID를 선택하세요.');model=value;chrome();if(chat)await persist();return;}
     if(name==='open'){const records=(await client.api('/api/chats')).data;const found=records.find(c=>c.id===value);if(!found)throw new Error('대화 ID를 찾지 못했습니다. /history에서 선택하세요.');chat=await client.api('/api/chats/'+value);ui.messages=chat.messages;ui.title=chat.title;model=chat.model;system=chat.systemPrompt;maxTokens=chat.settings.maxTokens;temperature=chat.settings.temperature;chrome();return;}
     if(name==='save'){await persist();ui.notify('대화를 저장했어요.');return;}
     if(name==='copy'){

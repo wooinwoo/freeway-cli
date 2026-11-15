@@ -3,8 +3,8 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 if ($env:OS -ne 'Windows_NT') { throw 'This installer supports Windows x64.' }
 if (-not [Environment]::Is64BitOperatingSystem) { throw '64-bit Windows is required.' }
-$payloadSha = '5f98fa5af6c1f82c5a8d51afd2f37edc2d28e8eb8707d9a57fdeec33600519c2'
-$assetUrl = 'https://github.com/wooinwoo/freeway-cli/releases/download/v0.4.0/freeway-windows-x64.zip'
+$payloadSha = 'a1996aa98b5baa7ca500aa99e10ef823f1e8ee2926b288c7d9800e2850c9d1a6'
+$assetUrl = 'https://github.com/wooinwoo/freeway-cli/releases/download/v0.5.0/freeway-windows-x64.zip'
 $stageRoot = Join-Path ([IO.Path]::GetTempPath()) ('freeway-install-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
 if (-not $PayloadPath) {

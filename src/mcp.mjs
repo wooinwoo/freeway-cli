@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline';
+import { rankedGroups, stateModelGroups } from './model-groups.mjs';
 
 const delegate={name:'freeway_delegate',description:'Delegate a self-contained reasoning, coding review, writing or summarization task to a free hosted AI subagent. Returns advice/text; does not execute commands or edit files. Pass all relevant context in the task. Requests may be rate limited.',inputSchema:{type:'object',properties:{task:{type:'string',minLength:1,maxLength:150000},system:{type:'string',maxLength:20000},model:{type:'string'},max_tokens:{type:'integer',minimum:1,maximum:32768}},required:['task'],additionalProperties:false},annotations:{title:'Freeway AI subagent',readOnlyHint:true,destructiveHint:false,idempotentHint:false,openWorldHint:true}};
 const models={name:'freeway_models',description:'List connected free AI models and the configured default model.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false}};
@@ -26,7 +27,7 @@ export async function runMcp(client,version,{input=process.stdin,output=process.
     try{
       const name=request.params?.name,args=request.params?.arguments||{};let result;
       if(name==='freeway_models'){
-        const state=await client.state();result={defaultModel:state.settings.chatDefaults?.model||'free/auto',models:state.models.filter(m=>m.ready).map(m=>({id:m.id,name:m.name}))};
+        const state=await client.state();result={defaultModel:state.settings.chatDefaults?.model||'free/auto',models:rankedGroups(stateModelGroups(state),state.settings.preferredModels).filter(m=>m.free&&m.ready).map(m=>({id:m.id,name:m.name,providers:m.providers}))};
       }else if(name==='freeway_delegate'){
         if(typeof args.task!=='string'||!args.task.trim()||args.task.length>150000||args.system!==undefined&&(typeof args.system!=='string'||args.system.length>20000)||args.model!==undefined&&typeof args.model!=='string'||args.max_tokens!==undefined&&(!Number.isInteger(args.max_tokens)||args.max_tokens<1||args.max_tokens>32768))throw new Error('Invalid task arguments');
         const state=await client.state(),profile=state.settings.chatDefaults||{model:'free/auto',maxTokens:4096,temperature:0.6};

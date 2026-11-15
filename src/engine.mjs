@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { definitions, providerConfig, providerReady, seedModels } from './catalog.mjs';
 import { syncModels, openAICompletion } from './adapters.mjs';
 import { GatewayError, estimateTokens } from './streams.mjs';
+import { groupModels, modelIdentity, rankedGroups } from './model-groups.mjs';
 
 export function validateRequest(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new GatewayError('JSON 객체가 필요합니다.', 400, 'invalid_request');
@@ -63,6 +64,7 @@ export class Engine {
     return { ...model, ...status };
   }
   models() { return this.store.data.models.filter(m => m.free === true).map(m => this.modelState(m)); }
+  modelGroups() { return groupModels(this.catalog()); }
   catalog() {
     const full=new Map(this.store.data.catalog.map(m=>[m.id,m]));
     for(const model of this.store.data.models)if(!full.has(model.id))full.set(model.id,{...model,catalogStatus:'free'});
@@ -85,7 +87,7 @@ export class Engine {
         usage: this.store.buckets(p.id)
       };
     });
-    return { providers, models: this.models(), catalog:this.catalog(), logs: this.store.data.logs,
+    return { providers, models: this.models(), catalog:this.catalog(), modelGroups:this.modelGroups(), logs: this.store.data.logs,
       settings: this.store.data.settings, bridge: this.bridge?.state?.() || { installed: false, ready: false } };
   }
   async candidates(body) {
@@ -99,16 +101,22 @@ export class Engine {
       }
     }
     const requested = body.models || [body.model || 'free/auto'];
-    const preference = new Map((this.store.data.settings.preferredModels || []).map((id,index) => [id,index]));
+    const models = this.models();
+    const groups = rankedGroups(this.modelGroups().filter(g=>g.free), this.store.data.settings.preferredModels);
+    const groupIds=new Map(groups.flatMap(g=>g.routes.map(r=>[r.id,g.id])));
+    const sortRoutes = routes => [...routes].filter(m=>m.free&&m.ready).sort((a,b)=>providerConfig(this.store,this.provider(a.provider)).priority-providerConfig(this.store,this.provider(b.provider)).priority||a.id.localeCompare(b.id));
     let candidates = [];
     for (const id of requested) {
       if (id === 'free/auto') {
-        candidates.push(...this.models().filter(m => m.ready).sort((a, b) => {
-          const priority = providerConfig(this.store, this.provider(a.provider)).priority - providerConfig(this.store, this.provider(b.provider)).priority;
-          return (preference.get(a.id) ?? 999) - (preference.get(b.id) ?? 999) || priority || a.id.localeCompare(b.id);
-        }));
+        candidates.push(...groups.flatMap(g=>sortRoutes(g.routes)));
       } else {
-        const model = this.models().find(m => m.id === id);
+        const group=groups.find(g=>g.id===id && id.startsWith('model/'));
+        if(group){
+          const routes=sortRoutes(group.routes);
+          if(!routes.length&&requested.length===1)throw new GatewayError('이 모델의 무료 연결 경로가 준비되지 않았습니다. '+group.reason,503,'provider_not_ready');
+          candidates.push(...routes);continue;
+        }
+        const model = models.find(m => m.id === id);
         if (!model) throw new GatewayError('무료 모델 목록에 없는 모델입니다: ' + id, 404, 'model_not_found');
         if (!model.ready && requested.length === 1) throw new GatewayError('이 모델을 사용하려면 공급처 설정을 확인하세요: ' + model.reason, 503, 'provider_not_ready');
         if (model.ready) candidates.push(model);
@@ -121,12 +129,15 @@ export class Engine {
       const limited = this.models().some(m => /limit|cooldown/.test(m.reason || ''));
       throw new GatewayError(limited ? '현재 무료 공급처 한도에 도달했습니다. 잠시 후 다시 시도하세요.' : '사용 가능한 무료 모델이 없습니다. 공급처를 연결하고 모델 목록을 동기화하세요.', limited ? 429 : 503, limited ? 'rate_limit_exceeded' : 'no_free_models', limited ? 60 : 0);
     }
-    // Automatic fallback tries different providers, not dozens of models on a rate-limited provider.
-    if (requested.includes('free/auto')) {
-      const providerSeen = new Set();
-      candidates = candidates.filter(m => !providerSeen.has(m.provider) && providerSeen.add(m.provider));
-    }
-    return candidates.slice(0, this.store.data.settings.maxFallbacks);
+    // The fallback budget counts distinct models. All free routes for each
+    // selected model remain available before moving to the next model.
+    const selectedGroups=new Set();
+    return candidates.filter(m=>{
+      const id=groupIds.get(m.id)||modelIdentity(m);
+      if(selectedGroups.has(id))return true;
+      if(selectedGroups.size>=(this.store.data.settings.maxFallbacks||3))return false;
+      selectedGroups.add(id);return true;
+    }).map(m=>({...m,modelGroup:groupIds.get(m.id)||modelIdentity(m)}));
   }
   async *complete(body, signal) {
     validateRequest(body);
@@ -136,6 +147,7 @@ export class Engine {
     for (const model of candidates) {
       if (signal.aborted) throw signal.reason;
       const provider = this.provider(model.provider);
+      if(!providerReady(this.store,provider,this.bridge).ready)continue;
       const config = providerConfig(this.store, provider);
       const reservation = this.store.reserve(provider, config);
       if (reservation.reason) { lastError = new GatewayError('공급처 무료 한도에 도달했습니다.', 429, reservation.reason, 60); continue; }
@@ -150,7 +162,7 @@ export class Engine {
           output += chunk.choices?.map(c => c.delta?.content || '').join('') || '';
           started = true;
           yield { ...chunk, id, object: 'chat.completion.chunk', created, model: model.id,
-            provider: provider.id, free: true };
+            provider: provider.id, model_group:model.modelGroup, free: true };
         }
         this.store.record(provider, reservation, {
           ok: true, tokens: usage?.total_tokens, estimatedTokens: estimateTokens(body.messages, output),
@@ -210,6 +222,6 @@ export function accumulateCompletion(chunks) {
   }
   if (tools.size) { message.tool_calls = [...tools.entries()].sort((a,b) => a[0] - b[0]).map(x => x[1]); if (!message.content) message.content = null; }
   return { id: last.id, object: 'chat.completion', created: last.created, model: last.model,
-    provider: last.provider, free: true, choices: [{ index: 0, message, finish_reason: finishReason }],
+    provider: last.provider, model_group:last.model_group, free: true, choices: [{ index: 0, message, finish_reason: finishReason }],
     ...(usage ? { usage } : {}) };
 }

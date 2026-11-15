@@ -10,6 +10,7 @@ import { OpenCodeBridge } from './src/opencode.mjs';
 import { GatewayError } from './src/streams.mjs';
 import { Chats } from './src/chats.mjs';
 import { defaultProfile } from './src/profile.mjs';
+import { modelReference } from './src/model-groups.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 if (existsSync(join(root, '.env'))) process.loadEnvFile(join(root, '.env'));
@@ -44,6 +45,12 @@ export function createGateway(options = {}) {
   const bridge = options.bridge || new OpenCodeBridge(join(store.dir, 'opencode-workspace'));
   if(!options.providers&&bridge.binary&&store.data.providers.opencode?.enabled===undefined)store.configure('opencode',{enabled:true});
   const engine = new Engine(store, bridge, { providers: options.providers || definitions, fetcher: options.fetcher || fetch });
+  if(!options.providers&&!store.data.settings.groupVersion){
+    const catalog=engine.catalog();
+    store.data.settings.preferredModels=[...new Set((store.data.settings.preferredModels||[]).map(id=>modelReference(id,catalog)))];
+    if(store.data.settings.chatDefaults)store.data.settings.chatDefaults.model=modelReference(store.data.settings.chatDefaults.model,catalog);
+    store.data.settings.groupVersion=1;store.save();
+  }
   const chats = new Chats(store);
   const sessionSecret = randomBytes(32).toString('hex');
   const researchPath = join(root, 'research.json');
@@ -120,10 +127,10 @@ export function createGateway(options = {}) {
             if (!Number.isInteger(body.timeoutMs) || body.timeoutMs < 1000 || body.timeoutMs > 300000) throw new GatewayError('요청 제한 시간은 1~300초입니다.', 400, 'invalid_timeout');
             settings.timeoutMs = body.timeoutMs;
           }
-          const known = new Set(engine.models().map(m => m.id));
+          const known = new Set([...engine.models(),...engine.modelGroups().filter(m=>m.free)].map(m => m.id));
           if (body.preferredModels !== undefined) {
             if (!Array.isArray(body.preferredModels) || body.preferredModels.length > 20 || body.preferredModels.some(id => !known.has(id))) throw new GatewayError('우선 모델은 등록된 무료 모델 ID여야 합니다.',400,'invalid_preferred_models');
-            settings.preferredModels = [...new Set(body.preferredModels)];
+            settings.preferredModels = [...new Set(body.preferredModels.map(id=>modelReference(id,engine.catalog())))];
           }
           if (body.chatDefaults !== undefined) {
             const d = body.chatDefaults;
@@ -163,7 +170,8 @@ export function createGateway(options = {}) {
         if (request.method === 'GET' && path === '/v1/models') {
           json(response, { object: 'list', data: [
             { id: 'free/auto', object: 'model', created: 0, owned_by: 'freeway', ready: engine.models().some(m => m.ready) },
-            ...engine.models().map(m => ({ id: m.id, object: 'model', created: Math.floor(Date.parse(m.discoveredAt) / 1000), owned_by: m.provider,
+            ...engine.modelGroups().filter(m=>m.free).map(m => ({ id: m.id, object: 'model', created: 0, owned_by: 'freeway',
+              name:m.name, providers:m.providers, routes:m.routes.filter(r=>r.free).map(r=>({id:r.id,provider:r.provider,ready:r.ready})),
               context_length: m.context, pricing: { prompt: '0', completion: '0' }, ready: m.ready, capabilities: m.capabilities }))
           ] }); return;
         }

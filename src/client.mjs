@@ -50,16 +50,16 @@ export class Client {
     await this.connect();const start=Date.now();
     const response=await this.fetcher(this.base+'/v1/chat/completions',{method:'POST',signal,headers:{cookie:this.cookie,'content-type':'application/json'},body:JSON.stringify({...body,stream:true})});
     if(!response.ok){const result=await response.json();const error=new Error(result.error?.message||'모델 요청 실패');error.status=response.status;error.code=result.error?.code;throw error;}
-    let content='',reasoning='',model=body.model,provider,usage,done=false;
+    let content='',reasoning='',model=body.model,modelGroup,provider,usage,done=false;
     for await(const raw of sseEvents(response.body)){
       if(raw==='[DONE]'){done=true;break;}
       const chunk=JSON.parse(raw);if(chunk.error){const error=new Error(chunk.error.message);error.code=chunk.error.code;throw error;}
-      model=chunk.model||model;provider=chunk.provider||provider;if(chunk.usage)usage=chunk.usage;
+      model=chunk.model||model;modelGroup=chunk.model_group||modelGroup;provider=chunk.provider||provider;if(chunk.usage)usage=chunk.usage;
       for(const choice of chunk.choices||[]){const delta=choice.delta||{};if(delta.content){content+=delta.content;onText?.(delta.content);}reasoning+=delta.reasoning_content||delta.reasoning||'';}
       onChunk?.(chunk);
     }
     if(!done)throw new Error('응답이 완료되기 전에 연결이 끊겼습니다.');
     if(!content.trim())throw new Error(reasoning?'생각 과정만 반환되었습니다. 출력 토큰을 늘리거나 모델을 변경하세요.':'모델이 텍스트 답변을 반환하지 않았습니다.');
-    return {ok:true,model,provider,content,...(usage?{usage}:{}),elapsedMs:Date.now()-start};
+    return {ok:true,model,...(modelGroup?{modelGroup}:{}),provider,content,...(usage?{usage}:{}),elapsedMs:Date.now()-start};
   }
 }

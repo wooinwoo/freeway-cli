@@ -10,11 +10,13 @@ import { findOpenCode } from './src/opencode.mjs';
 import { runTuiSession } from './src/tui.mjs';
 import { modelItems } from './src/model-menu.mjs';
 import { cellWidth, clip } from './src/terminal-ui.mjs';
+import { modelReference, rankedGroups, stateModelGroups } from './src/model-groups.mjs';
+import { defaultProfile } from './src/profile.mjs';
 
 const version=JSON.parse(readFileSync(join(appRoot,'package.json'),'utf8')).version;
 export function parseArgs(args){
   const options={prompt:[],command:null};
-  const commands=new Set(['chat','ask','run','agent','models','history','status','serve','mcp','mcp-config','setup','opencode','connect']);
+  const commands=new Set(['chat','ask','run','agent','models','priority','history','status','serve','mcp','mcp-config','setup','opencode','connect']);
   const values={'--model':'model','-m':'model','--system':'system','--max-tokens':'maxTokens','--temperature':'temperature','--url':'base','--session':'session','--timeout':'timeout'};
   for(let i=0;i<args.length;i++){
     const a=args[i];if(a==='--'){options.prompt.push(...args.slice(i+1));break;}
@@ -33,7 +35,7 @@ function help(){process.stdout.write(`Freeway ${version} — 무료 AI CLI\n\n  
 async function readInput(){let text='';process.stdin.setEncoding('utf8');for await(const chunk of process.stdin){text+=chunk;if(text.length>150000)throw new Error('입력은 150,000자 이하로 전달하세요.');}return text.trim();}
 function config(){const command=[process.execPath,join(appRoot,'cli.mjs'),'mcp'];return {opencode:{mcp:{servers:{freeway:{type:'local',command,timeout:{startup:30000,execution:180000}}}}},opencodeV1:{mcp:{freeway:{type:'local',command,enabled:true}}},standard:{mcpServers:{freeway:{command:process.execPath,args:[join(appRoot,'cli.mjs'),'mcp']}}}};}
 async function listModels(client,json=false){
-  const s=await client.state();if(json){console.log(JSON.stringify({models:s.catalog||s.models}));return;}
+  const s=await client.state();if(json){console.log(JSON.stringify({models:rankedGroups(stateModelGroups(s),s.settings.preferredModels)}));return;}
   const items=modelItems(s),columns=process.stdout.columns||100,digits=Math.max(2,String(items.length).length);
   const width=Math.max(12,Math.min(38,Math.floor(columns*.44)-5,Math.max(18,...items.map(i=>cellWidth(i.label))))),detailWidth=Math.max(1,columns-width-digits-5);
   for(const [index,m]of items.entries()){const label=clip(m.label,width);process.stdout.write(String(index+1).padStart(digits)+'. '+label+' '.repeat(width-cellWidth(label)+2)+clip(m.detail,detailWidth)+'\n');}
@@ -63,10 +65,23 @@ export async function main(args=process.argv.slice(2)){
   if(o.command==='models'){await listModels(client,o.json);return;}
   if(o.command==='history'){await listHistory(client);return;}
   const state=await client.state();const profile=state.settings.chatDefaults||{model:'free/auto',maxTokens:4096,temperature:0.6};
+  if(o.command==='priority'){
+    const groups=stateModelGroups(state), routes=groups.flatMap(g=>g.routes);
+    let preferred=state.settings.preferredModels||[];
+    if(o.prompt.length){
+      preferred=o.prompt.length===1&&o.prompt[0]==='reset'?defaultProfile.preferredModels.filter(id=>groups.some(g=>g.free&&g.id===modelReference(id,routes))):o.prompt;
+      preferred=[...new Set(preferred.map(id=>modelReference(id,routes)))];
+      await client.api('/api/settings',{method:'PUT',body:{preferredModels:preferred}});
+    }
+    const order=rankedGroups(groups,preferred).filter(m=>m.free).map((m,index)=>({rank:index+1,id:m.id,name:m.name,ready:m.ready}));
+    if(o.json)console.log(JSON.stringify({appliesTo:'free/auto',models:order}));
+    else {for(const m of order)console.log(m.rank+'. '+m.name+'  '+m.id);console.log('\nAuto 적용: freeway --model free/auto\n순서 설정: freeway priority MODEL_ID MODEL_ID ...');}return;
+  }
   let model=o.model||profile.model;let system=o.system||'';let maxTokens=Number(o.maxTokens||profile.maxTokens),temperature=Number(o.temperature??profile.temperature);
-  if(o.command==='status'){console.log(JSON.stringify({server:client.base,model,maxTokens,readyModels:state.models.filter(m=>m.ready).length},null,2));return;}
+  if(o.command==='status'){console.log(JSON.stringify({server:client.base,model,maxTokens,readyModels:stateModelGroups(state).filter(m=>m.free&&m.ready).length,readyRoutes:state.models.filter(m=>m.ready).length},null,2));return;}
   let chat=o.session?await client.api('/api/chats/'+o.session):null;
   if(chat){model=o.model||chat.model;system=o.system??chat.systemPrompt;maxTokens=Number(o.maxTokens||chat.settings.maxTokens);temperature=Number(o.temperature??chat.settings.temperature);}
+  if(!o.model)model=modelReference(model,state.catalog||state.models);
   let history=chat?.messages.filter(m=>m.role==='user'||m.status==='done').map(m=>({role:m.role,content:m.content}))||[];
   const machine=o.json||o.command==='agent';let controller;
   const interactive=process.stdin.isTTY&&!o.prompt.length&&!['agent','ask','run'].includes(o.command)&&!machine&&!o.streamJson;
@@ -113,7 +128,7 @@ export async function main(args=process.argv.slice(2)){
       if(input==='/history'){await listHistory(client);continue;}
       if(input==='/new'){chat=null;history=[];process.stderr.write('새 대화를 시작합니다.\n');continue;}
       if(input==='/model'){console.log(model);continue;}
-      if(input.startsWith('/model ')){const id=input.slice(7).trim();const state=await client.state();if(id!=='free/auto'&&!state.models.some(m=>m.id===id&&m.ready))throw new Error('연결된 무료 모델 ID를 선택하세요.');model=id;console.log('모델: '+model);continue;}
+      if(input.startsWith('/model ')){const id=input.slice(7).trim();const state=await client.state();if(id!=='free/auto'&&![...state.models,...stateModelGroups(state)].some(m=>m.id===id&&m.ready&&m.free))throw new Error('연결된 무료 모델 ID를 선택하세요.');model=id;console.log('모델: '+model);continue;}
       if(input.startsWith('/open ')){chat=await client.api('/api/chats/'+input.slice(6).trim());history=chat.messages.filter(m=>m.role==='user'||m.status==='done').map(m=>({role:m.role,content:m.content}));model=chat.model;system=chat.systemPrompt;maxTokens=chat.settings.maxTokens;temperature=chat.settings.temperature;console.log('대화: '+chat.title);continue;}
       if(input==='/help'){help();continue;}
       await ask(input);

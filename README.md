@@ -35,7 +35,20 @@ The installer downloads a checksum-verified release into your per-user applicati
 
 Default model: **NVIDIA Nemotron 3 Ultra**, through Kilo's zero-priced route. Default output budget: 4,096 tokens. Provider free quotas and availability still apply; no provider credentials or conversation history ship with the package. This is a personal client, not a source of unlimited API access.
 
-The picker shows the full synchronized catalog, including OpenCode's DeepSeek, MiniMax, GLM and Muse entries when OpenCode is connected. Each row states whether it is free, needs a connection/key, is temporarily unavailable, or is paid. Paid and unverified-price models remain visible for investigation but cannot be selected for free inference. `freeway models --json` exports catalog metadata. To connect OpenCode explicitly, run `freeway connect opencode` or `/connect opencode` inside the TUI. On a fresh installation, an existing OpenCode executable is discovered automatically; an explicitly disabled provider remains disabled.
+The picker shows the full synchronized catalog, including DeepSeek and Muse when present in a connected provider's catalog. Each row states whether it is free, needs a connection/key, is temporarily unavailable, or is paid. Paid and unverified-price models remain visible for investigation but cannot be selected for free inference. To connect OpenCode explicitly, run `freeway connect opencode` or `/connect opencode` inside the TUI. On a fresh installation, an existing OpenCode executable is discovered automatically; an explicitly disabled provider remains disabled.
+
+The same model from multiple providers appears once, with its routes nested underneath. Model IDs preserve versions, dated releases, Flash/Pro, and other variants. Grouping uses upstream IDs and known manufacturer namespaces; ambiguous aliases remain separate. `freeway models --json` exports groups with all route metadata. `/v1/models` and the MCP model tool also return distinct models. Existing provider-specific IDs remain accepted for an exact-route request.
+
+For a model group, Freeway tries ready, confirmed-free routes in provider-priority order. If a route fails before output begins, it can try another route for the same model. Paid routes are excluded. Once streaming starts, it never switches routes. `free/auto` tries model groups in the configured preference order; the fallback limit counts models, not duplicate routes. This is a configurable recommendation order, not a measured performance leaderboard.
+
+```powershell
+freeway priority
+freeway priority model/deepseek/deepseek-v4.1-flash model/nvidia/nemotron-3-ultra-550b-a55b
+freeway --model free/auto
+freeway priority reset
+```
+
+Inside the TUI, `/priority` promotes the selected model to first place and selects Auto for the current conversation. The priority command changes Auto's ordering; a directly selected model continues to use its own group. The initial recommendation order is DeepSeek V4.1 Flash, MiniMax M3.1 Flash, GLM-5.3-Flash, Nemotron 3 Ultra, then Nemotron 3.5 Super VL. Availability and free quotas can cause Auto to skip unavailable models.
 
 ## Use as a subagent
 
