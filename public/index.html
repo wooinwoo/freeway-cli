@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8fa">
+  <title>Freeway — 무료 AI 라우터</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.mjs"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#overview"><span class="brand-symbol">↗</span> freeway<span class="brand-period">.</span></a>
+    <div class="workspace"><span class="workspace-icon">F</span><div>Personal workspace<small>LOCAL · FREE MODELS</small></div><span class="workspace-chevron">⌄</span></div>
+    <div class="nav-label">WORKSPACE</div>
+    <nav aria-label="메인 메뉴">
+      <a href="/"><span>↗</span> 내 챗으로 돌아가기</a>
+      <a href="#overview" data-page="overview"><span>◫</span> 대시보드</a>
+      <a href="#models" data-page="models"><span>▦</span> 모델 탐색</a>
+      <a href="#providers" data-page="providers"><span>⌘</span> 공급처 연결 <i id="provider-nav-count">0</i></a>
+      <a href="#playground" data-page="playground"><span>▷</span> 플레이그라운드</a>
+      <a href="#usage" data-page="usage"><span>▥</span> 요청 기록</a>
+    </nav>
+    <div class="nav-label second-label">DEVELOP</div>
+    <nav aria-label="개발 메뉴">
+      <a href="#connect" data-page="connect"><span>⌁</span> API 연결</a>
+      <a href="#research" data-page="research"><span>◇</span> 조사 후보 <i id="research-nav-count">30</i></a>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="free-mode"><span class="dot"></span> Free routing enabled<small>자동 대체는 무료 모델 안에서만</small></div>
+      <div class="local-user"><span>U</span><div>내 게이트웨이<small>127.0.0.1 · v0.1</small></div></div>
+    </div>
+  </aside>
+  <div class="main-shell">
+    <header class="topbar"><button id="mobile-menu" class="icon-button mobile-only" aria-label="메뉴 열기">☰</button><div class="breadcrumb">Workspace <span>/</span> <strong id="page-crumb">대시보드</strong></div><div class="topbar-right"><span class="local-badge"><span class="dot"></span> Local gateway</span><a class="quiet-link" href="#connect">API 연결하기 <span>↗</span></a></div></header>
+    <main id="content" tabindex="-1"><div class="loading">게이트웨이에 연결하는 중…</div></main>
+    <footer><span>freeway. <span class="footer-divider">/</span> Your models, one endpoint.</span><span id="footer-status">상태 확인 중</span></footer>
+  </div>
+  <dialog id="provider-dialog" aria-labelledby="provider-dialog-title">
+    <form id="provider-form">
+      <div class="dialog-heading"><div><span class="eyebrow">PROVIDER CONNECTION</span><h2 id="provider-dialog-title"></h2></div><button type="button" class="icon-button" id="close-dialog" aria-label="닫기">×</button></div>
+      <p id="provider-description" class="muted"></p>
+      <div id="provider-key-group"><label for="provider-key">공급처 API 키</label><input id="provider-key" type="password" autocomplete="new-password" placeholder="새 키를 입력하면 기존 키를 교체합니다"><p id="provider-key-status" class="field-help"></p></div>
+      <div class="form-grid"><div><label for="provider-priority">라우팅 우선순위</label><input id="provider-priority" type="number" min="0" max="1000"><p class="field-help">작은 숫자가 먼저 호출됩니다.</p></div><div><label for="provider-day-limit">일일 요청 상한</label><input id="provider-day-limit" type="number" min="1" placeholder="공급처 기본값"></div></div>
+      <label class="check-row"><input id="provider-enabled" type="checkbox"> 이 공급처 사용</label>
+      <label id="free-confirm-group" class="check-row"><input id="provider-free-confirm" type="checkbox"> 이 키·프로젝트가 무료 계정 한도를 사용하는 것을 확인했습니다.</label>
+      <div id="provider-form-error" class="inline-error" role="alert"></div>
+      <div class="dialog-actions"><a id="provider-docs" target="_blank" rel="noopener noreferrer">공식 안내 ↗</a><button type="submit" class="button primary">저장하고 모델 동기화</button></div>
+    </form>
+  </dialog>
+  <div id="toast" class="toast" role="status"></div>
+</body>
+</html>

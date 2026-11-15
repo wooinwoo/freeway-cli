@@ -1,0 +1,423 @@
+{
+  "title": "Free hosted AI candidates for a custom chat",
+  "as_of": "2026-11-15",
+  "user_constraints": {
+    "local_models": false,
+    "retain_vendor_only_candidates": true,
+    "existing_tool": "OpenCode",
+    "final_target": "User-built chat",
+    "personal_or_public_use": "not yet confirmed"
+  },
+  "verification": {
+    "method": "Official documentation, pricing and public endpoint metadata; no account signup, private credential inspection or authenticated model inference.",
+    "public_endpoints_read": [
+      "https://aihubmix.com/call/free_quota_config",
+      "https://build.nvidia.com/api/runtime/content/help-center-faq.yaml"
+    ],
+    "meaning": "Documented route is not an end-to-end integration test. Unknown quotas and entitlements remain unknown."
+  },
+  "implementation_defaults_for_future_review": {
+    "paid_fallback": false,
+    "avoid_storing_api_keys_in_browser": true,
+    "track_quota_per_provider": true
+  },
+  "candidate_count": 30,
+  "candidates": [
+    {
+      "id": "kilo",
+      "name": "Kilo Gateway",
+      "group": "direct_api",
+      "free": "Free models: 200 requests/hour/IP; upstream limits may also apply.",
+      "integration": "Documented OpenAI-compatible gateway.",
+      "status": "documented",
+      "notes": "Select an explicitly zero-priced model. Do not assume all Kilo models are free.",
+      "sources": [
+        "https://kilo.ai/docs/gateway/quickstart",
+        "https://kilo.ai/docs/gateway/usage-and-billing"
+      ]
+    },
+    {
+      "id": "nvidia",
+      "name": "NVIDIA API Catalog / NIM",
+      "group": "direct_api",
+      "free": "Free prototyping; FAQ says up to 40 requests/minute for most models, no per-token billing.",
+      "integration": "Cloud model endpoints, API key, streaming examples.",
+      "status": "documented",
+      "notes": "Actual limit depends on model, traffic and account. Free prototyping is not a production capacity guarantee.",
+      "sources": [
+        "https://docs.api.nvidia.com/nim/docs/api-quickstart",
+        "https://build.nvidia.com/api/runtime/content/help-center-faq.yaml"
+      ]
+    },
+    {
+      "id": "zai",
+      "name": "Z.ai",
+      "group": "direct_api",
+      "free": "GLM-4.7-Flash and GLM-4.5-Flash: input and output priced Free; GLM-4.6V-Flash is also Free.",
+      "integration": "Model inference API.",
+      "status": "documented",
+      "notes": "GLM-5.3-Flash is paid. Fixed daily free quota is not published on pricing page.",
+      "sources": [
+        "https://docs.z.ai/guides/overview/pricing"
+      ]
+    },
+    {
+      "id": "vikasit",
+      "name": "Vikasit Inference",
+      "group": "direct_api",
+      "free": "2,000,000 tokens/day on Vikasit Nova, according to provider.",
+      "integration": "OpenAI-compatible API; provider example uses https://api.vikasit.ai/v1 and model vikasit-nova.",
+      "status": "documented_not_inference_tested",
+      "notes": "Free allocation is for Nova, not the entire catalog or paid CLI subscription. Quality and reliability not benchmarked.",
+      "sources": [
+        "https://vikasit.ai/"
+      ]
+    },
+    {
+      "id": "requesty",
+      "name": "Requesty",
+      "group": "direct_api",
+      "free": "200 requests/day on designated free models; no credit card required.",
+      "integration": "OpenAI-compatible API at https://router.requesty.ai/v1.",
+      "status": "documented",
+      "notes": "Free model list rotates. Requesty terms distinguish free-plan data handling from paid accounts.",
+      "sources": [
+        "https://www.requesty.ai/models/free",
+        "https://www.requesty.ai/pricing",
+        "https://www.requesty.ai/terms"
+      ]
+    },
+    {
+      "id": "groq",
+      "name": "GroqCloud",
+      "group": "direct_api",
+      "free": "Free tier with per-model request and token caps. Public table shows GPT-OSS-120B at 30 RPM, 1,000 RPD, 8,000 TPM and 200,000 TPD.",
+      "integration": "Cloud API with OpenAI compatibility and OpenCode integration docs.",
+      "status": "documented_account_limits_need_confirmation",
+      "notes": "Check the account limits page; cached tokens do not count toward limits according to docs. Token cap can bind before request cap.",
+      "sources": [
+        "https://console.groq.com/docs/rate-limits",
+        "https://console.groq.com/docs/models"
+      ]
+    },
+    {
+      "id": "gemini_api",
+      "name": "Google AI Studio / Gemini API",
+      "group": "direct_api",
+      "free": "Input and output are free on selected models; model/project rate limits apply.",
+      "integration": "Direct Gemini API.",
+      "status": "documented_account_limits_need_confirmation",
+      "notes": "Do not reuse historical Gemini CLI 1,000/day figures as current API quotas. Free model availability and quotas must be read from current project.",
+      "sources": [
+        "https://aistudio.google.com/docs/pricing"
+      ]
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "group": "direct_api",
+      "free": ":free model variants: 20 RPM and 50 requests/day without credit purchase; 1,000/day after buying $10 of credits.",
+      "integration": "OpenAI-compatible API; openrouter/free router available.",
+      "status": "documented",
+      "notes": "The 1,000/day lane requires an initial purchase and is not zero-spend. Other zero-priced model types can have different rules.",
+      "sources": [
+        "https://openrouter.ai/collections/free-models/"
+      ]
+    },
+    {
+      "id": "cloudflare",
+      "name": "Cloudflare Workers AI",
+      "group": "direct_api",
+      "free": "10,000 Neurons/day on Workers Free; resets at 00:00 UTC.",
+      "integration": "Workers bindings or REST API.",
+      "status": "documented",
+      "notes": "Neurons are not tokens. Several frontier models require a paid billing method or prepaid AI Gateway credits.",
+      "sources": [
+        "https://developers.cloudflare.com/workers-ai/platform/pricing/"
+      ]
+    },
+    {
+      "id": "novita",
+      "name": "Novita AI",
+      "group": "direct_api",
+      "free": "Apodex 1.1 Mini is listed with Free input and output pricing.",
+      "integration": "Model API and playground.",
+      "status": "documented_not_inference_tested",
+      "notes": "Free rate limit, account funding requirement and duration were not established by the reviewed pricing page.",
+      "sources": [
+        "https://novita.ai/pricing",
+        "https://novita.ai/models/model-detail/apodex-apodex-1.1-mini?from=pricing"
+      ]
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "group": "tool_bridge",
+      "free": "Rotating free models; most fixed quotas unpublished. LongCat 2.5 Free lists 100 requests/day.",
+      "integration": "V1 official headless server and JS/TS SDK; verify installed V1/V2 version before implementation.",
+      "status": "official_bridge_documented_version_check_needed",
+      "notes": "Console states free-tier chat models require OpenCode; other clients cannot be assumed to have direct free API access. Keep the OpenCode bridge as a candidate.",
+      "sources": [
+        "https://opencode.ai/docs/console/models",
+        "https://opencode.ai/v1/docs/server/",
+        "https://opencode.ai/v1/docs/sdk/"
+      ]
+    },
+    {
+      "id": "cline",
+      "name": "Cline",
+      "group": "tool_bridge",
+      "free": "Rotating, limited-time free model promotions with usage quotas; numeric daily amounts unpublished.",
+      "integration": "Official CLI supports headless operation and --json output.",
+      "status": "official_cli_documented_free_bridge_test_needed",
+      "notes": "Current free-model docs explicitly exclude the Cline API. Earlier repository API examples conflict; current free-model page takes precedence. Investigate the official CLI route.",
+      "sources": [
+        "https://docs.cline.bot/getting-started/free-models",
+        "https://docs.cline.bot/usage/cli-overview"
+      ]
+    },
+    {
+      "id": "qoder",
+      "name": "Qoder International",
+      "group": "tool_bridge",
+      "free": "Daily manual claim of 100 Credits in desktop app; each grant valid 30 days; campaign end unannounced.",
+      "integration": "Official qoder -p, JSON and stream-json; promotion lists Qoder CLI among eligible products.",
+      "status": "official_cli_and_quota_documented",
+      "notes": "Credits are not requests. Claiming does not unlock paid-only features.",
+      "sources": [
+        "https://docs.qoder.com/events/100credits",
+        "https://docs.qoder.com/cli/run-in-scripts",
+        "https://docs.qoder.com/Credits"
+      ]
+    },
+    {
+      "id": "codebuddy",
+      "name": "Tencent CodeBuddy",
+      "group": "tool_bridge",
+      "free": "Free plan: 100 credits/month; limited-time daily activity reward 30 credits/day.",
+      "integration": "Official codebuddy -p / --print and JSON/stream-json input/output.",
+      "status": "official_cli_and_quota_documented",
+      "notes": "Daily reward requires a valid client conversation and is credited the following day. CLI applicability and feature entitlement should be tested with a free account.",
+      "sources": [
+        "https://www.codebuddy.ai/pricing/",
+        "https://www.codebuddy.ai/docs/cli/headless",
+        "https://intl.cloud.tencent.com/document/product/1256/77269?lang=en"
+      ]
+    },
+    {
+      "id": "antigravity",
+      "name": "Google Antigravity",
+      "group": "tool_bridge",
+      "free": "Individual $0 plan with weekly agent limits; numeric weekly allowance unpublished.",
+      "integration": "Official agy -p, --output-format json or stream-json; uses cached authenticated credentials.",
+      "status": "official_cli_documented_free_bridge_test_needed",
+      "notes": "Unlimited Tab/Command labels must not be interpreted as unlimited agent inference. Model eligibility changes.",
+      "sources": [
+        "https://antigravity.google/pricing",
+        "https://antigravity.google/docs/cli/headless/"
+      ]
+    },
+    {
+      "id": "copilot",
+      "name": "GitHub Copilot",
+      "group": "tool_bridge",
+      "free": "Free plan includes limited AI usage. Code completion allowance is not a chat/agent request allowance.",
+      "integration": "Official Copilot SDK integrates the CLI agent into apps and services.",
+      "status": "official_sdk_documented_free_entitlement_test_needed",
+      "notes": "SDK FAQ points to a Free tier with limited usage. Do not use old 50-message figures without current confirmation.",
+      "sources": [
+        "https://github.com/github/copilot-sdk",
+        "https://github.com/features/copilot/"
+      ]
+    },
+    {
+      "id": "kiro",
+      "name": "Kiro",
+      "group": "tool_bridge",
+      "free": "50 credits/month on perpetual Free tier.",
+      "integration": "Official headless CLI exists; current docs describe API-key authentication.",
+      "status": "investigate_free_headless_auth",
+      "notes": "API-key creation docs name paid tiers. Do not assume free account headless access just because headless exists; verify browser-login behavior and current entitlement.",
+      "sources": [
+        "https://kiro.dev/pricing/",
+        "https://kiro.dev/docs/cli/headless/",
+        "https://kiro.dev/docs/cli/authentication/"
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "OpenAI Codex",
+      "group": "tool_bridge",
+      "free": "Codex is included in ChatGPT Free; current Free pricing mentions desktop GPT-6 Luna subject to rollout; fixed quota not established.",
+      "integration": "Official codex exec, SDK, app-server and Sign in with ChatGPT developer flows.",
+      "status": "investigate_free_account_integration_entitlement",
+      "notes": "An integration surface existing does not prove Free-account access to every surface/model. Standard API-key usage is paid separately.",
+      "sources": [
+        "https://learn.chatgpt.com/docs/pricing",
+        "https://developers.openai.com/blog/codex-as-a-platform",
+        "https://developers.openai.com/siwc/token-sharing-open-source"
+      ]
+    },
+    {
+      "id": "aihubmix",
+      "name": "AIHubMix",
+      "group": "investigate_or_conditional",
+      "free": "Live quota JSON: daily_request_limit=100, daily_token_limit=1000000, minute_limit=10, trial_unpaid_request_limit=10, paid_threshold_usd=1; per-model weights apply.",
+      "integration": "Documented direct APIs and live model/quota discovery.",
+      "status": "funding_condition_needs_confirmation",
+      "notes": "Do not advertise 100/day as unconditional zero-spend. Live quota config overrides generic free-model marketing; determine the $1 paid-threshold semantics and per-model requirements before selecting.",
+      "sources": [
+        "https://aihubmix.com/developers",
+        "https://aihubmix.com/call/free_quota_config",
+        "https://aihubmix.com/models?modalities=video&tag=free"
+      ]
+    },
+    {
+      "id": "simplellm",
+      "name": "SimpleLLM.eu",
+      "group": "investigate_or_conditional",
+      "free": "Zero-priced models exist; exact active hourly/daily request/token budgets depend on configuration.",
+      "integration": "Direct OpenAI/Anthropic-compatible chat routes; authenticated rate-limit endpoint.",
+      "status": "documented_quota_and_live_model_test_needed",
+      "notes": "One running free-model request per account across keys; published docs warn catalog aliases can refer to disabled backends.",
+      "sources": [
+        "https://simplellm.eu/docs/limits.html",
+        "https://simplellm.eu/docs/models.html"
+      ]
+    },
+    {
+      "id": "llm7",
+      "name": "LLM7.io",
+      "group": "investigate_or_conditional",
+      "free": "Up to 100,000 input+output tokens per rolling 24 hours; educational/research use; 250 text requests/hour.",
+      "integration": "API token issued through dashboard.",
+      "status": "personal_research_candidate_downstream_restrictions",
+      "notes": "Terms require prior written approval to proxy/embed/provide access to third parties. Keep as a candidate, with personal-use versus public-service conditions separated.",
+      "sources": [
+        "https://github.com/chigwell/llm7.io/blob/main/TERMS.md"
+      ]
+    },
+    {
+      "id": "sensenova",
+      "name": "SenseNova Token Plan",
+      "group": "investigate_or_conditional",
+      "free": "Official search index advertises a CNY 0 public beta. Exact active quota not live-verified.",
+      "integration": "Marketing lists API keys and Hermes/OpenClaw integrations.",
+      "status": "official_page_fetch_unavailable_live_verification_needed",
+      "notes": "Search snippets include older numeric claims; do not treat 60,000 credits/5h or 1,500 calls/5h as verified current limits. Korea signup/account access untested.",
+      "sources": [
+        "https://www.sensenova.cn/token-plan",
+        "https://platform.sensenova.cn/docs"
+      ]
+    },
+    {
+      "id": "clixad",
+      "name": "Clixad",
+      "group": "investigate_or_conditional",
+      "free": "60,000 shared usage credits/day; provider estimates ~123 DeepSeek V4 Flash turns at 20K input+1.5K output tokens per turn.",
+      "integration": "Official open-source CLI exists; supported headless/server interface not established.",
+      "status": "investigate_cli_bridge",
+      "notes": "A global daily free budget can stop usage before the account quota. Models resume spending credits after the free limit.",
+      "sources": [
+        "https://clixad.io/free-ai-models-for-coding/",
+        "https://github.com/Clixad/cli"
+      ]
+    },
+    {
+      "id": "freebuff",
+      "name": "Freebuff",
+      "group": "investigate_or_conditional",
+      "free": "Current plans page advertises 30 daily hours for full access, model multipliers and account-dependent eligibility.",
+      "integration": "CLI/SDK source exists, but free external integration is restricted in current terms.",
+      "status": "retain_candidate_explicit_external_use_restrictions",
+      "notes": "Earlier region article says South Korea 12h while current plans page differs; do not give a definitive Korean-account quota without login. Terms restrict wrappers, automation and relaying free inference; investigate separately documented SDK rights or approved routes, do not claim technically impossible.",
+      "sources": [
+        "https://freebuff.com/plans",
+        "https://freebuff.com/terms-of-service",
+        "https://freebuff.com/blog/how-is-freebuff-free",
+        "https://freebuff.com/blog/is-freebuff-legit"
+      ]
+    },
+    {
+      "id": "pollinations",
+      "name": "Pollinations",
+      "group": "investigate_or_conditional",
+      "free": "Quest Pollen rewards for eligible activities; no passive daily allowance established in current FAQ.",
+      "integration": "Direct generation APIs and app-user authorization (BYOP).",
+      "status": "documented_reward_based_not_fixed_recurring",
+      "notes": "Old free daily tier/Pollen tables are stale. Some models require Paid Pollen. Quest availability and rewards vary.",
+      "sources": [
+        "https://raw.githubusercontent.com/pollinations/pollinations/main/enter.pollinations.ai/POLLEN_FAQ.md",
+        "https://pollinations.ai/"
+      ]
+    },
+    {
+      "id": "mistral_vibe",
+      "name": "Mistral Vibe",
+      "group": "investigate_or_conditional",
+      "free": "Free plan lists limited coding sessions; exact numeric quota unpublished.",
+      "integration": "Official vibe --prompt / -p with JSON output.",
+      "status": "official_cli_documented_free_quota_route_test_needed",
+      "notes": "Do not infer free general API access from Vibe's free plan. Confirm the actual free-account model and programmatic entitlement.",
+      "sources": [
+        "https://mistral.ai/pricing/",
+        "https://docs.mistral.ai/vibe/code/cli/work-with-cli"
+      ]
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "group": "investigate_or_conditional",
+      "free": "Current Free plan has limited Agent and Chat requests; exact numeric quota unpublished.",
+      "integration": "Official CLI print automation exists.",
+      "status": "official_cli_documented_free_entitlement_test_needed",
+      "notes": "Current plan differs from historical Hobby/Pro pricing. Verify Free CLI model availability before assuming a usable pool.",
+      "sources": [
+        "https://cursor.com/pricing",
+        "https://prod.cursor.com/docs/cli/overview",
+        "https://docs.cursor.com/en/cli/reference/output-format"
+      ]
+    },
+    {
+      "id": "costrict",
+      "name": "CoStrict",
+      "group": "investigate_or_conditional",
+      "free": "Docs list weekly 50 Credits for registered users maintaining a GitHub Star, plus limited daily basic-model usage.",
+      "integration": "Official cs serve, cs run --format json and CSC programmatic/Agent SDK routes.",
+      "status": "official_bridge_documented_quota_test_needed",
+      "notes": "Signup reward amounts differ between docs and campaign page; do not commit to one amount. Actual daily basic-model quota unpublished.",
+      "sources": [
+        "https://docs.costrict.ai/plugin/billing/usage",
+        "https://costrict.ai/operation",
+        "https://docs.costrict.ai/en/cli/guide/cli",
+        "https://docs.costrict.ai/en/csc/automation/headless"
+      ]
+    },
+    {
+      "id": "jules",
+      "name": "Google Jules",
+      "group": "investigate_or_conditional",
+      "free": "15 tasks per rolling 24h and 3 concurrent tasks on Free.",
+      "integration": "Official REST API and Jules Tools CLI.",
+      "status": "documented_task_backend_chat_fit_needs_assessment",
+      "notes": "An asynchronous coding task service, not a drop-in conversational completion API. Keep as a task-backend candidate.",
+      "sources": [
+        "https://jules.google/docs/usage-limits",
+        "https://jules.google/docs/api/reference/"
+      ]
+    },
+    {
+      "id": "devin",
+      "name": "Devin / current Windsurf pricing destination",
+      "group": "investigate_or_conditional",
+      "free": "Free plan lists a light agent quota; numeric quota unpublished.",
+      "integration": "API product is listed, but Free-plan API entitlement is not established.",
+      "status": "investigate_free_bridge_and_api_entitlement",
+      "notes": "Do not equate free desktop agent usage with free cloud/API access.",
+      "sources": [
+        "https://devin.ai/pricing",
+        "https://windsurf.com/pricing"
+      ]
+    }
+  ]
+}
