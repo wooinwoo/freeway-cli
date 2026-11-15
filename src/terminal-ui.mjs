@@ -30,10 +30,10 @@ function markdown(text,width){
   }
   return output;
 }
-export const commands=[['/new','새 대화'],['/models','모델 선택'],['/history','이전 대화'],['/settings','대화 설정'],['/retry','마지막 답변 다시 생성'],['/copy','마지막 답변 복사'],['/export','Markdown으로 내보내기'],['/help','키보드 도움말'],['/exit','종료']];
+export const commands=[['/new','새 대화'],['/models','모델 선택'],['/connect opencode','OpenCode 모델 연결'],['/history','이전 대화'],['/settings','대화 설정'],['/retry','마지막 답변 다시 생성'],['/copy','마지막 답변 복사'],['/export','Markdown으로 내보내기'],['/help','키보드 도움말'],['/exit','종료']];
 
 export class TerminalUI {
-  constructor({input=process.stdin,output=process.stdout,version='0.3.1',onAction=()=>{}}={}){
+  constructor({input=process.stdin,output=process.stdout,version='0.4.0',onAction=()=>{}}={}){
     this.stdin=input;this.stdout=output;this.version=version;this.onAction=onAction;this.input='';this.cursor=0;this.messages=[];this.model='';this.modelName='';this.title='새 대화';this.busy=false;this.modal=null;this.scrollOffset=0;this.notice='';this.noticeUntil=0;this.closed=false;this.paste=false;this.pasteBuffer='';
   }
   start(){
@@ -50,7 +50,8 @@ export class TerminalUI {
   dispatch(action,value){Promise.resolve(this.onAction(action,value)).catch(e=>this.notify(e.message,true));}
   setInput(text){this.input=text;this.cursor=text.length;this.render();}
   openModal(title,items,{placeholder='검색어 입력',onSelect,columns=['NAME','DESCRIPTION'],selectedValue}={}){this.modal={title,items,index:Math.max(0,items.findIndex(i=>i.value===selectedValue)),query:'',placeholder,onSelect,columns};this.render();}
-  filtered(){const m=this.modal;return m?m.items.filter(item=>(item.label+' '+(item.detail||'')).toLocaleLowerCase().includes(m.query.toLocaleLowerCase())):[];}
+  filtered(){const m=this.modal;return m?m.items.filter(item=>(item.label+' '+(item.detail||'')+' '+(item.value||'')).toLocaleLowerCase().includes(m.query.toLocaleLowerCase())):[];}
+  selectItem(item){if(!item)return;if(item.disabled){this.notify(item.disabledReason||'현재 선택할 수 없는 항목입니다.',true);return;}const callback=this.modal.onSelect;this.modal=null;Promise.resolve(callback?.(item)).catch(e=>this.notify(e.message,true));}
   insert(text){text=cleanTerminal(text);if(!text)return;if(this.modal){this.modal.query+=text.replace(/\n/g,'');this.modal.index=0;}else if(!this.busy&&this.input.length+text.length<=150000){this.input=this.input.slice(0,this.cursor)+text+this.input.slice(this.cursor);this.cursor+=text.length;}this.schedule();}
   key(str,key){
     if(key.sequence==='\x1b[200~'){this.paste=true;this.pasteBuffer='';return;}
@@ -68,8 +69,8 @@ export class TerminalUI {
     if(this.modal){
       const matches=this.filtered();if(key.name==='up')this.modal.index=Math.max(0,this.modal.index-1);
       else if(key.name==='down')this.modal.index=Math.min(matches.length-1,this.modal.index+1);
-      else if(!this.modal.query&&/^[1-9]$/.test(str||'')&&matches[Number(str)-1]){const item=matches[Number(str)-1],callback=this.modal.onSelect;this.modal=null;Promise.resolve(callback?.(item)).catch(e=>this.notify(e.message,true));}
-      else if(key.name==='return'){const selected=matches[this.modal.index];if(selected){const callback=this.modal.onSelect;this.modal=null;Promise.resolve(callback?.(selected)).catch(e=>this.notify(e.message,true));}}
+      else if(!this.modal.query&&/^[1-9]$/.test(str||'')&&matches[Number(str)-1])this.selectItem(matches[Number(str)-1]);
+      else if(key.name==='return')this.selectItem(matches[this.modal.index]);
       else if(key.name==='backspace'){this.modal.query=graphemes(this.modal.query).slice(0,-1).map(s=>s.text).join('');this.modal.index=0;}
       else if(str&&!key.ctrl&&!key.meta)this.insert(str);
       this.schedule();return;
@@ -129,7 +130,7 @@ export class TerminalUI {
       for(let i=start;i<Math.min(matches.length,start+visible);i++){
         const item=matches[i],selected=i===this.modal.index;
         const prefix='    '+(selected?'›':' ')+' '+String(i+1).padStart(2)+'. ';
-        body.push((selected?ansi.selected:'')+color(selected?'accent':'muted',prefix)+color(selected?'accent':'text',pad(clip(item.label,nameWidth),nameWidth))+'  '+color('muted',clip(item.detail||'',detailWidth))+ansi.reset);
+        body.push((selected?ansi.selected:'')+color(selected?'accent':'muted',prefix)+color(item.disabled?'muted':selected?'accent':'text',pad(clip(item.label,nameWidth),nameWidth))+'  '+color('muted',clip(item.detail||'',detailWidth))+ansi.reset);
       }
       if(matches.length)body.push(color('muted','          '+(this.modal.index+1)+' / '+matches.length+(matches[this.modal.index]?.value?'  ·  '+clip(String(matches[this.modal.index].value),width-24):'')));
     }else if(!this.messages.length){

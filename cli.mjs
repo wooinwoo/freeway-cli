@@ -8,11 +8,13 @@ import { Client, appRoot } from './src/client.mjs';
 import { runMcp } from './src/mcp.mjs';
 import { findOpenCode } from './src/opencode.mjs';
 import { runTuiSession } from './src/tui.mjs';
+import { modelItems } from './src/model-menu.mjs';
+import { cellWidth, clip } from './src/terminal-ui.mjs';
 
 const version=JSON.parse(readFileSync(join(appRoot,'package.json'),'utf8')).version;
 export function parseArgs(args){
   const options={prompt:[],command:null};
-  const commands=new Set(['chat','ask','run','agent','models','history','status','serve','mcp','mcp-config','setup','opencode']);
+  const commands=new Set(['chat','ask','run','agent','models','history','status','serve','mcp','mcp-config','setup','opencode','connect']);
   const values={'--model':'model','-m':'model','--system':'system','--max-tokens':'maxTokens','--temperature':'temperature','--url':'base','--session':'session','--timeout':'timeout'};
   for(let i=0;i<args.length;i++){
     const a=args[i];if(a==='--'){options.prompt.push(...args.slice(i+1));break;}
@@ -30,7 +32,12 @@ export function parseArgs(args){
 function help(){process.stdout.write(`Freeway ${version} — 무료 AI CLI\n\n  freeway                         대화 시작\n  freeway "질문"                  한 번 질문\n  freeway agent --json "작업"      서브에이전트용 JSON 출력\n  Get-Content task.txt | freeway agent --json\n  freeway models                  무료 모델 목록\n  freeway history                 저장한 대화 목록\n  freeway --session ID            이전 대화 이어가기\n  freeway mcp                     MCP stdio 서버\n  freeway mcp-config              AI 도구 연결 설정 출력\n  freeway status                  연결 상태\n  freeway serve                   서버를 화면에서 직접 실행\n\n옵션: --model ID, --max-tokens N, --temperature N, --system "지침"\n      --json, --stream-json, --save, --no-save, --timeout 초, --no-start\n대화 명령: /model ID, /models, /history, /open ID, /new, /exit\n`);}
 async function readInput(){let text='';process.stdin.setEncoding('utf8');for await(const chunk of process.stdin){text+=chunk;if(text.length>150000)throw new Error('입력은 150,000자 이하로 전달하세요.');}return text.trim();}
 function config(){const command=[process.execPath,join(appRoot,'cli.mjs'),'mcp'];return {opencode:{mcp:{servers:{freeway:{type:'local',command,timeout:{startup:30000,execution:180000}}}}},opencodeV1:{mcp:{freeway:{type:'local',command,enabled:true}}},standard:{mcpServers:{freeway:{command:process.execPath,args:[join(appRoot,'cli.mjs'),'mcp']}}}};}
-async function listModels(client){const s=await client.state();for(const m of s.models.filter(m=>m.ready))process.stdout.write(m.id+'  '+m.name+'\n');}
+async function listModels(client,json=false){
+  const s=await client.state();if(json){console.log(JSON.stringify({models:s.catalog||s.models}));return;}
+  const items=modelItems(s),columns=process.stdout.columns||100,digits=Math.max(2,String(items.length).length);
+  const width=Math.max(12,Math.min(38,Math.floor(columns*.44)-5,Math.max(18,...items.map(i=>cellWidth(i.label))))),detailWidth=Math.max(1,columns-width-digits-5);
+  for(const [index,m]of items.entries()){const label=clip(m.label,width);process.stdout.write(String(index+1).padStart(digits)+'. '+label+' '.repeat(width-cellWidth(label)+2)+clip(m.detail,detailWidth)+'\n');}
+}
 async function listHistory(client){const h=await client.api('/api/chats');for(const c of h.data)process.stdout.write(c.id+'  '+c.title+'\n');if(!h.data.length)process.stdout.write('저장한 대화가 없습니다.\n');}
 export async function main(args=process.argv.slice(2)){
   const o=parseArgs(args);if(o.version){console.log(version);return;}if(o.help){help();return;}
@@ -52,7 +59,8 @@ export async function main(args=process.argv.slice(2)){
     await new Promise((resolve,reject)=>{child.on('error',reject);child.on('exit',code=>{process.exitCode=code||0;resolve();});});return;
   }
   const client=new Client(o);
-  if(o.command==='models'){await listModels(client);return;}
+  if(o.command==='connect'){if(o.prompt.join(' ')!=='opencode')throw new Error('사용법: freeway connect opencode');const result=await client.api('/api/opencode/start',{method:'POST',body:{}});console.log('OpenCode: '+result.count+'개 무료 모델 연결됨');return;}
+  if(o.command==='models'){await listModels(client,o.json);return;}
   if(o.command==='history'){await listHistory(client);return;}
   const state=await client.state();const profile=state.settings.chatDefaults||{model:'free/auto',maxTokens:4096,temperature:0.6};
   let model=o.model||profile.model;let system=o.system||'';let maxTokens=Number(o.maxTokens||profile.maxTokens),temperature=Number(o.temperature??profile.temperature);

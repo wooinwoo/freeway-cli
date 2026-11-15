@@ -35,6 +35,8 @@ The installer downloads a checksum-verified release into your per-user applicati
 
 Default model: **NVIDIA Nemotron 3 Ultra**, through Kilo's zero-priced route. Default output budget: 4,096 tokens. Provider free quotas and availability still apply; no provider credentials or conversation history ship with the package. This is a personal client, not a source of unlimited API access.
 
+The picker shows the full synchronized catalog, including OpenCode's DeepSeek, MiniMax, GLM and Muse entries when OpenCode is connected. Each row states whether it is free, needs a connection/key, is temporarily unavailable, or is paid. Paid and unverified-price models remain visible for investigation but cannot be selected for free inference. `freeway models --json` exports catalog metadata. To connect OpenCode explicitly, run `freeway connect opencode` or `/connect opencode` inside the TUI. On a fresh installation, an existing OpenCode executable is discovered automatically; an explicitly disabled provider remains disabled.
+
 ## Use as a subagent
 
 ```powershell

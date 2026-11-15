@@ -24,6 +24,7 @@ export class Engine {
   constructor(store, bridge, { providers = definitions, fetcher = fetch } = {}) {
     this.store = store; this.bridge = bridge; this.providers = providers; this.fetcher = fetcher;
     this.refreshing = new Map();
+    store.data.catalog ||= [];
     for (const provider of providers) {
       if (!store.data.models.some(m => m.provider === provider.id)) store.data.models.push(...seedModels(provider));
     }
@@ -41,6 +42,7 @@ export class Engine {
       try {
         const models = await syncModels(p, this.store, this.bridge, this.fetcher);
         this.store.data.models = this.store.data.models.filter(m => m.provider !== id).concat(models);
+        if(models.catalog)this.store.data.catalog=this.store.data.catalog.filter(m=>m.provider!==id).concat(models.catalog);
         const config = this.store.data.providers[id] ||= {};
         config.lastSync = new Date().toISOString(); config.syncError = null;
         this.store.save();
@@ -61,6 +63,15 @@ export class Engine {
     return { ...model, ...status };
   }
   models() { return this.store.data.models.filter(m => m.free === true).map(m => this.modelState(m)); }
+  catalog() {
+    const full=new Map(this.store.data.catalog.map(m=>[m.id,m]));
+    for(const model of this.store.data.models)if(!full.has(model.id))full.set(model.id,{...model,catalogStatus:'free'});
+    return [...full.values()].map(model=>{
+      if(!model.free)return {...model,ready:false,reason:model.catalogStatus==='deprecated'?'deprecated':model.catalogStatus==='paid'?'paid_model':'pricing_unverified'};
+      const enabled=this.store.data.models.find(m=>m.id===model.id);
+      return enabled?{...model,...this.modelState(enabled)}:{...model,ready:false,reason:'catalog_expired'};
+    });
+  }
   state() {
     const providers = this.providers.map(p => {
       const config = providerConfig(this.store, p);
@@ -74,7 +85,7 @@ export class Engine {
         usage: this.store.buckets(p.id)
       };
     });
-    return { providers, models: this.models(), logs: this.store.data.logs,
+    return { providers, models: this.models(), catalog:this.catalog(), logs: this.store.data.logs,
       settings: this.store.data.settings, bridge: this.bridge?.state?.() || { installed: false, ready: false } };
   }
   async candidates(body) {
@@ -94,7 +105,7 @@ export class Engine {
       if (id === 'free/auto') {
         candidates.push(...this.models().filter(m => m.ready).sort((a, b) => {
           const priority = providerConfig(this.store, this.provider(a.provider)).priority - providerConfig(this.store, this.provider(b.provider)).priority;
-          return priority || (preference.get(a.id) ?? 999) - (preference.get(b.id) ?? 999) || a.id.localeCompare(b.id);
+          return (preference.get(a.id) ?? 999) - (preference.get(b.id) ?? 999) || priority || a.id.localeCompare(b.id);
         }));
       } else {
         const model = this.models().find(m => m.id === id);

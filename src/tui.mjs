@@ -3,6 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { chatToMarkdown } from '../public/chat-render.mjs';
+import { modelItems } from './model-menu.mjs';
 
 export async function runTuiSession({client,state,model,system,maxTokens,temperature,chat:initialChat,save=true,version,timeout=150}){
   let chat=initialChat,controller,requestTask,exiting=false;
@@ -39,12 +40,8 @@ export async function runTuiSession({client,state,model,system,maxTokens,tempera
     return requestTask;
   }
   async function modelPicker(){
-    stateCache=await client.state();const rank=new Map((stateCache.settings.preferredModels||[]).map((id,index)=>[id,index]));
-    const models=stateCache.models.filter(m=>m.ready).sort((a,b)=>(rank.get(a.id)??999)-(rank.get(b.id)??999)||a.name.localeCompare(b.name));
-    const descriptions=[[/nemotron-3-ultra/,'추론 · 코딩 · 종합'],[/nemotron-3\.5-super/,'코딩 · 이미지 · 문서'],[/beam/,'코드 검토 · 범용'],[/kilo-auto/,'무료 모델 자동 선택'],[/lightning/,'빠른 추론 · 코딩'],[/ernie/,'빠른 대화 · 범용'],[/north-mini/,'코딩 · 코드 완성'],[/dots/,'요약 · 노트 정리'],[/ling-/,'빠른 범용 응답'],[/nano-omni/,'경량 · 멀티모달'],[/lfm-/,'초경량 · 짧은 응답'],[/glyph|pickle|flint/,'실험 모델'],[/openrouter\/free/,'무료 모델 자동 선택']];
-    const items=models.map(m=>({label:m.name.replace(/^[^:]+:\s*/,'').replace(/\s*\(free\)$/i,'')+(model===m.id?' ✓':''),detail:descriptions.find(([pattern])=>pattern.test(m.id))?.[1]||'범용 대화',value:m.id}));
-    items.push({label:'Freeway Auto'+(model==='free/auto'?' ✓':''),detail:'설정한 우선순위로 자동 선택',value:'free/auto'});
-    ui.openModal('모델 선택 · 성능 우선',items,{columns:['MODEL','DESCRIPTION'],selectedValue:model,placeholder:'모델 또는 공급처 검색',onSelect:async item=>{model=item.value;chrome();if(chat)await persist();ui.notify(modelLabel(model)+' 선택됨');}});
+    stateCache=await client.state();
+    ui.openModal('모델 전체 목록 · 무료 호출',modelItems(stateCache,model),{columns:['MODEL','DESCRIPTION / STATUS'],selectedValue:model,placeholder:'모델 또는 공급처 검색',onSelect:async item=>{model=item.value;chrome();if(chat)await persist();ui.notify(modelLabel(model)+' 선택됨');}});
   }
   async function historyPicker(){
     const records=(await client.api('/api/chats')).data;
@@ -71,6 +68,7 @@ export async function runTuiSession({client,state,model,system,maxTokens,tempera
     if(name==='models'){await modelPicker();return;}
     if(name==='history'){await historyPicker();return;}
     if(name==='settings'){settingsPicker();return;}
+    if(name==='connect'){if(value!=='opencode')throw new Error('사용법: /connect opencode');ui.notify('OpenCode 연결 중…');const result=await client.api('/api/opencode/start',{method:'POST',body:{}});stateCache=await client.state();chrome();ui.notify('OpenCode 무료 모델 '+result.count+'개 연결됨');await modelPicker();return;}
     if(name==='model'){if(!value){await modelPicker();return;}stateCache=await client.state();if(value!=='free/auto'&&!stateCache.models.some(m=>m.id===value&&m.ready))throw new Error('연결된 무료 모델 ID를 선택하세요.');model=value;chrome();if(chat)await persist();return;}
     if(name==='open'){const records=(await client.api('/api/chats')).data;const found=records.find(c=>c.id===value);if(!found)throw new Error('대화 ID를 찾지 못했습니다. /history에서 선택하세요.');chat=await client.api('/api/chats/'+value);ui.messages=chat.messages;ui.title=chat.title;model=chat.model;system=chat.systemPrompt;maxTokens=chat.settings.maxTokens;temperature=chat.settings.temperature;chrome();return;}
     if(name==='save'){await persist();ui.notify('대화를 저장했어요.');return;}
@@ -90,7 +88,7 @@ export async function runTuiSession({client,state,model,system,maxTokens,tempera
         {label:'PgUp / PgDn · 대화 스크롤',detail:'긴 답변의 앞부분을 다시 읽을 수 있어요.'},
         {label:'Esc · 생성 중지 / 메뉴 닫기',detail:'Ctrl+R로 마지막 답변을 다시 생성해요.'},
         ...commands.map(([label,detail])=>({label,detail}))
-      ],{placeholder:'도움말 검색',onSelect:item=>{if(item.label.startsWith('/'))return action(item.label.slice(1));}});return;
+      ],{placeholder:'도움말 검색',onSelect:item=>{if(item.label.startsWith('/')){const [command,...args]=item.label.slice(1).split(/\s+/);return action(command,args.join(' '));}}});return;
     }
     throw new Error('알 수 없는 명령어예요. /help로 확인하세요.');
   }

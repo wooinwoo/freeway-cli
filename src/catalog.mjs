@@ -36,6 +36,17 @@ export function normalizeModel(provider, model) {
   };
 }
 
+export function catalogModel(provider, model) {
+  const pricing=model.pricing||model.cost;
+  const input=pricing?.prompt??pricing?.input,output=pricing?.completion??pricing?.output;
+  const numeric=value=>value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value))?Number(value):null;
+  const entry=normalizeModel(provider,model);
+  entry.free=freeModel(provider,model)&&model.status!=='deprecated'&&!model.disabled;
+  entry.pricing={input:numeric(input),output:numeric(output),unit:model.pricing?'per_token':'per_million_tokens'};
+  entry.catalogStatus=model.status==='deprecated'||model.disabled?'deprecated':entry.free?'free':numeric(input)>0||numeric(output)>0?'paid':'unverified';
+  return entry;
+}
+
 export function seedModels(provider) {
   return (provider.seed || []).map(id => normalizeModel(provider, { id }));
 }

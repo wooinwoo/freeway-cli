@@ -1,5 +1,5 @@
 import { GatewayError, sseEvents, retryDelay } from './streams.mjs';
-import { freeModel, normalizeModel, seedModels } from './catalog.mjs';
+import { freeModel, normalizeModel, seedModels, catalogModel } from './catalog.mjs';
 
 const allowed = ['messages', 'temperature', 'top_p', 'max_tokens', 'max_completion_tokens', 'stop', 'tools', 'tool_choice', 'response_format', 'seed', 'frequency_penalty', 'presence_penalty', 'parallel_tool_calls', 'user', 'reasoning_effort'];
 
@@ -16,7 +16,9 @@ export async function syncModels(provider, store, bridge, fetcher = fetch) {
   const data = await response.json();
   const models = Array.isArray(data) ? data : data.data || data.models || [];
   if (!Array.isArray(models)) throw new GatewayError('공급처 모델 목록 형식을 읽을 수 없습니다.', 502, 'invalid_catalog');
-  return models.filter(m => freeModel(provider, m)).map(m => normalizeModel(provider, m));
+  const eligible=models.filter(m => freeModel(provider, m)&&m.status!=='deprecated'&&!m.disabled).map(m => normalizeModel(provider, m));
+  Object.defineProperty(eligible,'catalog',{value:models.map(m=>catalogModel(provider,m))});
+  return eligible;
 }
 
 export async function* openAICompletion(provider, model, body, { store, signal, fetcher = fetch }) {

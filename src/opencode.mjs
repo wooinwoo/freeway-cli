@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AsyncQueue, sseEvents, GatewayError } from './streams.mjs';
-import { normalizeModel } from './catalog.mjs';
+import { normalizeModel, catalogModel } from './catalog.mjs';
 
 const deniedTools = Object.fromEntries(['*', 'bash', 'read', 'write', 'edit', 'patch', 'apply_patch', 'glob', 'grep', 'list', 'task', 'webfetch', 'websearch', 'codesearch', 'todowrite', 'todoread', 'question', 'skill', 'lsp'].map(k => [k, false]));
 
@@ -105,11 +105,12 @@ export class OpenCodeBridge {
     if (!response.ok) throw new GatewayError('OpenCode 모델 목록 조회 실패', 502, 'catalog_failed');
     const data = await response.json();
     const all = data.all || data.providers || [];
-    const list = [];
+    const list = [],catalog=[];
     for (const p of all) {
       // Only OpenCode's own free pool. Other provider keys can be paid.
       if (p.id !== 'opencode') continue;
       for (const model of Object.values(p.models || {})) {
+        const entry=catalogModel(provider,model);entry.capabilities={stream:true,tools:false};entry.opencodeProvider=p.id;catalog.push(entry);
         if (model.status === 'deprecated' || model.disabled) continue;
         if (!model.cost || model.cost.input !== 0 || model.cost.output !== 0) continue;
         const normalized = normalizeModel(provider, model);
@@ -118,6 +119,7 @@ export class OpenCodeBridge {
         list.push(normalized);
       }
     }
+    Object.defineProperty(list,'catalog',{value:catalog});
     return list;
   }
   async *complete(body, model, { signal }) {

@@ -37,7 +37,12 @@ export function createGateway(options = {}) {
   if (!options.providers && !store.data.settings.chatDefaults) {
     Object.assign(store.data.settings,structuredClone(defaultProfile));store.save();
   }
+  if(!options.providers&&!store.data.settings.catalogVersion){
+    store.data.settings.preferredModels=[...new Set([...defaultProfile.preferredModels,...store.data.settings.preferredModels||[]])].slice(0,20);
+    store.data.settings.catalogVersion=1;store.save();
+  }
   const bridge = options.bridge || new OpenCodeBridge(join(store.dir, 'opencode-workspace'));
+  if(!options.providers&&bridge.binary&&store.data.providers.opencode?.enabled===undefined)store.configure('opencode',{enabled:true});
   const engine = new Engine(store, bridge, { providers: options.providers || definitions, fetcher: options.fetcher || fetch });
   const chats = new Chats(store);
   const sessionSecret = randomBytes(32).toString('hex');
