@@ -33,7 +33,7 @@ function markdown(text,width){
 export const commands=[['/new','새 대화'],['/models','모델 선택'],['/history','이전 대화'],['/settings','대화 설정'],['/retry','마지막 답변 다시 생성'],['/copy','마지막 답변 복사'],['/export','Markdown으로 내보내기'],['/help','키보드 도움말'],['/exit','종료']];
 
 export class TerminalUI {
-  constructor({input=process.stdin,output=process.stdout,version='0.3.0',onAction=()=>{}}={}){
+  constructor({input=process.stdin,output=process.stdout,version='0.3.1',onAction=()=>{}}={}){
     this.stdin=input;this.stdout=output;this.version=version;this.onAction=onAction;this.input='';this.cursor=0;this.messages=[];this.model='';this.modelName='';this.title='새 대화';this.busy=false;this.modal=null;this.scrollOffset=0;this.notice='';this.noticeUntil=0;this.closed=false;this.paste=false;this.pasteBuffer='';
   }
   start(){
@@ -49,7 +49,7 @@ export class TerminalUI {
   schedule(){if(!this.renderTimer)this.renderTimer=setTimeout(()=>{this.renderTimer=null;this.render();},50);}
   dispatch(action,value){Promise.resolve(this.onAction(action,value)).catch(e=>this.notify(e.message,true));}
   setInput(text){this.input=text;this.cursor=text.length;this.render();}
-  openModal(title,items,{placeholder='검색어 입력',onSelect}={}){this.modal={title,items,index:0,query:'',placeholder,onSelect};this.render();}
+  openModal(title,items,{placeholder='검색어 입력',onSelect,columns=['NAME','DESCRIPTION'],selectedValue}={}){this.modal={title,items,index:Math.max(0,items.findIndex(i=>i.value===selectedValue)),query:'',placeholder,onSelect,columns};this.render();}
   filtered(){const m=this.modal;return m?m.items.filter(item=>(item.label+' '+(item.detail||'')).toLocaleLowerCase().includes(m.query.toLocaleLowerCase())):[];}
   insert(text){text=cleanTerminal(text);if(!text)return;if(this.modal){this.modal.query+=text.replace(/\n/g,'');this.modal.index=0;}else if(!this.busy&&this.input.length+text.length<=150000){this.input=this.input.slice(0,this.cursor)+text+this.input.slice(this.cursor);this.cursor+=text.length;}this.schedule();}
   key(str,key){
@@ -68,6 +68,7 @@ export class TerminalUI {
     if(this.modal){
       const matches=this.filtered();if(key.name==='up')this.modal.index=Math.max(0,this.modal.index-1);
       else if(key.name==='down')this.modal.index=Math.min(matches.length-1,this.modal.index+1);
+      else if(!this.modal.query&&/^[1-9]$/.test(str||'')&&matches[Number(str)-1]){const item=matches[Number(str)-1],callback=this.modal.onSelect;this.modal=null;Promise.resolve(callback?.(item)).catch(e=>this.notify(e.message,true));}
       else if(key.name==='return'){const selected=matches[this.modal.index];if(selected){const callback=this.modal.onSelect;this.modal=null;Promise.resolve(callback?.(selected)).catch(e=>this.notify(e.message,true));}}
       else if(key.name==='backspace'){this.modal.query=graphemes(this.modal.query).slice(0,-1).map(s=>s.text).join('');this.modal.index=0;}
       else if(str&&!key.ctrl&&!key.meta)this.insert(str);
@@ -110,7 +111,7 @@ export class TerminalUI {
     const width=Math.max(35,this.stdout.columns||100),height=Math.max(12,this.stdout.rows||30),inner=width-8;
     const input=this.modal?this.modal.query:this.input;const inputLines=wrapInput(input,inner),cursor=this.modal?input.length:this.cursor;
     let cursorLine=0;for(let i=0;i<inputLines.length;i++)if(inputLines[i].start<=cursor)cursorLine=i;
-    const inputRows=Math.max(2,Math.min(inputLines.length,Math.min(6,Math.max(2,height-13))));const firstInput=Math.max(0,cursorLine-inputRows+1);
+    const inputRows=this.modal?1:Math.max(2,Math.min(inputLines.length,Math.min(6,Math.max(2,height-13))));const firstInput=Math.max(0,cursorLine-inputRows+1);
     const bodyHeight=Math.max(2,height-inputRows-7),frame=[];
     const brand=ansi.bold+color('accent','↗ freeway')+color('muted','  /  AI workspace');
     frame.push('  '+brand+' '.repeat(Math.max(1,width-cellWidth(brand)-cellWidth('v'+this.version)-5))+color('muted','v'+this.version));
@@ -118,10 +119,19 @@ export class TerminalUI {
     let body=[];
     if(this.modal){
       const matches=this.filtered();this.modal.index=Math.max(0,Math.min(this.modal.index,matches.length-1));
-      body.push(color('accent','    '+this.modal.title),color('muted','    ↑ ↓ 선택   Enter 확인   Esc 닫기'),'');
-      const visible=Math.max(1,Math.floor((bodyHeight-4)/2)),start=Math.max(0,this.modal.index-visible+1);
+      const nameWidth=Math.max(12,Math.min(38,Math.floor(width*.44)-5,Math.max(18,...matches.map(item=>cellWidth(item.label)))));
+      const detailWidth=Math.max(1,width-nameWidth-14);
+      body.push(color('accent','    '+this.modal.title),color('muted','    ↑ ↓  Enter  ·  1-9 빠른 선택  ·  Esc 닫기'),'');
+      body.push('          '+color('muted',pad(clip(this.modal.columns[0],nameWidth),nameWidth)+'  '+clip(this.modal.columns[1],detailWidth)));
+      body.push(color('border','    '+'─'.repeat(width-8)));
+      const visible=Math.max(1,bodyHeight-6),start=Math.max(0,this.modal.index-visible+1);
       if(!matches.length)body.push(color('muted','    검색 결과가 없어요.'));
-      for(let i=start;i<Math.min(matches.length,start+visible);i++){const item=matches[i],selected=i===this.modal.index;body.push((selected?ansi.selected:'')+'    '+color(selected?'accent':'text',(selected?'› ':'  ')+clip(item.label,width-10))+ansi.reset);body.push(color('muted','      '+clip(item.detail||'',width-10)));}
+      for(let i=start;i<Math.min(matches.length,start+visible);i++){
+        const item=matches[i],selected=i===this.modal.index;
+        const prefix='    '+(selected?'›':' ')+' '+String(i+1).padStart(2)+'. ';
+        body.push((selected?ansi.selected:'')+color(selected?'accent':'muted',prefix)+color(selected?'accent':'text',pad(clip(item.label,nameWidth),nameWidth))+'  '+color('muted',clip(item.detail||'',detailWidth))+ansi.reset);
+      }
+      if(matches.length)body.push(color('muted','          '+(this.modal.index+1)+' / '+matches.length+(matches[this.modal.index]?.value?'  ·  '+clip(String(matches[this.modal.index].value),width-24):'')));
     }else if(!this.messages.length){
       const text=[color('accent','↗'),ansi.bold+color('text','무엇을 함께 만들어볼까요?'),'',color('muted','생각을 정리하고, 코드를 검토하고, 답을 찾아보세요.'),'',color('accent','/models')+color('muted',' 모델 선택     ')+color('accent','/history')+color('muted',' 대화 이어가기')];
       body=Array(Math.max(0,Math.floor((bodyHeight-text.length)/2))).fill('');

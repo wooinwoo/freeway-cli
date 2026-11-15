@@ -41,7 +41,10 @@ export async function runTuiSession({client,state,model,system,maxTokens,tempera
   async function modelPicker(){
     stateCache=await client.state();const rank=new Map((stateCache.settings.preferredModels||[]).map((id,index)=>[id,index]));
     const models=stateCache.models.filter(m=>m.ready).sort((a,b)=>(rank.get(a.id)??999)-(rank.get(b.id)??999)||a.name.localeCompare(b.name));
-    ui.openModal('모델 선택 · 성능 우선',[{label:'품질 우선 Auto'+(model==='free/auto'?'  ✓':''),detail:'연결된 무료 모델에서 우선순위에 따라 자동 선택',value:'free/auto'},...models.map(m=>({label:(rank.has(m.id)?'추천 '+(rank.get(m.id)+1)+' · ':'')+m.name+(model===m.id?'  ✓':''),detail:m.id,value:m.id}))],{placeholder:'모델 또는 공급처 검색',onSelect:async item=>{model=item.value;chrome();if(chat)await persist();ui.notify(modelLabel(model)+' 선택됨');}});
+    const descriptions=[[/nemotron-3-ultra/,'추론 · 코딩 · 종합'],[/nemotron-3\.5-super/,'코딩 · 이미지 · 문서'],[/beam/,'코드 검토 · 범용'],[/kilo-auto/,'무료 모델 자동 선택'],[/lightning/,'빠른 추론 · 코딩'],[/ernie/,'빠른 대화 · 범용'],[/north-mini/,'코딩 · 코드 완성'],[/dots/,'요약 · 노트 정리'],[/ling-/,'빠른 범용 응답'],[/nano-omni/,'경량 · 멀티모달'],[/lfm-/,'초경량 · 짧은 응답'],[/glyph|pickle|flint/,'실험 모델'],[/openrouter\/free/,'무료 모델 자동 선택']];
+    const items=models.map(m=>({label:m.name.replace(/^[^:]+:\s*/,'').replace(/\s*\(free\)$/i,'')+(model===m.id?' ✓':''),detail:descriptions.find(([pattern])=>pattern.test(m.id))?.[1]||'범용 대화',value:m.id}));
+    items.push({label:'Freeway Auto'+(model==='free/auto'?' ✓':''),detail:'설정한 우선순위로 자동 선택',value:'free/auto'});
+    ui.openModal('모델 선택 · 성능 우선',items,{columns:['MODEL','DESCRIPTION'],selectedValue:model,placeholder:'모델 또는 공급처 검색',onSelect:async item=>{model=item.value;chrome();if(chat)await persist();ui.notify(modelLabel(model)+' 선택됨');}});
   }
   async function historyPicker(){
     const records=(await client.api('/api/chats')).data;
