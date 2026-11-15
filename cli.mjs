@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { Client, appRoot } from './src/client.mjs';
 import { runMcp } from './src/mcp.mjs';
 import { findOpenCode } from './src/opencode.mjs';
+import { runTuiSession } from './src/tui.mjs';
 
 const version=JSON.parse(readFileSync(join(appRoot,'package.json'),'utf8')).version;
 export function parseArgs(args){
@@ -17,7 +18,7 @@ export function parseArgs(args){
     const a=args[i];if(a==='--'){options.prompt.push(...args.slice(i+1));break;}
     if(values[a]){if(args[i+1]===undefined)throw new Error(a+' 뒤에 값을 입력하세요.');options[values[a]]=args[++i];continue;}
     if(a==='--json')options.json=true;else if(a==='--stream-json')options.streamJson=true;else if(a==='--save')options.save=true;else if(a==='--no-save')options.save=false;
-    else if(a==='--no-start')options.autoStart=false;else if(a==='--help'||a==='-h')options.help=true;else if(a==='--version'||a==='-v')options.version=true;
+    else if(a==='--plain')options.plain=true;else if(a==='--no-start')options.autoStart=false;else if(a==='--help'||a==='-h')options.help=true;else if(a==='--version'||a==='-v')options.version=true;
     else if(a.startsWith('-'))throw new Error('알 수 없는 옵션: '+a);
     else if(!options.command&&!options.prompt.length&&commands.has(a))options.command=a;else options.prompt.push(a);
   }
@@ -62,6 +63,7 @@ export async function main(args=process.argv.slice(2)){
   const machine=o.json||o.command==='agent';let controller;
   const interactive=process.stdin.isTTY&&!o.prompt.length&&!['agent','ask','run'].includes(o.command)&&!machine&&!o.streamJson;
   const save=o.save??(interactive||Boolean(o.session));
+  if(interactive&&!o.plain)return runTuiSession({client,state,model,system,maxTokens,temperature,chat,save,version,timeout:Number(o.timeout||150)});
   async function persist(messages){
     if(!save)return;
     if(!chat)chat=await client.api('/api/chats',{method:'POST',body:{title:messages.find(m=>m.role==='user')?.content.replace(/\s+/g,' ').slice(0,45)||'CLI 대화',model,systemPrompt:system,settings:{maxTokens,temperature}}});

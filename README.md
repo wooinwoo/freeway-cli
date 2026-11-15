@@ -1,6 +1,6 @@
 # Freeway CLI
 
-Free hosted AI from your terminal, with a JSON subagent mode and an MCP stdio server. No browser required. Windows x64 installer includes Node.js; you do not need Node or npm beforehand.
+Free hosted AI in a full-screen terminal chat UI, with a JSON subagent mode and an MCP stdio server. No browser required. Windows x64 installer includes Node.js; you do not need Node or npm beforehand.
 
 ## Install (PowerShell)
 
@@ -15,6 +15,21 @@ freeway
 freeway "Explain this code"
 freeway models
 ```
+
+`freeway` opens the terminal UI: a conversation view with formatted code, a bordered multi-line composer, live generation status, searchable model and conversation pickers, and keyboard controls. `freeway --plain` retains the simple line interface for terminals that need it. Headless and MCP output remain machine-readable.
+
+| Key | Action |
+| --- | --- |
+| Enter | Send |
+| Ctrl+O (also Ctrl+J) | Insert a new line |
+| Ctrl+P | Select a model; recommended models are sorted first |
+| Ctrl+L | Search saved conversations |
+| PgUp / PgDn | Scroll conversation |
+| Esc | Stop generation or close a menu |
+| Ctrl+R | Regenerate the last answer |
+| Ctrl+N | New conversation |
+
+Type `/` for commands. `/settings` changes output length, `/copy` copies the latest answer on Windows, `/export` saves Markdown, and `/exit` closes the UI.
 
 The installer downloads a checksum-verified release into your per-user application directory and registers the command on your user PATH. No administrator privileges are required. Reopen your terminal if it does not see the new command. An internet connection is needed for AI inference.
 
