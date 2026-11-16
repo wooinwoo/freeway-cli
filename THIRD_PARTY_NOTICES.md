@@ -11,6 +11,7 @@ Freeway 자체 코드와 문서의 기본 라이선스는 [MIT](LICENSE)입니�
 | 외부 Go 모듈 | CLI의 Bubble Tea·Bubbles·Lip Gloss 및 전이 의존성 | 버전은 cli/go.mod·go.sum으로 고정하며 실행 파일 배포 시 해당 모듈의 원문 고지를 포함 |
 | 외부 npm 의존성 | POC/package.json에 선언된 항목 없음 | 의존성 추가 또는 배포 파일 포함 시 다시 확인 |
 | 조사 프로젝트 | 원본 URL·고정 커밋을 인용한 분석 문서 | 클론 저장소와 구현 소스는 배포에 포함하지 않음 |
+| OpenCode·Cline CLI | 사용자가 별도 설치한 공식 실행 파일을 임시 POC 어댑터에서 호출. 실행 파일·SDK 소스는 포함하지 않음 | OpenCode의 MIT, Cline의 Apache-2.0 등 실제 설치 버전의 고지를 따르며, 향후 실행 파일을 묶어 배포하면 해당 고지를 포함 |
 
 Go 라이선스 원문은 [Go 저장소](https://go.dev/LICENSE), Node.js 고지는 [Node.js 저장소](https://github.com/nodejs/node/blob/main/LICENSE)를 참고합니다. 실제 배포에서는 링크만 두지 않고 사용한 버전에 필요한 원문 고지를 포함합니다.
 

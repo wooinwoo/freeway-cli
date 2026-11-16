@@ -61,7 +61,7 @@ export async function main(args=process.argv.slice(2)){
     await new Promise((resolve,reject)=>{child.on('error',reject);child.on('exit',code=>{process.exitCode=code||0;resolve();});});return;
   }
   const client=new Client(o);
-  if(o.command==='connect'){if(o.prompt.join(' ')!=='opencode')throw new Error('사용법: freeway connect opencode');const result=await client.api('/api/opencode/start',{method:'POST',body:{}});console.log('OpenCode: '+result.count+'개 무료 모델 연결됨');return;}
+  if(o.command==='connect'){const id=o.prompt.join(' ');if(!['opencode','cline'].includes(id))throw new Error('사용법: freeway connect opencode|cline');const result=await client.api('/api/providers/'+id+'/connect',{method:'POST',body:{}});console.log(id+': '+result.count+'개 무료 모델 연결됨');return;}
   if(o.command==='models'){await listModels(client,o.json);return;}
   if(o.command==='history'){await listHistory(client);return;}
   const state=await client.state();const profile=state.settings.chatDefaults||{model:'free/auto',maxTokens:4096,temperature:0.6};

@@ -1,6 +1,6 @@
 # Freeway CLI POC
 
-This directory preserves the existing proof of concept. Run source commands from `POC/`. Planning and architecture documents live in the repository root under `docs/`.
+This directory contains the existing proof of concept and temporary CLI provider adapters used by the Go TUI. It is not the planned Go backend. Run source commands from `POC/`. Planning and architecture documents live in the repository root under `docs/`.
 
 The source checkout now defaults to `POC/.data/`. To reuse data from the former repository-root `.data/`, set `FREEWAY_DATA_DIR` to that directory's absolute path for both the CLI and server. Existing data is not moved or deleted automatically.
 
@@ -38,6 +38,32 @@ Type `/` for commands. `/settings` changes output length, `/copy` copies the lat
 The installer downloads a checksum-verified release into your per-user application directory and registers the command on your user PATH. No administrator privileges are required. Reopen your terminal if it does not see the new command. An internet connection is needed for AI inference.
 
 Default model: **NVIDIA Nemotron 3 Ultra**, through Kilo's zero-priced route. Default output budget: 4,096 tokens. Provider free quotas and availability still apply; no provider credentials or conversation history ship with the package. This is a personal client, not a source of unlimited API access.
+
+## CLI providers
+
+The temporary gateway can also call the unmodified official OpenCode and Cline CLIs installed on the user's PC. It does not proxy their private inference endpoints or switch to paid models when free usage runs out.
+
+```sh
+node cli.mjs connect opencode
+cline auth cline
+node cli.mjs connect cline
+```
+
+Executables are discovered on `PATH`. `OPENCODE_BIN` and `CLINE_BIN` can specify an absolute path. The Cline adapter uses the default signed-in CLI account at `~/.cline/data/settings/providers.json`. It checks that credentials exist; the official CLI handles token refresh and requests. Keys and tokens are never returned by Freeway's state endpoint or committed to this repository.
+
+- **OpenCode:** starts its authenticated loopback server with tools disabled, registers only its own models with zero input and output prices, and uses its official session API. `Free usage exceeded` is a rate limit with a cooldown; it never triggers a paid subscription.
+- **Cline:** registers only the official catalog's `free` array. Recommended and ClinePass lists are excluded. Each request starts the official CLI in ACP mode, creates a session, explicitly selects the free model with `session/set_model`, and only then sends the conversation. ACP ignores the normal CLI model flag, so the explicit model selection is required to avoid the default model. Agent reasoning is excluded from the text stream. Tool permission requests are denied, and client filesystem/terminal capabilities are not offered.
+- **Cancellation:** aborting a request terminates its Cline process group and removes its transient workspace. Cline may retain its own session history under its normal data directory; this is separate from Freeway's saved chat API.
+
+Both CLI providers are text-only and send conversation history as text. CLI-specific output limits are controlled by each official client; Freeway's `max_tokens` value is not an enforced output cap for these bridges. Their free quotas can expire independently of the model catalog, so a catalog entry does not guarantee that a request will succeed.
+
+Gemini CLI's personal Google-login route is excluded: Google ended consumer-account support on June 18, 2026, and the official CLI rejects the account after authentication. See [Google's deprecation notice](https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals). No credential or client-identity workaround is included.
+
+Focused adapter tests use local fixtures and make no model requests:
+
+```sh
+npm test
+```
 
 The picker shows the full synchronized catalog, including DeepSeek and Muse when present in a connected provider's catalog. Each row states whether it is free, needs a connection/key, is temporarily unavailable, or is paid. Paid and unverified-price models remain visible for investigation but cannot be selected for free inference. To connect OpenCode explicitly, run `freeway connect opencode` or `/connect opencode` inside the TUI. On a fresh installation, an existing OpenCode executable is discovered automatically; an explicitly disabled provider remains disabled.
 

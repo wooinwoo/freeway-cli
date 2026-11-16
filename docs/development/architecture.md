@@ -11,7 +11,14 @@ freeway-cli/
 ├── THIRD_PARTY_NOTICES.md           제3자 코드·런타임의 적용 범위
 ├── CONTRIBUTING.md                 개발·기여 방법
 ├── .gitignore
-├── POC/                            기존 Node.js 구현 보존
+├── POC/                            기존 Node.js 게이트웨이·임시 CLI 공급처 확장
+│   ├── cli.mjs / server.mjs        연결 명령·로컬 게이트웨이
+│   ├── src/
+│   │   ├── executables.mjs         PATH 기반 실행 파일 탐색
+│   │   ├── opencode.mjs            OpenCode 공식 서버·무료 모델·세션
+│   │   ├── cline.mjs               Cline 공식 ACP·무료 카탈로그·취소
+│   │   └── provider-bridges.mjs     CLI 공급처별 실행·상태 선택
+│   └── tests/                      무료 필터·프로토콜·취소·한도 fixture 검사
 ├── api/
 │   └── openapi.yaml                B: HTTP·SSE 통신 계약의 틀
 ├── backend/
@@ -81,6 +88,8 @@ Go TUI
 ```
 
 이 연결은 TUI에서 실제 무료 모델을 사용하기 위한 임시 구현입니다. 최종 Go 서버를 대신 완성한 것이 아니며, POC의 내부 통신 형식을 최종 HTTP 계약으로 채택하지 않습니다. 모델 목록·응답 스트림 어댑터만 교체하고 TUI를 유지하는 경계를 둡니다. `backend/`와 `api/openapi.yaml`은 이번 연결로 변경하지 않습니다. 대화 문맥은 TUI 메모리에 유지하며 기존 POC 대화 DB에 저장하지 않습니다.
+
+임시 공급처는 Kilo API, OpenCode CLI, Cline CLI입니다. POC 라우터가 모델의 무료 상태와 공급처 가용성을 판단합니다. CLI 계층은 사용자 PC의 공식 실행 파일만 호출하며, 최종 `backend/internal/providers/`에 구현이 완료됐다는 뜻은 아닙니다. Cline은 무료 카탈로그 확인 후 ACP 모델 선택 응답을 받은 뒤에만 프롬프트를 전달합니다. OpenCode는 무료 할당량 소진을 429·cooldown으로 처리합니다.
 
 ## 실행과 통신 경계
 

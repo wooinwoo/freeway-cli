@@ -36,12 +36,13 @@ export class Engine {
     if (!p) throw new GatewayError('알 수 없는 공급처입니다.', 404, 'unknown_provider');
     return p;
   }
+  providerBridge(provider) { return this.bridge?.forProvider?.(provider.id) || this.bridge; }
   async refresh(id) {
     if (this.refreshing.has(id)) return this.refreshing.get(id);
     const work = (async () => {
       const p = this.provider(id);
       try {
-        const models = await syncModels(p, this.store, this.bridge, this.fetcher);
+        const models = await syncModels(p, this.store, this.providerBridge(p), this.fetcher);
         this.store.data.models = this.store.data.models.filter(m => m.provider !== id).concat(models);
         if(models.catalog)this.store.data.catalog=this.store.data.catalog.filter(m=>m.provider!==id).concat(models.catalog);
         const config = this.store.data.providers[id] ||= {};
@@ -59,8 +60,8 @@ export class Engine {
   }
   modelState(model) {
     const p = this.provider(model.provider);
-    const status = providerReady(this.store, p, this.bridge);
-    if (status.ready && (p.catalog || p.kind === 'opencode') && Date.now() - Date.parse(model.discoveredAt) > 3600000) return { ...model, ready: false, reason: 'catalog_expired' };
+    const status = providerReady(this.store, p, this.providerBridge(p));
+    if (status.ready && (p.catalog || ['opencode', 'cli'].includes(p.kind)) && Date.now() - Date.parse(model.discoveredAt) > 3600000) return { ...model, ready: false, reason: 'catalog_expired' };
     return { ...model, ...status };
   }
   models() { return this.store.data.models.filter(m => m.free === true).map(m => this.modelState(m)); }
@@ -83,19 +84,19 @@ export class Engine {
         needsConfirmation: Boolean(p.needsConfirmation), keyOptional: Boolean(p.keyOptional),
         hasKey: Boolean(p.env && this.store.key(p)), env: p.env || null,
         limits: { ...p.limits, ...config.limits }, lastSync: config.lastSync || null,
-        syncError: config.syncError || null, ...providerReady(this.store, p, this.bridge),
+        syncError: config.syncError || null, ...providerReady(this.store, p, this.providerBridge(p)),
         usage: this.store.buckets(p.id)
       };
     });
     return { providers, models: this.models(), catalog:this.catalog(), modelGroups:this.modelGroups(), logs: this.store.data.logs,
-      settings: this.store.data.settings, bridge: this.bridge?.state?.() || { installed: false, ready: false } };
+      settings: this.store.data.settings, bridge: this.bridge?.state?.() || { installed: false, ready: false }, cliBridges: this.bridge?.states?.() || {} };
   }
   async candidates(body) {
     // Refresh stale catalog pricing before attempting inference.
     for (const p of this.providers) {
       const config = providerConfig(this.store, p);
-      const available = providerReady(this.store, p, this.bridge);
-      if (!available.ready || !(p.catalog || p.kind === 'opencode')) continue;
+      const available = providerReady(this.store, p, this.providerBridge(p));
+      if (!available.ready || !(p.catalog || ['opencode', 'cli'].includes(p.kind))) continue;
       if (!config.lastSync || Date.now() - Date.parse(config.lastSync) > 1800000) {
         try { await this.refresh(p.id); } catch { /* An expired catalog is never eligible. */ }
       }
@@ -147,14 +148,14 @@ export class Engine {
     for (const model of candidates) {
       if (signal.aborted) throw signal.reason;
       const provider = this.provider(model.provider);
-      if(!providerReady(this.store,provider,this.bridge).ready)continue;
+      if(!providerReady(this.store,provider,this.providerBridge(provider)).ready)continue;
       const config = providerConfig(this.store, provider);
       const reservation = this.store.reserve(provider, config);
       if (reservation.reason) { lastError = new GatewayError('공급처 무료 한도에 도달했습니다.', 429, reservation.reason, 60); continue; }
       let started = false, output = '', usage, recorded = false;
       try {
-        const adapter = provider.kind === 'opencode'
-          ? this.bridge.complete(body, model, { signal })
+        const adapter = ['opencode', 'cli'].includes(provider.kind)
+          ? this.providerBridge(provider).complete(body, model, { signal })
           : openAICompletion(provider, model, body, { store: this.store, signal, fetcher: this.fetcher });
         for await (const chunk of adapter) {
           if (signal.aborted) throw signal.reason;

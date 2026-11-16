@@ -6,12 +6,13 @@ import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AsyncQueue, sseEvents, GatewayError } from './streams.mjs';
 import { normalizeModel, catalogModel } from './catalog.mjs';
+import { findExecutable } from './executables.mjs';
 
 const deniedTools = Object.fromEntries(['*', 'bash', 'read', 'write', 'edit', 'patch', 'apply_patch', 'glob', 'grep', 'list', 'task', 'webfetch', 'websearch', 'codesearch', 'todowrite', 'todoread', 'question', 'skill', 'lsp'].map(k => [k, false]));
 
 function modelError(error) {
   const description = JSON.stringify(error || {});
-  if (/free usage limit|rate.?limit|quota|too many requests|usage limit reached/i.test(description)) {
+  if (/free usage (?:limit|exceeded)|free_tier_limit|rate.?limit|quota|too many requests|usage limit reached/i.test(description)) {
     return new GatewayError('OpenCode 무료 사용 한도에 도달했습니다. 다른 무료 공급처를 사용하거나 한도 갱신 후 다시 시도하세요.', 429, 'rate_limit_exceeded', 600);
   }
   const status = error?.data?.statusCode || error?.statusCode;
@@ -19,7 +20,8 @@ function modelError(error) {
 }
 
 export function findOpenCode() {
-  if (process.env.OPENCODE_BIN && existsSync(process.env.OPENCODE_BIN)) return process.env.OPENCODE_BIN;
+  const detected = findExecutable('opencode', process.env.OPENCODE_BIN);
+  if (detected) return detected;
   const candidates = process.platform === 'win32'
     ? [join(process.env.APPDATA || '', 'npm', 'node_modules', 'opencode-ai', 'bin', 'opencode.exe')]
     : ['/usr/local/bin/opencode', join(process.env.HOME || '', '.opencode', 'bin', 'opencode'), '/opt/homebrew/bin/opencode'];

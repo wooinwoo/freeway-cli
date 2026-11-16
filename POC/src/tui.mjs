@@ -77,7 +77,7 @@ export async function runTuiSession({client,state,model,system,maxTokens,tempera
     }
     if(name==='history'){await historyPicker();return;}
     if(name==='settings'){settingsPicker();return;}
-    if(name==='connect'){if(value!=='opencode')throw new Error('사용법: /connect opencode');ui.notify('OpenCode 연결 중…');const result=await client.api('/api/opencode/start',{method:'POST',body:{}});stateCache=await client.state();chrome();ui.notify('OpenCode 무료 모델 '+result.count+'개 연결됨');await modelPicker();return;}
+    if(name==='connect'){const id=value;if(!['opencode','cline'].includes(id))throw new Error('사용법: /connect opencode|cline');ui.notify(id+' 연결 중…');const result=await client.api('/api/providers/'+id+'/connect',{method:'POST',body:{}});stateCache=await client.state();chrome();ui.notify(id+' 무료 모델 '+result.count+'개 연결됨');await modelPicker();return;}
     if(name==='model'){if(!value){await modelPicker();return;}stateCache=await client.state();if(value!=='free/auto'&&![...stateCache.models,...stateModelGroups(stateCache)].some(m=>m.id===value&&m.ready&&m.free))throw new Error('연결된 무료 모델 ID를 선택하세요.');model=value;chrome();if(chat)await persist();return;}
     if(name==='open'){const records=(await client.api('/api/chats')).data;const found=records.find(c=>c.id===value);if(!found)throw new Error('대화 ID를 찾지 못했습니다. /history에서 선택하세요.');chat=await client.api('/api/chats/'+value);ui.messages=chat.messages;ui.title=chat.title;model=chat.model;system=chat.systemPrompt;maxTokens=chat.settings.maxTokens;temperature=chat.settings.temperature;chrome();return;}
     if(name==='save'){await persist();ui.notify('대화를 저장했어요.');return;}

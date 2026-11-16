@@ -4,7 +4,7 @@ import { freeModel, normalizeModel, seedModels, catalogModel } from './catalog.m
 const allowed = ['messages', 'temperature', 'top_p', 'max_tokens', 'max_completion_tokens', 'stop', 'tools', 'tool_choice', 'response_format', 'seed', 'frequency_penalty', 'presence_penalty', 'parallel_tool_calls', 'user', 'reasoning_effort'];
 
 export async function syncModels(provider, store, bridge, fetcher = fetch) {
-  if (provider.kind === 'opencode') return bridge.models(provider);
+  if (['opencode', 'cli'].includes(provider.kind)) return bridge.models(provider);
   if (!provider.catalog) return seedModels(provider);
   const key = store.key(provider);
   if (!key && !provider.keyOptional) throw new GatewayError('먼저 공급처 API 키를 저장하세요.', 409, 'missing_key');

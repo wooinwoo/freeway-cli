@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { Store, safeEqual } from './src/store.mjs';
 import { definitions, providerConfig } from './src/catalog.mjs';
 import { Engine, accumulateCompletion } from './src/engine.mjs';
-import { OpenCodeBridge } from './src/opencode.mjs';
+import { ProviderBridges } from './src/provider-bridges.mjs';
 import { GatewayError } from './src/streams.mjs';
 import { Chats } from './src/chats.mjs';
 import { defaultProfile } from './src/profile.mjs';
@@ -42,7 +42,7 @@ export function createGateway(options = {}) {
     store.data.settings.preferredModels=[...new Set([...defaultProfile.preferredModels,...store.data.settings.preferredModels||[]])].slice(0,20);
     store.data.settings.catalogVersion=1;store.save();
   }
-  const bridge = options.bridge || new OpenCodeBridge(join(store.dir, 'opencode-workspace'));
+  const bridge = options.bridge || new ProviderBridges(store.dir);
   if(!options.providers&&bridge.binary&&store.data.providers.opencode?.enabled===undefined)store.configure('opencode',{enabled:true});
   const engine = new Engine(store, bridge, { providers: options.providers || definitions, fetcher: options.fetcher || fetch });
   if(!options.providers&&!store.data.settings.groupVersion){
@@ -147,6 +147,12 @@ export function createGateway(options = {}) {
           const result = await engine.refresh('opencode');
           json(response, { ...bridge.state(), ...result }); return;
         }
+        const connect = /^\/api\/providers\/(opencode|cline)\/connect$/.exec(path);
+        if (connect && request.method === 'POST') {
+          await bridge.start(connect[1]);
+          store.configure(connect[1], { enabled: true });
+          json(response, { ...(bridge.forProvider?.(connect[1]) || bridge).state(), ...await engine.refresh(connect[1]) }); return;
+        }
         const match = /^\/api\/providers\/([a-z0-9_-]+)(\/sync)?$/.exec(path);
         if (match) {
           const provider = engine.provider(match[1]);
@@ -240,10 +246,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
   console.log('API 주소: http://127.0.0.1:' + port + '/v1');
   console.log('API 키는 관리 화면의 연결 메뉴에서 확인할 수 있습니다.');
   for (const provider of app.engine.providers) {
-    if (provider.kind !== 'opencode' && providerConfig(app.store, provider).enabled) app.engine.refresh(provider.id).catch(() => {});
+    if (!['opencode', 'cli'].includes(provider.kind) && providerConfig(app.store, provider).enabled) app.engine.refresh(provider.id).catch(() => {});
   }
   if (providerConfig(app.store, app.engine.provider('opencode')).enabled) {
     app.bridge.start().then(() => app.engine.refresh('opencode')).catch(() => {});
+  }
+  for (const id of ['cline']) {
+    if (providerConfig(app.store, app.engine.provider(id)).enabled) app.bridge.start(id).then(() => app.engine.refresh(id)).catch(() => {});
   }
   for (const name of ['SIGINT', 'SIGTERM']) process.once(name, async () => { await app.close(); process.exit(0); });
 }

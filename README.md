@@ -4,6 +4,8 @@
 
 **[Go TUI](cli/README.md)를 기존 [POC](POC/README.md)에 임시 연결**해 무료 모델로 대화합니다. Go 백엔드는 개발 뼈대입니다.
 
+무료 경로: Kilo API · OpenCode CLI · Cline CLI. 공급처별 로그인과 무료 할당량이 적용됩니다.
+
 ```text
 backend/   Go 게이트웨이
 cli/       Go TUI·임시 POC 클라이언트
