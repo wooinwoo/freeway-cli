@@ -27,7 +27,7 @@ func (f fixtureGateway) Stream(_ context.Context, _ string, messages []client.Me
 func TestConnectedConversationStreamsAndKeepsContext(t *testing.T) {
 	backend := fixtureGateway{requests: make(chan []client.Message, 2)}
 	m := NewConnected(context.Background(), backend)
-	m = update(m, m.Init()())
+	m = update(m, m.loadModels()())
 	m = update(m, tea.WindowSizeMsg{Width: 100, Height: 28})
 	for _, text := range []string{"Hello", "Remember my first message?"} {
 		m.prompt.SetValue(text)
@@ -42,7 +42,7 @@ func TestConnectedConversationStreamsAndKeepsContext(t *testing.T) {
 	if len(first) != 1 || len(second) != 3 || second[1].Role != "assistant" || second[1].Content != "안녕 🌏" {
 		t.Fatalf("conversation history was not sent on the next turn: %#v", second)
 	}
-	if len(m.messages) != 4 || !strings.Contains(m.status, "fixture") || strings.Contains(m.View().Content, "Not sent") {
+	if len(m.messages) != 4 || m.messages[3].Model != "fixture/free" || strings.Contains(m.View().Content, "Not sent") {
 		t.Fatal("connected response or routing status was not displayed")
 	}
 }

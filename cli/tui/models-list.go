@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/wooinwoo/freeway-cli/cli/client"
 )
 
@@ -17,7 +18,7 @@ type modelsList struct {
 
 type modelItem client.Model
 
-func (i modelItem) FilterValue() string { return i.Name + " " + i.ID }
+func (i modelItem) FilterValue() string { return i.Name + " " + i.ID + " " + i.Detail }
 
 type modelItemDelegate struct{}
 
@@ -35,9 +36,12 @@ func (d modelItemDelegate) Render(w io.Writer, m list.Model, index int, item lis
 	if index == m.Index() {
 		marker = "> "
 		style = style.Foreground(colors.active)
+		style = style.Background(colors.selected)
 	}
-	row := fmt.Sprintf("%s%d. %s", marker, index+1, i.Name)
-	fmt.Fprint(w, style.MaxWidth(m.Width()).Render(row))
+	nameWidth := menuNameWidth(m.Width())
+	prefix := fmt.Sprintf("%s%2d. ", marker, index+1)
+	row := prefix + padCells(terminalSafe(i.Name), nameWidth) + "  " + terminalSafe(i.Detail)
+	fmt.Fprint(w, style.MaxWidth(m.Width()).Render(padCells(ansi.Truncate(row, m.Width(), "…"), m.Width())))
 }
 
 func newModelsList() modelsList {
@@ -48,6 +52,7 @@ func newModelsList() modelsList {
 	l.SetShowPagination(false)
 	l.SetShowTitle(false)
 	l.SetShowHelp(false)
+	l.SetFilteringEnabled(false)
 	l.DisableQuitKeybindings()
 	return modelsList{list: l}
 }

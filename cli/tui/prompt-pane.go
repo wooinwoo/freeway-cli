@@ -10,7 +10,8 @@ import (
 func newPrompt() textarea.Model {
 	colors := grooveColors()
 	input := textarea.New()
-	input.Placeholder = "Type a message, or / for commands"
+	input.SetVirtualCursor(false)
+	input.Placeholder = "Message…  / commands  ↑ history"
 	input.SetPromptFunc(2, func(info textarea.PromptInfo) string {
 		if info.LineNumber == 0 {
 			return "› "
@@ -30,6 +31,15 @@ func newPrompt() textarea.Model {
 	input.DynamicHeight = true
 	input.MinHeight = 1
 	input.SetHeight(1)
-	input.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("ctrl+j", "alt+enter"))
+	input.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("ctrl+j", "ctrl+o", "alt+enter", "shift+enter"))
 	return input
+}
+
+func applyPromptTheme(input *textarea.Model) {
+	c := grooveColors()
+	styles := input.Styles()
+	styles.Focused.Prompt = lipgloss.NewStyle().Foreground(c.accent)
+	styles.Focused.CursorLine = styles.Focused.CursorLine.Background(lipgloss.NoColor{})
+	styles.Focused.EndOfBuffer = lipgloss.NewStyle().Foreground(c.muted)
+	input.SetStyles(styles)
 }

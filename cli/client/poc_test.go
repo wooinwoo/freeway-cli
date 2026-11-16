@@ -22,8 +22,17 @@ func fixturePOC(t *testing.T) *POC {
 	}
 	files := map[string]string{
 		"model-groups.mjs": `export const stateModelGroups = s => s.groups; export const rankedGroups = g => g;`,
-		"client.mjs": `import {open,unlink} from 'node:fs/promises';
+		"client.mjs": `import {open,unlink,readFile,writeFile} from 'node:fs/promises';
 export class Client {
+  async api(path,{method='GET',body}={}) {
+    const chats=JSON.parse(await readFile('fixture-chats.json','utf8').catch(()=>'[]'));
+    if(path==='/api/chats'&&method==='GET')return {data:chats};
+    if(method==='POST'){const chat={...body,id:'conversation-'+(chats.length+1),revision:1};chats.push(chat);await writeFile('fixture-chats.json',JSON.stringify(chats));return chat;}
+    const index=chats.findIndex(c=>path.endsWith('/'+c.id));if(index<0)throw new Error('chat not found');
+    if(method==='GET')return chats[index];
+    if(body.revision!==chats[index].revision)throw Object.assign(new Error('conflict'),{code:'chat_conflict',status:409});
+    chats[index]={...chats[index],...body,revision:body.revision+1};await writeFile('fixture-chats.json',JSON.stringify(chats));return chats[index];
+  }
   async state() {
     const lock = await open('bootstrap.lock','wx');
     await new Promise(r=>setTimeout(r,40));
@@ -35,8 +44,10 @@ export class Client {
   ]}; }
   async complete(body, {onText}) {
     if (body.model === 'wait') await new Promise(r => setTimeout(r,60000));
-    if (body.model === 'fail') throw new Error('quota exceeded');
-    if (body.messages.map(m=>m.role).join(',') !== 'system,user' || body.messages[0].content !== 'Keep context' || body.max_tokens !== 4096) throw new Error('request context lost');
+    if (body.model === 'fail') throw Object.assign(new Error('quota exceeded'),{code:'rate_limit_exceeded',status:429});
+    if(body.messages.some(m=>Object.keys(m).sort().join(',')!=='content,role'))throw new Error('UI metadata leaked upstream');
+    if (body.messages.map(m=>m.role).join(',') !== 'system,user' || body.messages[0].content !== 'Keep context' || body.max_tokens !== (body.model==='custom'?8192:4096)) throw new Error('request context lost');
+    if(body.model==='custom'&&body.temperature!==0.2)throw new Error('temperature lost');
     const content = 'Echo: ' + body.messages[1].content;
     onText('Echo: '); onText(body.messages[1].content);
     return {content,model:'fixture/free',provider:'fixture'};

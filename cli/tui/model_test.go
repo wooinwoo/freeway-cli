@@ -38,13 +38,13 @@ func TestPreviewInputStaysLocal(t *testing.T) {
 
 func TestModelSelectionAndFilterWithNoResults(t *testing.T) {
 	m := update(New(), tea.WindowSizeMsg{Width: 60, Height: 24})
-	m = update(m, press(tea.KeyTab))
+	m = update(m, tea.KeyPressMsg{Code: 'p', Mod: tea.ModAlt})
 	m = update(m, press(tea.KeyDown))
 	m = update(m, press(tea.KeyEnter))
 	if m.selected != "preview/deepseek" || m.modelsFocused || !m.prompt.Focused() {
 		t.Fatalf("model selection did not return focus: %s, %v", m.selected, m.modelsFocused)
 	}
-	m = update(m, press(tea.KeyTab))
+	m = update(m, tea.KeyPressMsg{Code: 'p', Mod: tea.ModAlt})
 	m.models.list.SetFilterText("no-such-model")
 	m = update(m, press(tea.KeyEnter))
 	if m.selected != "preview/deepseek" {
@@ -105,7 +105,7 @@ func TestModelMenuPreservesDraft(t *testing.T) {
 	if strings.Contains(m.View().Content, "preview/deepseek") || strings.Contains(m.View().Content, "┏") {
 		t.Fatal("chat view still contains a persistent model panel or thick frame")
 	}
-	m = update(m, tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
+	m = update(m, tea.KeyPressMsg{Code: 'p', Mod: tea.ModAlt})
 	if !strings.Contains(m.View().Content, "preview/deepseek") {
 		t.Fatal("model menu did not open")
 	}
@@ -114,7 +114,7 @@ func TestModelMenuPreservesDraft(t *testing.T) {
 	if m.selected != "preview/deepseek" || m.prompt.Value() != draft || !m.prompt.Focused() {
 		t.Fatal("model selection lost the draft or input focus")
 	}
-	m = update(m, press(tea.KeyTab))
+	m = update(m, tea.KeyPressMsg{Code: 'p', Mod: tea.ModAlt})
 	m = update(m, tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = update(m, press(tea.KeyEsc))
 	if m.modelsFocused || m.prompt.Value() != draft || !m.prompt.Focused() {

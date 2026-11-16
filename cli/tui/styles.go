@@ -3,21 +3,30 @@ package tui
 
 import (
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/compat"
+	"image/color"
+	"sync/atomic"
 )
 
 type schemeColors struct {
-	text, accent, border, active compat.AdaptiveColor
+	text, accent, border, active, code, muted, selected color.Color
 }
 
+var lightBackground atomic.Bool
+
 func grooveColors() schemeColors {
-	adaptive := func(dark, light string) compat.AdaptiveColor {
-		return compat.AdaptiveColor{Dark: lipgloss.Color(dark), Light: lipgloss.Color(light)}
+	adaptive := func(dark, light string) color.Color {
+		if lightBackground.Load() {
+			return lipgloss.Color(light)
+		}
+		return lipgloss.Color(dark)
 	}
 	return schemeColors{
-		text:   adaptive("#EBDBB2", "#3d2e07"),
-		accent: adaptive("#DD843B", "#a16f2a"),
-		border: adaptive("#C0A568", "#917536"),
-		active: adaptive("#98971A", "#7f9150"),
+		text:     adaptive("#DEE8E0", "#23372B"),
+		accent:   adaptive("#99D2A7", "#236844"),
+		border:   adaptive("#3D5344", "#8BAA94"),
+		active:   adaptive("#99D2A7", "#236844"),
+		code:     adaptive("#A7CBD7", "#245D77"),
+		muted:    adaptive("#748C7B", "#607468"),
+		selected: adaptive("#263E2C", "#E2EFE5"),
 	}
 }

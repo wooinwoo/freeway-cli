@@ -130,28 +130,25 @@ export class Engine {
       const limited = this.models().some(m => /limit|cooldown/.test(m.reason || ''));
       throw new GatewayError(limited ? '현재 무료 공급처 한도에 도달했습니다. 잠시 후 다시 시도하세요.' : '사용 가능한 무료 모델이 없습니다. 공급처를 연결하고 모델 목록을 동기화하세요.', limited ? 429 : 503, limited ? 'rate_limit_exceeded' : 'no_free_models', limited ? 60 : 0);
     }
-    // The fallback budget counts distinct models. All free routes for each
-    // selected model remain available before moving to the next model.
-    const selectedGroups=new Set();
-    return candidates.filter(m=>{
-      const id=groupIds.get(m.id)||modelIdentity(m);
-      if(selectedGroups.has(id))return true;
-      if(selectedGroups.size>=(this.store.data.settings.maxFallbacks||3))return false;
-      selectedGroups.add(id);return true;
-    }).map(m=>({...m,modelGroup:groupIds.get(m.id)||modelIdentity(m)}));
+    // Keep later routes available when an earlier failure cools down a whole
+    // provider. Only models actually requested consume the fallback budget.
+    return candidates.map(m=>({...m,modelGroup:groupIds.get(m.id)||modelIdentity(m)}));
   }
   async *complete(body, signal) {
     validateRequest(body);
     const candidates = await this.candidates(body);
     const id = 'chatcmpl-' + randomUUID(), created = Math.floor(Date.now() / 1000);
+    const attemptedGroups = new Set(), maxFallbacks = this.store.data.settings.maxFallbacks || 3;
     let lastError;
     for (const model of candidates) {
       if (signal.aborted) throw signal.reason;
       const provider = this.provider(model.provider);
       if(!providerReady(this.store,provider,this.providerBridge(provider)).ready)continue;
+      if (!attemptedGroups.has(model.modelGroup) && attemptedGroups.size >= maxFallbacks) continue;
       const config = providerConfig(this.store, provider);
       const reservation = this.store.reserve(provider, config);
       if (reservation.reason) { lastError = new GatewayError('공급처 무료 한도에 도달했습니다.', 429, reservation.reason, 60); continue; }
+      attemptedGroups.add(model.modelGroup);
       let started = false, output = '', usage, recorded = false;
       try {
         const adapter = ['opencode', 'cli'].includes(provider.kind)

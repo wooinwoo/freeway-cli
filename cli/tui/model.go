@@ -2,13 +2,14 @@ package tui
 
 import (
 	"context"
+	"os"
 	"strings"
+	"time"
 
+	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/wooinwoo/freeway-cli/cli/client"
 )
 
@@ -16,41 +17,99 @@ const minWidth, minHeight = 44, 12
 
 // Model owns transient screen state and delegates requests to its gateway adapter.
 type Model struct {
-	width, height int
-	chat          viewport.Model
-	prompt        textarea.Model
-	models        modelsList
-	modelsFocused bool
-	selected      string
-	messages      []client.Message
-	gateway       gateway
-	ctx           context.Context
-	busy          bool
-	cancel        context.CancelFunc
-	events        <-chan client.Event
-	generation    uint64
-	status        string
-	notice        string
-	loadingModels bool
-	ready         bool
+	interactionState
+	width, height                                                           int
+	chat                                                                    viewport.Model
+	prompt                                                                  textarea.Model
+	models                                                                  modelsList
+	modelsFocused                                                           bool
+	selected                                                                string
+	messages                                                                []client.Message
+	gateway                                                                 gateway
+	ctx                                                                     context.Context
+	busy                                                                    bool
+	cancel                                                                  context.CancelFunc
+	events                                                                  <-chan client.Event
+	generation                                                              uint64
+	status                                                                  string
+	notice                                                                  string
+	loadingModels                                                           bool
+	modelsStarted                                                           bool
+	ready                                                                   bool
+	availableModels                                                         []client.Model
+	menu                                                                    string
+	menuQuery                                                               string
+	menuAll                                                                 []list.Item
+	menuSearching                                                           bool
+	inputHistory                                                            []string
+	inputIndex                                                              int
+	inputDraft, lastRecalled                                                string
+	inputFiles                                                              map[string][]client.Attachment
+	inputDraftFiles                                                         []client.Attachment
+	historyQuery                                                            string
+	commandIndex                                                            int
+	startedAt, lastRender, lastEdit                                         time.Time
+	nextSave                                                                time.Time
+	renderPending                                                           bool
+	renderCache                                                             []renderedMessage
+	toast                                                                   string
+	toastUntil                                                              time.Time
+	settings                                                                client.Settings
+	session                                                                 client.Conversation
+	sessionEpoch                                                            uint64
+	dirty, saving, saveEnabled, loadingHistory, loadingSession, startupDone bool
+	saveError, afterSave, resumeID                                          string
+	startNew                                                                bool
+	startMode                                                               string
+	allSessions                                                             bool
+	reconnectAttempts                                                       int
+	history                                                                 []client.ConversationSummary
+	allHistory                                                              []client.ConversationSummary
+	copyText                                                                func(string) error
+	quitting                                                                bool
 }
 
 func New() Model {
-	return Model{
-		chat: viewport.New(), prompt: newPrompt(), models: newModelsList(),
-		selected: "preview/auto",
+	dir, _ := os.Getwd()
+	m := Model{
+		interactionState: interactionState{editingAt: -1, workdir: dir},
+		chat:             viewport.New(), prompt: newPrompt(), models: newModelsList(),
+		selected:    "preview/auto",
+		inputIndex:  -1,
+		settings:    client.Settings{MaxTokens: 4096, Temperature: 0.6},
+		saveEnabled: true,
 	}
+	for _, item := range m.models.list.Items() {
+		if model, ok := item.(modelItem); ok {
+			m.availableModels = append(m.availableModels, client.Model(model))
+		}
+	}
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
 	if m.gateway != nil {
-		return m.loadModels()
+		next, history := m.showHistory(true)
+		m = next.(Model)
+		if history != nil {
+			return tea.Batch(tick(), tea.RequestBackgroundColor, projectContext(m.workdir), history)
+		}
+		return tea.Batch(m.loadModels(), tick(), tea.RequestBackgroundColor, projectContext(m.workdir))
 	}
-	return nil
+	return tea.Batch(tick(), tea.RequestBackgroundColor, projectContext(m.workdir))
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.updateConvenience(msg); handled {
+		return next, cmd
+	}
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		lightBackground.Store(!msg.IsDark())
+		m.renderCache = nil
+		applyPromptTheme(&m.prompt)
+		m.renderMessages()
+		return m, nil
 	case modelsLoaded:
 		return m.receiveModels(msg)
 	case responseEvent:
@@ -63,33 +122,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyPressMsg:
+		if next, cmd, handled := m.shortcut(msg); handled {
+			return next, cmd
+		}
 		switch msg.String() {
 		case "ctrl+c":
-			m.stopResponse()
-			return m, tea.Quit
+			return m.handleInterrupt()
 		case "tab":
-			if m.usable() && m.modelCommandPending() {
-				m.prompt.SetValue("/model")
+			if m.usable() && m.commandPending() && !m.modelsFocused {
+				m.prompt.SetValue(m.commandSuggestion().Name)
 				m.layout()
 				return m, nil
 			}
-			if m.usable() {
-				return m.changeFocus(!m.modelsFocused)
+			if m.busy && !m.modelsFocused {
+				return m.queuePrompt()
 			}
-		case "ctrl+p":
 			if m.usable() {
-				return m.changeFocus(!m.modelsFocused)
-			}
-		case "esc":
-			if m.busy {
-				m.stopResponse()
-				m.status = "Cancelled"
-				m.renderMessages()
+				if m.modelsFocused {
+					return m.changeFocus(false)
+				}
+				if token, ok := m.fileToken(); ok {
+					return m.openFiles(token)
+				}
+				before := m.captureDraft()
+				m.recordUndo(before)
+				m.prompt.InsertString("    ")
+				m.markDraftChanged()
+				m.layout()
 				return m, nil
 			}
+		case "esc":
 			if m.modelsFocused {
 				return m.changeFocus(false)
 			}
+			if m.busy {
+				m.queuePaused = true
+				m.stopResponse()
+				m.status = "Stopped"
+				m.dirty = true
+				m.renderMessages()
+				return m, m.persist()
+			}
+			if m.editingAt >= 0 {
+				m.editingAt = -1
+				m.prompt.Reset()
+				m.files = nil
+				m.markDraftChanged()
+				m.layout()
+				m.notify("Edit cancelled. The original conversation is unchanged.")
+				return m, nil
+			}
+			if time.Since(m.lastEscape) < 500*time.Millisecond {
+				m.lastEscape = time.Time{}
+				return m.doubleEscape()
+			}
+			m.lastEscape = time.Now()
+			return m, nil
 		case "pgup":
 			if !m.modelsFocused {
 				m.chat.HalfPageUp()
@@ -101,7 +189,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "enter":
-			if !m.usable() || m.busy {
+			if !m.usable() {
 				return m, nil
 			}
 			if m.modelsFocused {
@@ -109,29 +197,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 				if item, ok := m.models.list.SelectedItem().(modelItem); ok {
-					m.selected = item.ID
-					return m.changeFocus(false)
+					return m.chooseItem(item)
 				}
 				return m, nil
 			}
-			if text := strings.TrimSpace(m.prompt.Value()); text != "" {
-				if text == "/model" || text == "/models" || m.modelCommandPending() {
-					m.prompt.Reset()
-					return m.changeFocus(true)
+			if m.busy {
+				if strings.HasPrefix(strings.TrimSpace(m.prompt.Value()), "/") {
+					return m.submit()
 				}
-				if m.gateway != nil && !m.ready {
-					return m, nil
-				}
-				m.messages = append(m.messages, client.Message{Role: "user", Content: text})
-				m.prompt.Reset()
-				m.layout()
-				if m.gateway != nil {
-					return m.startResponse()
-				}
-				m.renderMessages()
-				m.chat.GotoBottom()
+				return m.queuePrompt()
 			}
-			return m, nil
+			return m.submit()
 		}
 	case tea.MouseWheelMsg:
 		if m.modelsFocused {
@@ -150,7 +226,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.modelsFocused {
 		m.models, cmd = m.models.Update(msg)
 	} else {
+		before := m.captureDraft()
 		m.prompt, cmd = m.prompt.Update(msg)
+		if key, ok := msg.(tea.KeyPressMsg); ok && before.Text == m.prompt.Value() && key.String() != "" {
+			m.lastEditAction = "navigation"
+		}
+		if before.Text != m.prompt.Value() {
+			m.recordUndo(before)
+			m.lastEditAction = "typing"
+			m.dirty, m.lastEdit = true, time.Now()
+			m.commandIndex = 0
+			if m.prompt.Value() != m.lastRecalled {
+				m.inputIndex = -1
+			}
+			if key, ok := msg.(tea.KeyPressMsg); ok && key.Text == "@" {
+				if token, found := m.fileToken(); found {
+					return m.openFiles(token)
+				}
+			}
+		}
 		m.layout()
 	}
 	return m, cmd
@@ -164,13 +258,23 @@ func (m Model) modelCommandPending() bool {
 }
 
 func (m Model) changeFocus(models bool) (tea.Model, tea.Cmd) {
-	if m.busy {
-		return m, nil
-	}
 	m.modelsFocused = models
 	var cmd tea.Cmd
 	if models {
+		if m.menu == "" {
+			m.menu = "models"
+		}
+		if m.menu == "models" {
+			items := make([]list.Item, 0, len(m.availableModels))
+			for _, model := range m.availableModels {
+				items = append(items, modelItem(model))
+			}
+			m.models.list.SetItems(items)
+		}
 		m.prompt.Blur()
+		m.menuAll = append([]list.Item(nil), m.models.list.Items()...)
+		m.menuQuery = ""
+		m.menuSearching = false
 		m.models.list.ResetFilter()
 		for i, item := range m.models.list.Items() {
 			if item.(modelItem).ID == m.selected {
@@ -179,10 +283,11 @@ func (m Model) changeFocus(models bool) (tea.Model, tea.Cmd) {
 			}
 		}
 	} else {
+		m.menu = ""
 		cmd = m.prompt.Focus()
 	}
 	m.layout()
-	if models && m.gateway != nil && !m.loadingModels {
+	if models && m.menu == "models" && m.gateway != nil && !m.loadingModels && !m.busy {
 		m.loadingModels = true
 		return m, tea.Batch(cmd, m.loadModels())
 	}
@@ -194,8 +299,8 @@ func (m *Model) resize() {
 		return
 	}
 	m.chat.SetWidth(m.width - 4)
-	m.prompt.SetWidth(m.width - 4)
-	m.models.list.SetSize(m.width-4, min(8, m.height-8))
+	m.prompt.SetWidth(m.width - 8)
+	m.models.list.SetSize(m.width-4, max(1, m.height-8))
 	m.layout()
 	m.renderMessages()
 }
@@ -205,85 +310,17 @@ func (m *Model) layout() {
 		return
 	}
 	// The textarea keeps unlimited content; only its visible height is capped.
-	m.prompt.SetHeight(min(6, m.height-7, m.prompt.Height()))
-	bottomHeight := m.prompt.Height() + 4
-	if m.modelCommandPending() {
-		bottomHeight++
-	}
+	extra := len(m.composerExtraRows(max(1, m.width-4)))
+	m.prompt.SetHeight(min(6, max(1, m.height-9-extra), m.prompt.Height()))
+	bottomHeight := m.prompt.Height() + 4 + extra
 	if m.modelsFocused {
 		bottomHeight = m.models.list.Height() + 4
 	}
-	m.chat.SetHeight(max(1, m.height-2-bottomHeight))
+	m.chat.SetHeight(max(1, m.height-3-bottomHeight))
 }
 
 func (m *Model) renderMessages() {
-	colors := grooveColors()
-	marker := lipgloss.NewStyle().Foreground(colors.accent).Render("› ")
-	text := lipgloss.NewStyle().Width(m.chat.Width() - 2)
-	rows := make([]string, 0, len(m.messages))
-	for _, message := range m.messages {
-		content := ansi.Strip(message.Content)
-		if message.Role == "assistant" {
-			if content == "" && m.busy {
-				content = "Thinking..."
-			}
-			rows = append(rows, lipgloss.NewStyle().Width(m.chat.Width()).Render(content))
-		} else {
-			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, marker, text.Render(content)))
-		}
-	}
-	if m.notice != "" {
-		rows = append(rows, lipgloss.NewStyle().Width(m.chat.Width()).Render("Error: "+ansi.Strip(m.notice)))
-	}
-	m.chat.SetContent(strings.Join(rows, "\n\n"))
+	m.renderConversation()
 }
 
-func (m Model) View() tea.View {
-	var screen string
-	if !m.usable() {
-		screen = lipgloss.NewStyle().MaxWidth(max(1, m.width)).MaxHeight(max(1, m.height)).
-			Render("Resize to 44×12 or larger. Ctrl+C to quit.")
-	} else {
-		colors := grooveColors()
-		width := m.width - 4
-		line := lipgloss.NewStyle().Foreground(colors.border).Render(strings.Repeat("─", width))
-		heading := lipgloss.NewStyle().Foreground(colors.accent).Bold(true).Render("Freeway")
-		bottom := lipgloss.JoinVertical(lipgloss.Left, line, m.prompt.View(), line)
-		if m.modelCommandPending() {
-			bottom = lipgloss.JoinVertical(lipgloss.Left, bottom,
-				lipgloss.NewStyle().Foreground(colors.active).Render("› /model  Choose a model"))
-		}
-		status := m.selected + " · Preview · Not sent"
-		if m.gateway != nil {
-			status = m.selected + " · " + m.status
-		}
-		bottom = lipgloss.JoinVertical(lipgloss.Left, bottom, status)
-		help := "/model Models  Enter Send  Ctrl+J Newline  PgUp/Dn Scroll  Ctrl+C Quit"
-		if width < 76 {
-			help = "/model Models  Ctrl+J Newline  ^C Quit"
-		}
-		if m.modelCommandPending() {
-			help = "Enter Open  Tab Complete  Ctrl+C Quit"
-		}
-		if m.modelsFocused {
-			title := "Select model · Preview"
-			if m.gateway != nil {
-				title = "Select model · Free only"
-			}
-			bottom = lipgloss.JoinVertical(lipgloss.Left, line, title,
-				m.models.View(), m.selected+" · Current")
-			help = "↑↓ Move  Enter Select  / Search  Esc Back"
-			if m.models.list.SettingFilter() {
-				help = "Enter Apply filter  Esc Back"
-			}
-		}
-		bottom = lipgloss.JoinVertical(lipgloss.Left, bottom, help)
-		screen = lipgloss.NewStyle().Width(m.width).Padding(0, 2).Render(
-			lipgloss.JoinVertical(lipgloss.Left, heading, "", m.chat.View(),
-				lipgloss.NewStyle().MaxWidth(width).Render(bottom)))
-	}
-	view := tea.NewView(screen)
-	view.AltScreen = true
-	view.MouseMode = tea.MouseModeCellMotion
-	return view
-}
+func (m Model) View() tea.View { return m.workspaceView() }

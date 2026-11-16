@@ -15,6 +15,7 @@ function setup(t) {
   const bridge = new ClineBridge(dir, { fetcher: async () => Response.json({ free: [{ id: 'cline-free/test', name: 'Test' }],
     recommended: [{ id: 'paid/default' }], clinePass: [{ id: 'subscription/model' }] }),
     runner: (binary, args, options) => {
+      if (process.platform === 'win32' && binary === 'taskkill') return spawn(binary, args, options);
       assert.equal(args[args.indexOf('--auto-approve') + 1], 'false');
       assert.ok(args.includes('--acp'));
       assert.equal(options.env.CLINE_PROVIDER, 'cline');

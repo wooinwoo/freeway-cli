@@ -8,12 +8,27 @@ const text = (value, max, name) => {
   if (typeof value !== 'string' || value.length > max) bad(name + ' 형식이나 길이를 확인하세요.');
   return value;
 };
+const attachments=value=>{
+  if(!Array.isArray(value)||value.length>5)bad('A prompt supports up to five text files.');
+  return value.map(file=>{if(!file||typeof file!=='object')bad('Invalid file attachment.');return {path:text(file.path,1000,'File path'),content:text(file.content,200000,'File content')};});
+};
 function fields(body, previous = {}) {
   const result = { ...previous };
   if (!body || typeof body !== 'object' || Array.isArray(body)) bad('대화 설정 객체가 필요합니다.');
   if (body.title !== undefined) result.title = text(body.title, 120, '제목').trim() || '새 대화';
   if (body.model !== undefined) result.model = text(body.model, 300, '모델 ID');
   if (body.systemPrompt !== undefined) result.systemPrompt = text(body.systemPrompt, 20000, '시스템 지침');
+  if (body.draft !== undefined) result.draft = text(body.draft, 150000, '작성 중인 입력');
+  if(body.workspace!==undefined)result.workspace=text(body.workspace,4000,'Workspace');
+  if(body.draftFiles!==undefined)result.draftFiles=attachments(body.draftFiles);
+  if(body.queued!==undefined){
+    if(!Array.isArray(body.queued)||body.queued.length>20)bad('The follow-up queue supports up to 20 entries.');
+    result.queued=body.queued.map(item=>{
+      if(!item||typeof item!=='object'||Array.isArray(item))bad('Invalid queued prompt.');
+      return {text:text(item.text,150000,'Queued prompt'),files:attachments(item.files||[])};
+    });
+    if(JSON.stringify(result.queued).length>2000000)bad('The follow-up queue is too large.');
+  }
   if (body.settings !== undefined) {
     const s = body.settings;
     if (!s || typeof s !== 'object' || Array.isArray(s)) bad('생성 설정이 올바르지 않습니다.');
@@ -34,6 +49,7 @@ function fields(body, previous = {}) {
       const status = m.status ?? 'done';
       if (!['done','streaming','stopped','error'].includes(status)) bad('메시지 상태가 올바르지 않습니다.');
       const message = { id, role:m.role, content:text(m.content, 300000, '메시지'), status };
+      if(m.files!==undefined)message.files=attachments(m.files);
       for (const [key,max] of [['model',300],['reasoning',300000],['error',1000]]) if (m[key] !== undefined) message[key] = text(m[key],max,key);
       return message;
     });
@@ -60,7 +76,7 @@ export class Chats {
     renameSync(temp,this.path);
   }
   list() {
-    return this.data.map(c => ({id:c.id,title:c.title,model:c.model,createdAt:c.createdAt,updatedAt:c.updatedAt,
+    return this.data.map(c => ({id:c.id,title:c.title,model:c.model,workspace:c.workspace||'',hasDraft:Boolean(c.draft||c.draftFiles?.length),queuedCount:c.queued?.length||0,createdAt:c.createdAt,updatedAt:c.updatedAt,
       messageCount:c.messages.length,preview:(c.messages.find(m=>m.role==='user')?.content || '').slice(0,120)}))
       .sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
   }

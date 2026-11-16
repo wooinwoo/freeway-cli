@@ -18,22 +18,35 @@ import (
 var bridge string
 
 type Model struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Detail string `json:"detail,omitempty"`
 }
 
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	ID      string       `json:"id,omitempty"`
+	Role    string       `json:"role"`
+	Content string       `json:"content"`
+	Status  string       `json:"status,omitempty"`
+	Model   string       `json:"model,omitempty"`
+	Error   string       `json:"error,omitempty"`
+	Files   []Attachment `json:"files,omitempty"`
 }
 
 type Event struct {
-	Type     string  `json:"type"`
-	Text     string  `json:"text"`
-	Model    string  `json:"model"`
-	Provider string  `json:"provider"`
-	Error    string  `json:"error"`
-	Models   []Model `json:"models"`
+	Type          string                `json:"type"`
+	Text          string                `json:"text"`
+	Model         string                `json:"model"`
+	Provider      string                `json:"provider"`
+	Error         string                `json:"error"`
+	Models        []Model               `json:"models"`
+	Code          string                `json:"code,omitempty"`
+	Status        int                   `json:"status,omitempty"`
+	RetryAfter    int                   `json:"retryAfter,omitempty"`
+	Conversations []ConversationSummary `json:"conversations,omitempty"`
+	Conversation  *Conversation         `json:"conversation,omitempty"`
+	Prompts       []string              `json:"prompts,omitempty"`
+	Usage         *Usage                `json:"usage,omitempty"`
 }
 
 // POC delegates gateway startup, authentication and free routing to the existing Node client.
@@ -144,7 +157,7 @@ func (p *POC) run(ctx context.Context, request any, emit func(Event)) error {
 			break
 		}
 		if event.Type == "error" {
-			protocolError = errors.New(event.Error)
+			protocolError = &GatewayError{Message: event.Error, Code: event.Code, Status: event.Status, RetryAfter: event.RetryAfter}
 		} else {
 			emit(event)
 		}
