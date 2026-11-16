@@ -1,6 +1,6 @@
 # 최종 목표 구조와 현재 개발 틀
 
-기준일: 2026-11-16. 백엔드는 Go로 구성합니다. CLI/TUI의 구현 언어와 빌드 도구는 아직 정하지 않았습니다. 아래 구조는 저장소에 만든 개발 영역과 담당 경계를 나타냅니다. `.gitkeep`이 있는 영역은 구현 전의 빈 폴더입니다.
+기준일: 2026-11-16. 백엔드와 CLI/TUI는 Go로 구성합니다. TUI는 Nekot의 Bubble Tea 화면을 추린 독립 미리보기이며 백엔드와 연결하지 않았습니다. 아래 구조는 저장소에 만든 개발 영역과 담당 경계를 나타냅니다. `.gitkeep`이 있는 영역은 구현 전의 빈 폴더입니다.
 
 ## 전체 구조
 
@@ -34,9 +34,17 @@ freeway-cli/
 │       └── integration/            B: 내부 계층 통합 검사
 ├── cli/
 │   ├── README.md                   CLI 구현 상태와 경계
+│   ├── go.mod / go.sum             Go TUI 모듈·의존성 고정
+│   ├── cmd/freeway/main.go         A: TUI 실행 진입점
 │   ├── commands/                   A: 명령·백엔드 연결·시작
 │   ├── client/                     A: API 요청·스트리밍·취소
-│   └── tui/                        A: 터미널 화면·선택·상태
+│   └── tui/                        A: Nekot에서 추린 화면
+│       ├── model.go                대화·하단 입력·모델 메뉴·메모리 상태
+│       ├── models-list.go          샘플 모델 검색·선택
+│       ├── prompt-pane.go          여러 줄 입력
+│       ├── styles.go               Groovebox 색상
+│       ├── model_test.go           입력·초안 보존·모델 메뉴·창 크기 검사
+│       └── LICENSE                 Nekot 원본 MIT 고지
 ├── tests/
 │   ├── e2e/                        A: 실행 파일을 사용하는 사용자 흐름
 │   └── install/                    A: 설치·업데이트·제거
@@ -54,7 +62,7 @@ freeway-cli/
     └── research/                   기존 프로젝트 소스 분석
 ```
 
-`go.sum`은 외부 의존성이 생길 때 Go 도구가 생성합니다. CLI 언어를 선택하면 해당 언어의 진입점·패키지·빌드 파일을 `cli/` 안에 맞춥니다. 현재 화면·서버·설치기·CI가 구현됐다는 뜻은 아닙니다.
+`cli/`는 별도 Go 모듈이며 Bubble Tea·Bubbles·Lip Gloss를 사용합니다. `commands/`와 `client/`는 비어 있습니다. 서버·설치기·CI는 개발 틀입니다. TUI의 샘플 선택이나 입력은 실제 라우팅이 아닙니다.
 
 ## 실행과 통신 경계
 

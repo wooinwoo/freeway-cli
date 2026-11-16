@@ -2,11 +2,11 @@
 
 개인 PC에서 외부 API·공식 CLI·로컬 모델 서버를 연결하는 오픈소스 LLM 게이트웨이.
 
-현재는 **Go 백엔드 개발 뼈대**입니다. 실행 가능한 기존 구현은 [`POC/`](POC/README.md)에 있습니다.
+현재는 **Go 백엔드 개발 뼈대와 [TUI 미리보기](cli/README.md)**입니다. 기존 구현은 [`POC/`](POC/README.md)에 있습니다.
 
 ```text
 backend/   Go 게이트웨이
-cli/       CLI·TUI 개발 영역
+cli/       Go TUI 미리보기·CLI 개발 영역
 api/       클라이언트와 서버의 API 계약
 tests/     사용자 흐름·설치 검사
 scripts/   패키징·설치·릴리스
