@@ -1,6 +1,6 @@
 # 최종 목표 구조와 현재 개발 틀
 
-기준일: 2026-11-16. 백엔드와 CLI/TUI는 Go로 구성합니다. TUI는 Nekot의 Bubble Tea 화면을 추린 독립 미리보기이며 백엔드와 연결하지 않았습니다. 아래 구조는 저장소에 만든 개발 영역과 담당 경계를 나타냅니다. `.gitkeep`이 있는 영역은 구현 전의 빈 폴더입니다.
+기준일: 2026-11-16. 백엔드와 CLI/TUI는 Go로 구성합니다. TUI는 Nekot에서 추린 Bubble Tea 화면이며 **기존 Node.js POC에 임시 연결**했습니다. 최종 Go 백엔드와 API는 여전히 개발 틀입니다. 아래 구조는 저장소에 만든 개발 영역과 담당 경계를 나타냅니다. `.gitkeep`이 있는 영역은 구현 전의 빈 폴더입니다.
 
 ## 전체 구조
 
@@ -37,9 +37,14 @@ freeway-cli/
 │   ├── go.mod / go.sum             Go TUI 모듈·의존성 고정
 │   ├── cmd/freeway/main.go         A: TUI 실행 진입점
 │   ├── commands/                   A: 명령·백엔드 연결·시작
-│   ├── client/                     A: API 요청·스트리밍·취소
+│   ├── client/                     A: 임시 POC 어댑터, 이후 최종 API 클라이언트로 교체
+│   │   ├── poc.go                  Node 브리지 실행·스트림·취소
+│   │   ├── bridge.mjs              기존 POC 클라이언트 재사용
+│   │   └── poc_test.go             무료 필터·문맥·스트림·취소 fixture 검사
 │   └── tui/                        A: Nekot에서 추린 화면
 │       ├── model.go                대화·하단 입력·모델 메뉴·메모리 상태
+│       ├── gateway.go              어댑터 경계·비동기 요청·응답·취소
+│       ├── gateway_test.go         문맥 보존·취소 뒤 지연 이벤트 검사
 │       ├── models-list.go          샘플 모델 검색·선택
 │       ├── prompt-pane.go          여러 줄 입력
 │       ├── styles.go               Groovebox 색상
@@ -62,7 +67,20 @@ freeway-cli/
     └── research/                   기존 프로젝트 소스 분석
 ```
 
-`cli/`는 별도 Go 모듈이며 Bubble Tea·Bubbles·Lip Gloss를 사용합니다. `commands/`와 `client/`는 비어 있습니다. 서버·설치기·CI는 개발 틀입니다. TUI의 샘플 선택이나 입력은 실제 라우팅이 아닙니다.
+`cli/`는 별도 Go 모듈이며 Bubble Tea·Bubbles·Lip Gloss를 사용합니다. `commands/`는 비어 있습니다. Go 서버·설치기·CI는 개발 틀입니다. 기본 TUI는 임시 POC 어댑터를 사용하며 `--preview`에서만 샘플 모델을 표시합니다.
+
+## 임시 실행 경로
+
+```text
+Go TUI
+  └─ cli/client/poc.go
+      └─ 내장 Node 브리지 (표준입력 JSON / 표준출력 이벤트)
+          └─ 기존 POC/src/client.mjs
+              └─ 사용자 PC의 기존 POC 게이트웨이
+                  └─ 기존 무료 필터·라우팅·공급처
+```
+
+이 연결은 TUI에서 실제 무료 모델을 사용하기 위한 임시 구현입니다. 최종 Go 서버를 대신 완성한 것이 아니며, POC의 내부 통신 형식을 최종 HTTP 계약으로 채택하지 않습니다. 모델 목록·응답 스트림 어댑터만 교체하고 TUI를 유지하는 경계를 둡니다. `backend/`와 `api/openapi.yaml`은 이번 연결로 변경하지 않습니다. 대화 문맥은 TUI 메모리에 유지하며 기존 POC 대화 DB에 저장하지 않습니다.
 
 ## 실행과 통신 경계
 

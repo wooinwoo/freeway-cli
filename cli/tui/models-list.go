@@ -8,15 +8,16 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/wooinwoo/freeway-cli/cli/client"
 )
 
 type modelsList struct {
 	list list.Model
 }
 
-type modelItem string
+type modelItem client.Model
 
-func (i modelItem) FilterValue() string { return string(i) }
+func (i modelItem) FilterValue() string { return i.Name + " " + i.ID }
 
 type modelItemDelegate struct{}
 
@@ -35,12 +36,13 @@ func (d modelItemDelegate) Render(w io.Writer, m list.Model, index int, item lis
 		marker = "> "
 		style = style.Foreground(colors.active)
 	}
-	row := fmt.Sprintf("%s%d. %s", marker, index+1, i)
+	row := fmt.Sprintf("%s%d. %s", marker, index+1, i.Name)
 	fmt.Fprint(w, style.MaxWidth(m.Width()).Render(row))
 }
 
 func newModelsList() modelsList {
-	items := []list.Item{modelItem("preview/auto"), modelItem("preview/deepseek"), modelItem("preview/local")}
+	items := []list.Item{modelItem{ID: "preview/auto", Name: "preview/auto"},
+		modelItem{ID: "preview/deepseek", Name: "preview/deepseek"}, modelItem{ID: "preview/local", Name: "preview/local"}}
 	l := list.New(items, modelItemDelegate{}, 26, 12)
 	l.SetShowStatusBar(false)
 	l.SetShowPagination(false)

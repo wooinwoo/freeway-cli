@@ -24,7 +24,7 @@ func TestPreviewInputStaysLocal(t *testing.T) {
 		t.Fatalf("multiline input lost: %q", m.prompt.Value())
 	}
 	m = update(m, press(tea.KeyEnter))
-	if len(m.messages) != 1 || m.messages[0] != "안녕\n세계 🌏" {
+	if len(m.messages) != 1 || m.messages[0].Content != "안녕\n세계 🌏" {
 		t.Fatalf("local message was not preserved: %#v", m.messages)
 	}
 	if !strings.Contains(m.View().Content, "Not sent") || m.prompt.Value() != "" {
@@ -90,7 +90,7 @@ func TestComposerGrowsAndKeepsLongPaste(t *testing.T) {
 		t.Fatal("growing input moved the footer out of the terminal")
 	}
 	m = update(m, press(tea.KeyEnter))
-	if m.messages[0] != strings.TrimSpace(paste) || m.chat.ScrollPercent() != 1 {
+	if m.messages[0].Content != strings.TrimSpace(paste) || m.chat.ScrollPercent() != 1 {
 		t.Fatal("long conversation did not preserve its content and scroll to the last line")
 	}
 	if m.prompt.Height() != 1 || lipgloss.Height(m.View().Content) != 40 {

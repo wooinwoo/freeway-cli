@@ -26,7 +26,7 @@ Go 라이선스 원문은 [Go 저장소](https://go.dev/LICENSE), Node.js 고지
 - `util/shared-colors.go`의 Groovebox 팔레트를 `cli/tui/styles.go`로 추렸습니다. 원본 패널 테두리·다중 테마·Markdown 렌더러는 포함하지 않습니다.
 - `cli/tui/model.go`는 이 UI를 연결하는 새 화면 상태입니다. 원본 DB·업체 클라이언트·세션 오케스트레이터·웹 검색·제목 생성 코드는 가져오지 않았습니다.
 
-직접 사용하는 UI 모듈은 `charm.land/bubbles/v2 v2.1.1`, `charm.land/bubbletea/v2 v2.0.8`, `charm.land/lipgloss/v2 v2.0.5`이며 각각 MIT입니다. 모듈 소스를 저장소에 vendor하지 않습니다. 실행 파일을 배포할 때에는 전이 의존성까지 포함한 라이선스 묶음이 필요하며, 현재 작업은 소스와 로컬 실행 미리보기만 제공합니다.
+직접 사용하는 UI 모듈은 `charm.land/bubbles/v2 v2.1.1`, `charm.land/bubbletea/v2 v2.0.8`, `charm.land/lipgloss/v2 v2.0.5`, `github.com/charmbracelet/x/ansi v0.11.7`이며 각각 MIT입니다. ANSI 모듈은 응답에 포함된 터미널 제어 시퀀스를 표시 전에 제거하는 데 사용합니다. 모듈 소스를 저장소에 vendor하지 않습니다. 실행 파일을 배포할 때에는 전이 의존성까지 포함한 라이선스 묶음이 필요하며, 현재 작업은 소스와 로컬 실행용 빌드만 제공합니다.
 
 ## 외부 코드가 추가되면 남길 정보
 

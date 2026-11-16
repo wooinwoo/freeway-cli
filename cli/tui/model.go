@@ -1,17 +1,20 @@
 package tui
 
 import (
+	"context"
 	"strings"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/wooinwoo/freeway-cli/cli/client"
 )
 
 const minWidth, minHeight = 44, 12
 
-// Model contains only transient screen state. It does not connect to a provider.
+// Model owns transient screen state and delegates requests to its gateway adapter.
 type Model struct {
 	width, height int
 	chat          viewport.Model
@@ -19,7 +22,17 @@ type Model struct {
 	models        modelsList
 	modelsFocused bool
 	selected      string
-	messages      []string
+	messages      []client.Message
+	gateway       gateway
+	ctx           context.Context
+	busy          bool
+	cancel        context.CancelFunc
+	events        <-chan client.Event
+	generation    uint64
+	status        string
+	notice        string
+	loadingModels bool
+	ready         bool
 }
 
 func New() Model {
@@ -29,10 +42,19 @@ func New() Model {
 	}
 }
 
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd {
+	if m.gateway != nil {
+		return m.loadModels()
+	}
+	return nil
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case modelsLoaded:
+		return m.receiveModels(msg)
+	case responseEvent:
+		return m.receiveResponse(msg)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.resize()
@@ -43,6 +65,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
+			m.stopResponse()
 			return m, tea.Quit
 		case "tab":
 			if m.usable() && m.modelCommandPending() {
@@ -58,6 +81,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.changeFocus(!m.modelsFocused)
 			}
 		case "esc":
+			if m.busy {
+				m.stopResponse()
+				m.status = "Cancelled"
+				m.renderMessages()
+				return m, nil
+			}
 			if m.modelsFocused {
 				return m.changeFocus(false)
 			}
@@ -72,7 +101,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "enter":
-			if !m.usable() {
+			if !m.usable() || m.busy {
 				return m, nil
 			}
 			if m.modelsFocused {
@@ -80,7 +109,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 				if item, ok := m.models.list.SelectedItem().(modelItem); ok {
-					m.selected = string(item)
+					m.selected = item.ID
 					return m.changeFocus(false)
 				}
 				return m, nil
@@ -90,9 +119,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.prompt.Reset()
 					return m.changeFocus(true)
 				}
-				m.messages = append(m.messages, text)
+				if m.gateway != nil && !m.ready {
+					return m, nil
+				}
+				m.messages = append(m.messages, client.Message{Role: "user", Content: text})
 				m.prompt.Reset()
 				m.layout()
+				if m.gateway != nil {
+					return m.startResponse()
+				}
 				m.renderMessages()
 				m.chat.GotoBottom()
 			}
@@ -125,17 +160,20 @@ func (m Model) usable() bool { return m.width >= minWidth && m.height >= minHeig
 
 func (m Model) modelCommandPending() bool {
 	value := m.prompt.Value()
-	return !m.modelsFocused && strings.HasPrefix(value, "/") && strings.HasPrefix("/model", value)
+	return !m.modelsFocused && !m.busy && strings.HasPrefix(value, "/") && strings.HasPrefix("/model", value)
 }
 
 func (m Model) changeFocus(models bool) (tea.Model, tea.Cmd) {
+	if m.busy {
+		return m, nil
+	}
 	m.modelsFocused = models
 	var cmd tea.Cmd
 	if models {
 		m.prompt.Blur()
 		m.models.list.ResetFilter()
 		for i, item := range m.models.list.Items() {
-			if string(item.(modelItem)) == m.selected {
+			if item.(modelItem).ID == m.selected {
 				m.models.list.Select(i)
 				break
 			}
@@ -144,6 +182,10 @@ func (m Model) changeFocus(models bool) (tea.Model, tea.Cmd) {
 		cmd = m.prompt.Focus()
 	}
 	m.layout()
+	if models && m.gateway != nil && !m.loadingModels {
+		m.loadingModels = true
+		return m, tea.Batch(cmd, m.loadModels())
+	}
 	return m, cmd
 }
 
@@ -180,7 +222,18 @@ func (m *Model) renderMessages() {
 	text := lipgloss.NewStyle().Width(m.chat.Width() - 2)
 	rows := make([]string, 0, len(m.messages))
 	for _, message := range m.messages {
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, marker, text.Render(message)))
+		content := ansi.Strip(message.Content)
+		if message.Role == "assistant" {
+			if content == "" && m.busy {
+				content = "Thinking..."
+			}
+			rows = append(rows, lipgloss.NewStyle().Width(m.chat.Width()).Render(content))
+		} else {
+			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, marker, text.Render(content)))
+		}
+	}
+	if m.notice != "" {
+		rows = append(rows, lipgloss.NewStyle().Width(m.chat.Width()).Render("Error: "+ansi.Strip(m.notice)))
 	}
 	m.chat.SetContent(strings.Join(rows, "\n\n"))
 }
@@ -200,8 +253,12 @@ func (m Model) View() tea.View {
 			bottom = lipgloss.JoinVertical(lipgloss.Left, bottom,
 				lipgloss.NewStyle().Foreground(colors.active).Render("› /model  Choose a model"))
 		}
-		bottom = lipgloss.JoinVertical(lipgloss.Left, bottom, m.selected+" · Preview · Not sent")
-		help := "/model Models  Enter Add  Ctrl+J Newline  PgUp/Dn Scroll  Ctrl+C Quit"
+		status := m.selected + " · Preview · Not sent"
+		if m.gateway != nil {
+			status = m.selected + " · " + m.status
+		}
+		bottom = lipgloss.JoinVertical(lipgloss.Left, bottom, status)
+		help := "/model Models  Enter Send  Ctrl+J Newline  PgUp/Dn Scroll  Ctrl+C Quit"
 		if width < 76 {
 			help = "/model Models  Ctrl+J Newline  ^C Quit"
 		}
@@ -209,7 +266,11 @@ func (m Model) View() tea.View {
 			help = "Enter Open  Tab Complete  Ctrl+C Quit"
 		}
 		if m.modelsFocused {
-			bottom = lipgloss.JoinVertical(lipgloss.Left, line, "Select model · Preview",
+			title := "Select model · Preview"
+			if m.gateway != nil {
+				title = "Select model · Free only"
+			}
+			bottom = lipgloss.JoinVertical(lipgloss.Left, line, title,
 				m.models.View(), m.selected+" · Current")
 			help = "↑↓ Move  Enter Select  / Search  Esc Back"
 			if m.models.list.SettingFilter() {
