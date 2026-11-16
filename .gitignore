@@ -1,8 +1,23 @@
 .data/
 .env
+.env.*
+!.env.example
 node_modules/
 runtime/
 *.log
 
 # Local document exports
 docs/planning/exports/
+
+# Build output and private local state
+/dist/
+/build/
+/backend/freewayd
+/backend/freewayd.exe
+/cli/target/
+*.test
+*.test.exe
+coverage.out
+*.db
+*.db-shm
+*.db-wal

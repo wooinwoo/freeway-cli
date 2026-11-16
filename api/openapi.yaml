@@ -1,0 +1,12 @@
+openapi: 3.1.0
+info:
+  title: Freeway Local Gateway API
+  version: 0.0.0
+  description: >-
+    Contract scaffold for the planned Go backend. No HTTP operations are defined
+    or implemented yet. Streaming, errors, cancellation, and authentication must
+    be specified with their first implementation.
+  license:
+    name: MIT
+    identifier: MIT
+paths: {}

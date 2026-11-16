@@ -43,37 +43,58 @@ OpenCode 실증에서는 무료 한도 초과, Cline의 해당 DeepSeek 실증�
 
 CLI·외부 클라이언트는 로컬 게이트웨이를 사용한다. A의 어댑터가 외부 API·공식 CLI와 연결하고, B의 코어가 기능·비용·상태를 보고 선택·예약·실행·정산한다. 텍스트 실행과 코딩 도구 호출은 각각의 계약을 지키는 경로로 제공한다.
 
-# 6. 우리 폴더 구조
+## 6. 우리 폴더 구조
 
-아래는 기존 Node POC를 기준으로 한 목표 구조다. 현재 파일을 전부 옮기는 것을 첫 작업으로 삼지 않고, 실제 변경하는 기능부터 책임에 맞춘다.
+백엔드는 Go 기준으로 갱신했다. 기존 Node 구현은 `POC/`에 보존한다. 아래 개발 틀을 저장소에 만들었으며, CLI 언어와 각 계층의 실제 기능은 아직 구현 전이다. 최신 책임·통신·테스트 경계는 [전체 구조](../development/architecture.md)를 따른다.
 
 ```text
 freeway-cli/
-  cli.mjs                     # A: 명령 진입점
-  server.mjs                  # B: 로컬 게이트웨이 진입점
-  src/
-    contracts/                # B: 경로·기능·이벤트·오류 계약
-    providers/                # A: 공급처·로그인·모델·어댑터
-    core/                     # B: 선택·실행·전환·취소
-    state/                    # B: 비밀 저장·한도·잠금·대화
-    api/                      # B: HTTP·SSE·MCP
-    cli/                      # A: 명령·게이트웨이 클라이언트
-    tui/                      # A: 화면·선택·상태 표시
-  tests/
-    providers/                # A: 공급처 입출력·실제 호출
-    core/                     # B: 정책·예약·실패·복구
-    api/                      # B: 호환 계약·스트림·취소
-    install/                  # A: 설치·업데이트·제거
-  scripts/
-    package/                  # A: 포함 파일·패키징 명령
-    install/                  # A: 설치기·버전 교체
-    migrate/                  # B: 데이터 이전·복호화·복구
-    ci/                       # B: 검사·버전·체크섬·릴리스
-  docs/
-    user/                     # A: 설치·공급처·CLI·문제 해결
-    api/                      # B: API 참고
-    development/              # B: 어댑터 계약·검사 방법
-    planning/                 # 기획·설계·실증 근거
+├── README.md                       간단한 프로젝트 소개
+├── LICENSE                         MIT 원문
+├── THIRD_PARTY_NOTICES.md           제3자 코드·런타임의 적용 범위
+├── CONTRIBUTING.md                 개발·기여 방법
+├── .gitignore
+├── POC/                            기존 Node.js 구현 보존
+├── api/
+│   └── openapi.yaml                B: HTTP·SSE 통신 계약의 틀
+├── backend/
+│   ├── go.mod                      Go 모듈과 최소 버전
+│   ├── cmd/
+│   │   └── freewayd/
+│   │       └── main.go             B: 실행 진입점의 틀
+│   ├── internal/
+│   │   ├── app/                    B: 구성 조립·설정·시작·종료·잠금
+│   │   ├── contracts/              B: 업체·코어 간 Go 인터페이스
+│   │   ├── api/                    B: HTTP·SSE 요청 처리
+│   │   ├── mcp/                    B: MCP stdio와 로컬 API 중계
+│   │   ├── router/                 B: 선택·실행·전환·취소
+│   │   ├── quota/                  B: 한도·예약·정산·리셋
+│   │   ├── session/                B: 대화·실행 상태
+│   │   ├── auth/                   B: 로컬 인증·비밀 저장
+│   │   ├── storage/                B: 영속화·데이터 이전·복구
+│   │   └── providers/              A: 업체 API·CLI·OAuth·모델·한도 관측
+│   └── tests/
+│       └── integration/            B: 내부 계층 통합 검사
+├── cli/
+│   ├── README.md                   CLI 구현 상태와 경계
+│   ├── commands/                   A: 명령·백엔드 연결·시작
+│   ├── client/                     A: API 요청·스트리밍·취소
+│   └── tui/                        A: 터미널 화면·선택·상태
+├── tests/
+│   ├── e2e/                        A: 실행 파일을 사용하는 사용자 흐름
+│   └── install/                    A: 설치·업데이트·제거
+├── scripts/
+│   ├── package/                    A: CLI·백엔드 패키징
+│   ├── install/                    A: 설치·버전 교체
+│   └── release/                    B: 버전·체크섬·릴리스
+├── .github/
+│   └── workflows/                  B: 자동 검사·빌드·배포
+└── docs/
+    ├── user/                       A: 사용자 문서
+    ├── api/                        B: API 설명
+    ├── development/                B: 공통 개발 규칙, A: 담당 영역 보완
+    ├── planning/                   공개 기획·설계·분업
+    └── research/                   기존 프로젝트 소스 분석
 ```
 
 ## 7. 분업과 첫 결과물
