@@ -1,0 +1,1490 @@
+{
+  "status": "planning_only",
+  "roles": {
+    "A": "공급처 공식 연결·어댑터·CLI/TUI·사용자 docs·패키징·설치 담당",
+    "B": "공통 계약·라우팅·한도·API·비밀 저장·데이터 이전·CI·릴리스 담당"
+  },
+  "groups": [
+    {
+      "id": "W01",
+      "title": "제품 범위와 현재 상태",
+      "goal": "두 작업자가 같은 사용자 흐름과 모델 범위를 구현하도록 기준선을 고정한다.",
+      "sections": [
+        {
+          "id": "W01.01",
+          "title": "사용 시나리오와 범위 합의",
+          "tasks": [
+            {
+              "id": "W01.01.01",
+              "title": "사용자 요청과 실패 시나리오 정리",
+              "owner": "A",
+              "stage": "M0",
+              "dependsOn": [],
+              "work": "집에서 코딩하는 사용자, API를 붙이는 개발자, CLI 텍스트 위임의 시작·성공·실패 흐름을 분리한다. 한도 소진 시 기대하는 행동을 예시로 적는다.",
+              "deliverable": "사용자 여정 3개와 실패 시나리오 목록",
+              "acceptance": "각 흐름에 입력·원하는 출력·실패 시 다음 행동이 있고 서로 다른 계약이 섞이지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P1",
+                "P2",
+                "P3"
+              ]
+            },
+            {
+              "id": "W01.01.02",
+              "title": "대표 모델과 지원 환경 확정",
+              "owner": "A",
+              "stage": "M0",
+              "dependsOn": [
+                "W01.01.01"
+              ],
+              "work": "DeepSeek 버전과 Muse 변형, 첫 지원 OS, 모델 고정과 Auto의 허용 범위를 명시한다. 아직 결정하지 않은 항목은 질문과 기본 가정으로 남긴다.",
+              "deliverable": "대표 모델·OS·필수 기능 범위표",
+              "acceptance": "Glimmer와 Spark 같은 다른 모델을 같은 요구로 취급하지 않고 미결정 항목을 숨기지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P1",
+                "P2",
+                "P3"
+              ]
+            },
+            {
+              "id": "W01.01.03",
+              "title": "MVP와 제외 범위 고정",
+              "owner": "B",
+              "stage": "M0",
+              "dependsOn": [
+                "W01.01.01",
+                "W01.01.02"
+              ],
+              "work": "기능을 첫 출시 필수·조건부·후속으로 나눈다. 공용 서버·전면 언어 전환·에이전트 상태 이식이 자동으로 들어오지 않게 한다.",
+              "deliverable": "MVP 범위표와 G0~G4 게이트",
+              "acceptance": "각 필수 기능에 완료 증거가 있고 조건부 기능 없이도 출시 가능한 경로를 설명할 수 있다.",
+              "status": "planned",
+              "problemIds": [
+                "P1",
+                "P2",
+                "P3"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "W01.02",
+          "title": "코드와 실현 가능성 기준선",
+          "tasks": [
+            {
+              "id": "W01.02.01",
+              "title": "기존 코드와 명령 기준선 기록",
+              "owner": "B",
+              "stage": "M0",
+              "dependsOn": [
+                "W01.01.01"
+              ],
+              "work": "현재 커밋의 모듈·API·CLI·저장 경로를 기록한다. 테스트 명령이 가리키는 파일의 실제 존재도 확인한다.",
+              "deliverable": "코드 지도와 기존 동작 fixture 목록",
+              "acceptance": "구현된 것·문서에만 있는 것·새 제안을 구분하고 재작성할 기능의 이유가 있다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W01.02.02",
+              "title": "공급처 증거 등록 방식 정리",
+              "owner": "A",
+              "stage": "M0",
+              "dependsOn": [
+                "W01.01.03"
+              ],
+              "work": "공식 무료 조건, 목록 조회, 실제 호출, 기능 보존, 전체 비용을 다른 상태로 기록한다. 만료와 확인 날짜도 포함한다.",
+              "deliverable": "비밀 없는 probe 기록 양식과 공급처 등록 규칙",
+              "acceptance": "목록 확인만으로 추론 성공이나 무제한 무료라고 표시되지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P1"
+              ]
+            },
+            {
+              "id": "W01.02.03",
+              "title": "대표 경로로 제품 진행 여부 판단",
+              "owner": "B",
+              "stage": "M0",
+              "dependsOn": [
+                "W02.01.01",
+                "W02.01.02",
+                "W02.01.03"
+              ],
+              "work": "대표 무료 경로의 성공·실패·미확인을 비교하고 기존 OpenRouter 설정으로 충분한지 판단한다. 부족하면 자체 범위와 제외할 경로를 정한다.",
+              "deliverable": "Go·축소·보류 판단과 근거",
+              "acceptance": "실제 결과로 판단하고 미인증 경로를 성공으로 계산하지 않는다. 대체 대표 경로가 필요하면 범위를 다시 기록한다.",
+              "status": "planned",
+              "problemIds": [
+                "P1"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W02",
+      "title": "공급처 조사와 어댑터",
+      "goal": "A는 검증 가능한 무료 경로와 정규화된 입출력을 B에게 제공한다.",
+      "sections": [
+        {
+          "id": "W02.01",
+          "title": "대표 무료 경로 실증",
+          "tasks": [
+            {
+              "id": "W02.01.01",
+              "title": "OpenCode 무료 DeepSeek 확인",
+              "owner": "A",
+              "stage": "M0",
+              "dependsOn": [
+                "W01.01.02",
+                "W01.02.02"
+              ],
+              "work": "공식 CLI 버전과 무료 모델 ID를 고정하고 텍스트·system·멀티턴·취소·전체 비용을 시험한다. 도구 호출 보존은 별도 판정한다.",
+              "deliverable": "OpenCode probe·기능표·정규화 fixture",
+              "acceptance": "최종 응답이나 구체적 차단 원인이 남고 텍스트 브리지를 코딩 API로 과장하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P1"
+              ]
+            },
+            {
+              "id": "W02.01.02",
+              "title": "Cline 무료 권한과 headless 확인",
+              "owner": "A",
+              "stage": "M0",
+              "dependsOn": [
+                "W01.01.02",
+                "W01.02.02"
+              ],
+              "work": "공식 로그인으로 재인증하고 무료 모델 표시·CLI JSON·취소·도구 권한을 확인한다. 무료 API 제외 조건을 기록한다.",
+              "deliverable": "Cline probe와 실행 계약 판정",
+              "acceptance": "추론·텍스트·작업 중 가능한 계약을 구분하며 인증 실패를 한도 소진으로 처리하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P1"
+              ]
+            },
+            {
+              "id": "W02.01.03",
+              "title": "Requesty Muse 무료 API 확인",
+              "owner": "A",
+              "stage": "M0",
+              "dependsOn": [
+                "W01.01.02",
+                "W01.02.02"
+              ],
+              "work": "Glimmer의 정확한 ID·키·무료 계정 조건·일일 한도를 확인하고 최소 호출과 usage를 기록한다. Spark·Wonder와 혼동하지 않는다.",
+              "deliverable": "Muse 경로 probe·가격 근거·요청 fixture",
+              "acceptance": "현재 계정의 응답과 전체 비용이 확인되거나 남은 차단 조건이 명시된다.",
+              "status": "planned",
+              "problemIds": [
+                "P1"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "W02.02",
+          "title": "실행 어댑터 구현",
+          "tasks": [
+            {
+              "id": "W02.02.01",
+              "title": "직접 API 어댑터 구현",
+              "owner": "A",
+              "stage": "M1",
+              "dependsOn": [
+                "W03.01.01",
+                "W03.01.02",
+                "W03.02.01"
+              ],
+              "work": "공통 HTTP 경로로 모델 조회·메시지·SSE·usage·오류·AbortSignal을 처리한다. 서로 다른 직접 API 두 경로의 fixture를 적용한다. 원격 공급처와 사용자 PC의 로컬 모델 서버를 구분해 연결하고, 각 엔드포인트의 지원 API·기능·취소 계약을 검사한다.",
+              "deliverable": "직접 API 어댑터와 provider fixture",
+              "acceptance": "옵션을 조용히 버리지 않고 스트림·도구 지원 여부와 비용 근거가 계약과 일치한다. 로컬 모델 서버 연결도 같은 요청 계약을 통과하며 로컬 CLI 실행과 로컬 모델 추론을 구분한다.",
+              "status": "planned",
+              "problemIds": [
+                "P1"
+              ]
+            },
+            {
+              "id": "W02.02.02",
+              "title": "OpenCode 공식 서버 브리지 정리",
+              "owner": "A",
+              "stage": "M1",
+              "dependsOn": [
+                "W02.01.01",
+                "W03.02.01",
+                "W04.01.02"
+              ],
+              "work": "검증한 버전의 서버·세션·텍스트 이벤트와 취소를 연결한다. 자신이 띄운 프로세스만 정리하고 지원하지 않는 도구 계약은 제외한다. 실제 공급처 메시지 Free usage exceeded, subscribe to Go를 무료 한도 소진으로 분류한다. 현재 브리지가 upstream_retry 503으로 반환한 실증을 회귀 fixture로 추가한다.",
+              "deliverable": "OpenCode 브리지와 버전별 fixture",
+              "acceptance": "세션 정리·취소·프로세스 종료가 확인되고 기존 사용자 OpenCode를 종료하지 않는다. 해당 원문은 한도 오류로 정규화되고 원문 원인과 공통 오류를 함께 추적할 수 있다.",
+              "status": "planned",
+              "problemIds": [
+                "P1"
+              ]
+            },
+            {
+              "id": "W02.02.03",
+              "title": "Cline CLI 어댑터 구현",
+              "owner": "A",
+              "stage": "조건부",
+              "dependsOn": [
+                "W02.01.02",
+                "W03.02.01",
+                "W04.01.02"
+              ],
+              "work": "검증한 headless JSON을 파싱해 텍스트 또는 작업 이벤트로 변환한다. 로그를 답변에 섞지 않고 읽기 전용 보호 가능성을 B에게 전달한다.",
+              "deliverable": "Cline 어댑터와 권한·출력 fixture",
+              "acceptance": "해당 계약이 실증된 경우에만 활성화하고 미지원 기능은 정확히 거절한다.",
+              "status": "planned",
+              "problemIds": [
+                "P1"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W03",
+      "title": "공통 모델과 실행 계약",
+      "goal": "B가 공통 타입·이벤트·오류를 먼저 고정해 공급처와 코어가 독립적으로 작업하게 한다.",
+      "sections": [
+        {
+          "id": "W03.01",
+          "title": "모델·경로·무료 권한",
+          "tasks": [
+            {
+              "id": "W03.01.01",
+              "title": "모델과 경로 식별 정의",
+              "owner": "B",
+              "stage": "M0",
+              "dependsOn": [
+                "W01.02.01"
+              ],
+              "work": "모델 버전·공급처·계정 연결·실행 종류를 분리한다. 기존 공급처 ID와 그룹 ID의 대응을 기록한다.",
+              "deliverable": "Route·ModelIdentity 예시와 기존 ID 매핑",
+              "acceptance": "동일 버전만 병합하며 애매한 alias가 자동 합쳐지지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W03.01.02",
+              "title": "기능과 무료 근거 스키마 정의",
+              "owner": "B",
+              "stage": "M0",
+              "dependsOn": [
+                "W03.01.01",
+                "W01.02.02"
+              ],
+              "work": "text·tools·stream 등의 확인 수준과 가격·기간·권한·추가 비용을 표현한다. unknown remaining과 unknown price를 구분한다.",
+              "deliverable": "Capability·Entitlement 스키마",
+              "acceptance": "지원·문서·미확인·미지원이 구분되고 주 모델 0원만으로 전체 무료로 승격되지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W03.01.03",
+              "title": "가짜 어댑터와 계약 예제 작성",
+              "owner": "B",
+              "stage": "M0",
+              "dependsOn": [
+                "W03.01.01",
+                "W03.01.02",
+                "W03.02.01"
+              ],
+              "work": "성공·429·인증 만료·시작 전 실패·중간 오류를 반환하는 가짜 어댑터를 만든다. A가 공급처 없이 이벤트를 맞출 수 있게 한다.",
+              "deliverable": "가짜 어댑터와 입출력 fixture",
+              "acceptance": "네트워크·개인 키 없이 코어와 UI의 기본 흐름을 재현할 수 있다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "W03.02",
+          "title": "이벤트·오류·호환성",
+          "tasks": [
+            {
+              "id": "W03.02.01",
+              "title": "정규화 이벤트와 오류 정의",
+              "owner": "B",
+              "stage": "M0",
+              "dependsOn": [
+                "W01.02.01"
+              ],
+              "work": "text delta·tool delta·usage·완료·실패·취소의 필드를 정한다. 인증·권한·일시 제한·할당 소진·부분 실패를 구분한다.",
+              "deliverable": "이벤트와 오류 계약 v1",
+              "acceptance": "A가 실제 공급처 결과를 하나의 의미로 변환하고 B가 공급처 문자열을 직접 해석하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W03.02.02",
+              "title": "외부 API 지원 범위 정의",
+              "owner": "B",
+              "stage": "M0",
+              "dependsOn": [
+                "W03.01.02",
+                "W03.02.01"
+              ],
+              "work": "기존 역할과 API를 보존할 범위, 파라미터 변환·거절 규칙, 응답 model 의미, SSE 오류 계약을 고정한다.",
+              "deliverable": "호환 API 지원표와 요청·응답 예제",
+              "acceptance": "기존 developer 역할과 tool 이력의 처리 여부가 명확하고 미지원 옵션이 숨겨지지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W03.02.03",
+              "title": "CLI 계약별 활성화 기준 정의",
+              "owner": "B",
+              "stage": "M0",
+              "dependsOn": [
+                "W03.01.01",
+                "W03.02.01"
+              ],
+              "work": "inference-api·cli-text·agent-task 각각 어떤 시험을 통과해야 노출되는지 정한다. MCP read-only 의미도 고정한다.",
+              "deliverable": "계약별 활성화 체크와 capability 규칙",
+              "acceptance": "CLI 텍스트가 도구 호출 API로 자동 등록되지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W04",
+      "title": "연결과 자격증명",
+      "goal": "A는 공식 연결 방식과 인증 상태를 관리하며 키가 UI·로그·자식 프로세스에 새지 않게 한다.",
+      "sections": [
+        {
+          "id": "W04.01",
+          "title": "공식 연결 흐름",
+          "tasks": [
+            {
+              "id": "W04.01.01",
+              "title": "직접 API 키 연결",
+              "owner": "A",
+              "stage": "M1",
+              "dependsOn": [
+                "W03.01.01",
+                "W03.01.02"
+              ],
+              "work": "숨김 입력이나 표준입력으로 키를 받고 해당 연결에만 저장한다. 키 확인과 실제 추론 probe를 구분한다.",
+              "deliverable": "키 연결·해제 흐름과 상태 응답",
+              "acceptance": "키가 명령 인자·stdout·사용자 docs에 남지 않고 연결 해제가 다른 계정에 영향을 주지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P1",
+                "P3"
+              ]
+            },
+            {
+              "id": "W04.01.02",
+              "title": "공식 CLI 로그인 연결",
+              "owner": "A",
+              "stage": "M1",
+              "dependsOn": [
+                "W02.01.01",
+                "W02.01.02",
+                "W03.01.01"
+              ],
+              "work": "설치·지원 버전·로그인·만료를 공식 인터페이스로 확인한다. 비공개 저장소에서 키를 추출하는 방식을 제품 계약으로 쓰지 않는다.",
+              "deliverable": "CLI 연결 어댑터와 재로그인 안내",
+              "acceptance": "로그인 실패·미설치·버전 불일치를 구분하고 이미 연결한 계정에 반복 승인을 요구하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P1",
+                "P3"
+              ]
+            },
+            {
+              "id": "W04.01.03",
+              "title": "연결 상태 전이 구현",
+              "owner": "A",
+              "stage": "M1",
+              "dependsOn": [
+                "W04.01.01",
+                "W04.01.02",
+                "W03.02.01"
+              ],
+              "work": "미연결·준비됨·인증 만료·권한 없음·비활성을 정규화한다. quota 상태는 연결 인증과 분리한다.",
+              "deliverable": "ConnectionState와 상태 전이 fixture",
+              "acceptance": "401·403·429가 같은 잠깐 대기 상태로 합쳐지지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P1",
+                "P3"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "W04.02",
+          "title": "비밀과 데이터 경계",
+          "tasks": [
+            {
+              "id": "W04.02.01",
+              "title": "비밀 참조와 저장 보호",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W03.01.01",
+                "W01.02.01"
+              ],
+              "work": "공통 비밀 저장 API와 참조 형식을 정의하고 기존 vault.key와 암호화 상태를 보존한다. 공급처 연결 담당은 이 API에 비밀을 저장하고 참조만 전달한다. 공급처별 로그인·토큰 갱신은 이 태스크에 넣지 않는다.",
+              "deliverable": "비밀 저장·참조 API와 키 보호·로그 마스킹 공통 규칙",
+              "acceptance": "어댑터와 UI가 별도 비밀 저장소를 만들지 않고 공통 참조로 접근하며, 기존 암호문 복호화가 유지된다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W04.02.02",
+              "title": "자식 환경과 오류 마스킹",
+              "owner": "A",
+              "stage": "M1",
+              "dependsOn": [
+                "W03.02.01",
+                "W04.02.01"
+              ],
+              "work": "어댑터에 필요한 환경만 전달하고 원문 오류·헤더·명령·진단의 비밀을 마스킹한다.",
+              "deliverable": "환경 허용 목록과 마스킹 fixture",
+              "acceptance": "가짜 키를 넣은 오류와 자식 실행 기록에서 키가 검색되지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W04.02.03",
+              "title": "공급처 연결 수용 시험",
+              "owner": "A",
+              "stage": "M1",
+              "dependsOn": [
+                "W04.01.03",
+                "W04.02.02"
+              ],
+              "work": "연결·만료·해제·재연결을 실제 CLI와 가짜 공급처로 나눠 확인한다. 추론을 하는 probe는 별도 표시한다.",
+              "deliverable": "연결 시험과 사용자 조치 표",
+              "acceptance": "읽기 전용 상태 점검이 유료 또는 보조 모델을 호출하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P1",
+                "P3"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W05",
+      "title": "라우팅 정책과 실행",
+      "goal": "B는 경로 선택과 실행의 소유자이며 A의 어댑터에 대체 판단을 넣지 않는다.",
+      "sections": [
+        {
+          "id": "W05.01",
+          "title": "후보 계획",
+          "tasks": [
+            {
+              "id": "W05.01.01",
+              "title": "모델 고정과 Auto 구현",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W03.01.01",
+                "W03.01.03"
+              ],
+              "work": "exact route·exact model·free auto의 후보 범위를 분리한다. 모델 고정 요청이 다른 변형으로 이동하지 않게 한다.",
+              "deliverable": "선택 모드와 후보 생성 시험",
+              "acceptance": "고정 모드에서 허용되지 않은 경로의 전송 횟수가 0이다.",
+              "status": "planned",
+              "problemIds": [
+                "P2"
+              ]
+            },
+            {
+              "id": "W05.01.02",
+              "title": "비용과 기능 사전 필터",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W03.01.02",
+                "W05.01.01"
+              ],
+              "work": "필요 도구·컨텍스트·출력 길이·무료 근거·보조 비용·기간을 검사한다. unknown 기능은 필요한 요청에서 제외한다.",
+              "deliverable": "eligibility 필터와 제외 코드",
+              "acceptance": "유료·가격 불명·기능 미지원 후보를 실제 호출 전에 제거한다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W05.01.03",
+              "title": "선호 순서와 explain 구현",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W05.01.02",
+                "W06.01.01"
+              ],
+              "work": "모델 선호·공급처 우선순위·준비 상태로 정렬하고 제외 이유를 반환한다. 초기에는 별도 판단 LLM을 호출하지 않는다.",
+              "deliverable": "라우팅 계획과 explain JSON",
+              "acceptance": "고정 시계·고정 상태에서 선택이 재현되고 explain은 추론을 하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P2",
+                "P3"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "W05.02",
+          "title": "시도와 복구",
+          "tasks": [
+            {
+              "id": "W05.02.01",
+              "title": "시도 예산과 시간 제한",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W05.01.03",
+                "W06.01.02"
+              ],
+              "work": "전체 시간·경로 시도 수·대체 모델 수를 제한한다. 외부 라우터 내부 대체와 중첩될 때도 총 시간을 통제한다.",
+              "deliverable": "Attempt 실행기와 예산 fixture",
+              "acceptance": "모든 후보가 실패해도 유한한 시간과 횟수 안에 종료한다.",
+              "status": "planned",
+              "problemIds": [
+                "P2"
+              ]
+            },
+            {
+              "id": "W05.02.02",
+              "title": "시작 전 대체와 부분 실패",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W05.02.01",
+                "W03.02.01"
+              ],
+              "work": "429·인증 만료·5xx를 분류하고 정책에 맞는 다음 후보를 실행한다. 첫 이벤트 이후는 부분 실패로 끝낸다.",
+              "deliverable": "fallback 상태 전이와 스트림 경계 시험",
+              "acceptance": "다른 모델의 텍스트·tool 인자 조각이 한 응답에 섞이지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P2"
+              ]
+            },
+            {
+              "id": "W05.02.03",
+              "title": "취소와 최종 정산",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W05.02.01",
+                "W06.01.02",
+                "W06.01.03"
+              ],
+              "work": "클라이언트 취소를 어댑터까지 전달하고 예약·시도를 한 번만 확정한다. 불확실한 전송을 무조건 환불하지 않는다.",
+              "deliverable": "취소·중복 완료·타임아웃 fixture",
+              "acceptance": "취소 후 새로운 후보를 시작하지 않으며 사용량이 두 번 확정되지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P2"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W06",
+      "title": "한도와 상태 저장",
+      "goal": "B는 공급처의 한도 의미를 범위별로 기록하고 동시 예약과 복구를 보장한다.",
+      "sections": [
+        {
+          "id": "W06.01",
+          "title": "한도 계산과 예약",
+          "tasks": [
+            {
+              "id": "W06.01.01",
+              "title": "한도 범위와 단위 모델링",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W03.01.01",
+                "W03.01.02"
+              ],
+              "work": "계정·IP·모델·공유 상위 풀의 범위와 requests·tokens·credits·neurons를 분리한다. 근거 없는 독립 한도 합산을 막는다.",
+              "deliverable": "QuotaBucket과 공급처별 매핑",
+              "acceptance": "서로 다른 단위를 더하지 않고 같은 상위 풀을 중복 무료량으로 표시하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P2"
+              ]
+            },
+            {
+              "id": "W06.01.02",
+              "title": "원자적 예약과 확정",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W06.01.01",
+                "W06.02.01"
+              ],
+              "work": "판정과 예약을 한 직렬화 구간에서 수행하고 예약 ID로 확정한다. 저장 성공 전에 요청을 보내지 않는 순서를 정한다.",
+              "deliverable": "예약·확정 로직과 경쟁 시험",
+              "acceptance": "남은 한 자리에서 동시 요청을 받아도 허용된 요청 수만 전송한다.",
+              "status": "planned",
+              "problemIds": [
+                "P2"
+              ]
+            },
+            {
+              "id": "W06.01.03",
+              "title": "공급처 스냅샷 정산",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W06.01.01",
+                "W03.02.01"
+              ],
+              "work": "포함 범위·watermark·이벤트 ID를 사용해 누계와 로컬 소비를 대조한다. 근거가 없으면 추정으로 처리한다.",
+              "deliverable": "스냅샷 대조 규칙과 지연·중복 fixture",
+              "acceptance": "이미 포함된 5회를 누계 10회에 다시 더하지 않으며 불명 범위를 확정 잔여량으로 표시하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P2"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "W06.02",
+          "title": "저장·시작·복구",
+          "tasks": [
+            {
+              "id": "W06.02.01",
+              "title": "데이터 폴더 단일 작성자 잠금",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W01.02.01",
+                "W03.01.01"
+              ],
+              "work": "Store 초기화 전에 정규화된 데이터 경로 잠금을 잡는다. 후발 CLI는 상태를 쓰지 않고 기존 서버에 연결한다.",
+              "deliverable": "잠금·서버 시작 계약",
+              "acceptance": "동시 첫 실행·다른 포트·심볼릭 링크에서 같은 상태를 쓰는 서버가 하나뿐이다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W06.02.02",
+              "title": "스냅샷과 크래시 복구",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W06.02.01",
+                "W06.01.02"
+              ],
+              "work": "저장 중 종료와 미완료 예약을 복구한다. 전송 여부가 불명인 소비를 보수적으로 남기고 자신의 stale 잠금만 회수한다.",
+              "deliverable": "복구 규칙과 강제 종료 시험",
+              "acceptance": "마지막 유효 상태와 키가 보존되고 원본 상태를 임의 초기화하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W06.02.03",
+              "title": "쿨다운과 한도 창 복구",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W06.01.01",
+                "W06.01.03"
+              ],
+              "work": "Retry-After·고정 창·롤링 창·리셋을 구분한다. 시계 변화와 동시 복구 probe를 제한한다.",
+              "deliverable": "쿨다운·리셋·시계 fixture",
+              "acceptance": "모델 하나의 제한이 근거 없이 전체 공급처의 일일 소진으로 번지지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P2"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W07",
+      "title": "API와 작업 계약",
+      "goal": "B는 외부 클라이언트와 외부 에이전트의 권한·입출력 경계를 지킨다.",
+      "sections": [
+        {
+          "id": "W07.01",
+          "title": "호환 추론 API",
+          "tasks": [
+            {
+              "id": "W07.01.01",
+              "title": "인증과 요청 검증 구현",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W03.02.02",
+                "W06.02.01"
+              ],
+              "work": "loopback·Host·Origin·API 인증을 유지하고 메시지·옵션·용량을 검증한다. 관리 권한과 추론 권한을 분리한다.",
+              "deliverable": "API 요청 검사와 오류 fixture",
+              "acceptance": "관리 토큰 없는 추론 클라이언트가 설정·비밀을 읽거나 바꾸지 못한다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W07.01.02",
+              "title": "SSE와 도구 호출 보존",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W07.01.01",
+                "W02.02.01",
+                "W05.02.02"
+              ],
+              "work": "stream backpressure·tool ID·인자 조각·finish reason·usage를 보존한다. 중간 오류를 정상 성공과 구분한다.",
+              "deliverable": "SSE·tool 왕복 계약 시험",
+              "acceptance": "분할된 도구 인자와 도구 결과 이력이 손실 없이 이어지고 시작 후 전환이 없다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W07.01.03",
+              "title": "추적과 사용량 응답",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W07.01.01",
+                "W05.02.03",
+                "W06.01.03"
+              ],
+              "work": "요청·시도·실제 모델·경로·비용 확인 수준을 반환한다. 원문 메시지를 기본 로그에서 제외한다.",
+              "deliverable": "안정된 메타데이터와 진단 출력",
+              "acceptance": "실패 원인과 선택 경로를 추적할 수 있고 키·원문 내용이 기본 로그에 없다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "W07.02",
+          "title": "대화·MCP·작업 위임",
+          "tasks": [
+            {
+              "id": "W07.02.01",
+              "title": "CLI 대화와 API 문맥 분리",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W03.02.02",
+                "W07.01.01"
+              ],
+              "work": "API는 호출자 메시지를 원본으로 유지하고 로컬 CLI 이력을 별도로 저장한다. 경로 변경 시 전달 가능한 문맥만 재구성한다.",
+              "deliverable": "대화 저장·재개 계약",
+              "acceptance": "일반 API 호출이 원문 이력에 자동 저장되지 않고 외부 세션 ID에 종속되지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W07.02.02",
+              "title": "MCP 텍스트 위임 연결",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W03.02.03",
+                "W07.01.03"
+              ],
+              "work": "기존 freeway_delegate의 텍스트·read-only 설명을 보존한다. stdout 프로토콜과 stderr 진단을 분리한다.",
+              "deliverable": "MCP fixture와 클라이언트 예제",
+              "acceptance": "분석용 도구가 사용자 몰래 파일 변경 작업을 실행하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P3"
+              ]
+            },
+            {
+              "id": "W07.02.03",
+              "title": "외부 에이전트 작업 관리자",
+              "owner": "B",
+              "stage": "조건부",
+              "dependsOn": [
+                "W03.02.03",
+                "W02.02.03",
+                "W04.02.02"
+              ],
+              "work": "task ID·권한·디렉터리·취소를 관리하고 실행 전 hook·정책·격리를 검증한다. read-only 강제 불가 경로는 제외한다.",
+              "deliverable": "Task 계약·보호 설정·변경 차단 시험",
+              "acceptance": "변경·쉘·작업영역 탈출을 실행 전에 차단하고 상태 자동 이식을 약속하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P1"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W08",
+      "title": "CLI와 터미널 사용 경험",
+      "goal": "A는 사용자가 공급처의 내부 사정을 외우지 않아도 연결·선택·복구할 수 있게 한다.",
+      "sections": [
+        {
+          "id": "W08.01",
+          "title": "헤드리스 명령",
+          "tasks": [
+            {
+              "id": "W08.01.01",
+              "title": "연결과 모델·경로 명령",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W04.01.03",
+                "W05.01.03"
+              ],
+              "work": "connect·models·routes에서 실제 준비 상태와 무료 근거를 보여 준다. 구현 전 명령은 사용자 도움말에 노출하지 않는다.",
+              "deliverable": "CLI 명령과 JSON schema",
+              "acceptance": "미연결·기간 종료·유료·기능 미지원 상태가 구분된다.",
+              "status": "planned",
+              "problemIds": [
+                "P3"
+              ]
+            },
+            {
+              "id": "W08.01.02",
+              "title": "사용량과 선택 이유 명령",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W08.01.01",
+                "W06.01.03",
+                "W07.01.03"
+              ],
+              "work": "usage·explain에서 실제·추정·미확인·예약을 나누고 선택·제외 이유를 표시한다.",
+              "deliverable": "usage·explain 출력과 예제",
+              "acceptance": "로컬 사용 12회를 근거 없이 공급처 잔여 188회라고 표현하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P2",
+                "P3"
+              ]
+            },
+            {
+              "id": "W08.01.03",
+              "title": "종료 코드와 오류 복구",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W08.01.01",
+                "W03.02.01"
+              ],
+              "work": "JSON stdout과 진단 stderr를 분리한다. 재로그인·리셋 대기·다른 모델 선택 등 다음 행동을 오류별로 안내한다.",
+              "deliverable": "종료 코드·오류 메시지 fixture",
+              "acceptance": "자동화가 결과를 파싱할 수 있고 인증 오류를 한도 부족으로 설명하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "P3"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "W08.02",
+          "title": "TUI 대화 흐름",
+          "tasks": [
+            {
+              "id": "W08.02.01",
+              "title": "모델 선택과 경로 상세",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W08.01.01",
+                "W05.01.03"
+              ],
+              "work": "현재 TUI를 재사용해 모델 버전·경로 종류·무료 근거·준비 상태를 보여 준다. 모호한 동일 계열 이름을 합치지 않는다.",
+              "deliverable": "모델 선택 화면과 상태 API 연결",
+              "acceptance": "DeepSeek 버전과 Muse 변형이 구분되고 TUI와 헤드리스 선택 정책이 같다.",
+              "status": "planned",
+              "problemIds": [
+                "P2",
+                "P3"
+              ]
+            },
+            {
+              "id": "W08.02.02",
+              "title": "스트림·취소·재생성 표시",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W07.01.02",
+                "W05.02.03",
+                "W08.02.01"
+              ],
+              "work": "현재 경로와 전환 이유, 부분 응답 실패, 취소 상태를 표시한다. 재생성은 새 요청과 소비로 취급한다.",
+              "deliverable": "대화 상태와 키 동작 시험",
+              "acceptance": "취소가 실제 요청에 전달되고 다른 모델로 재생성했다는 사실이 보인다.",
+              "status": "planned",
+              "problemIds": [
+                "P3"
+              ]
+            },
+            {
+              "id": "W08.02.03",
+              "title": "대화 재개와 작은 터미널 확인",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W07.02.01",
+                "W08.02.02"
+              ],
+              "work": "이력 재개·스크롤·키보드 탐색·좁은 터미널·ANSI 없는 출력을 확인한다. 타이틀 생성에 별도 유료 모델을 기본 사용하지 않는다.",
+              "deliverable": "TUI 수동 확인표와 이력 fixture",
+              "acceptance": "이력과 출력이 깨지지 않고 색상을 못 보는 환경에서도 상태를 이해할 수 있다.",
+              "status": "planned",
+              "problemIds": [
+                "P3"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W09",
+      "title": "사용자와 개발자 docs",
+      "goal": "문서는 구현과 같은 작업 단위로 갱신하며 실제 지원 범위만 안내한다.",
+      "sections": [
+        {
+          "id": "W09.01",
+          "title": "사용자 docs",
+          "tasks": [
+            {
+              "id": "W09.01.01",
+              "title": "README와 빠른 시작 작성",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W01.01.03",
+                "W08.01.01"
+              ],
+              "work": "제품 목적·지원 OS·설치·연결·모델 선택·첫 무료 요청을 실제 명령으로 적는다. 내부 후보와 지원 경로를 구분한다.",
+              "deliverable": "README와 사용자 quickstart",
+              "acceptance": "설정 없는 대상 환경에서 다른 사람이 문서만 보고 첫 요청에 도달한다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W09.01.02",
+              "title": "공급처와 CLI 참고 작성",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W02.02.01",
+                "W08.01.03"
+              ],
+              "work": "로그인·키·무료 조건·한도·모델 변형과 명령·플래그·JSON·종료 코드를 정리한다.",
+              "deliverable": "공급처 안내와 CLI reference",
+              "acceptance": "도움말·지원표·릴리스 명령이 일치하며 비밀 값이 예제에 없다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W09.01.03",
+              "title": "문제 해결과 설치 안내 작성",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W08.01.03",
+                "W11.01.03"
+              ],
+              "work": "인증 만료·429·버전·네트워크·설치 PATH·제거를 사용자 행동 순서로 설명한다.",
+              "deliverable": "troubleshooting과 설치·제거 안내",
+              "acceptance": "대표 오류를 재현해 문서의 조치로 복구하거나 정확한 보류 이유에 도달한다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "W09.02",
+          "title": "개발자와 운영 docs",
+          "tasks": [
+            {
+              "id": "W09.02.01",
+              "title": "API 계약과 실행 예제 작성",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W07.01.02",
+                "W07.01.03"
+              ],
+              "work": "인증·모델·요청·응답·SSE·tool·오류와 제한을 fixture와 같은 데이터로 설명한다.",
+              "deliverable": "API reference와 클라이언트 예제",
+              "acceptance": "예제가 현재 릴리스와 계약 시험을 통과하며 미지원 옵션이 명시된다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W09.02.02",
+              "title": "어댑터 개발과 검사 방법 작성",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W03.01.03",
+                "W10.01.01"
+              ],
+              "work": "공급처 추가 순서·상태·무료 근거·오류 매핑·fixture·로컬 검사 방법을 적는다.",
+              "deliverable": "개발자 가이드와 기여 안내",
+              "acceptance": "새 공급처 작업자가 코어 내부에 특례를 넣지 않고 계약을 맞출 수 있다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W09.02.03",
+              "title": "비용·데이터·릴리스 문서 작성",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W04.02.01",
+                "W11.02.01",
+                "W12.01.02"
+              ],
+              "work": "전체 비용의 의미, 저장·로그·비밀 보호 범위와 데이터 이전·복구·변경점을 명시한다. 문서 사이트는 별도 선택으로 둔다.",
+              "deliverable": "privacy·비용 설명·release notes",
+              "acceptance": "실제 설치 경로·버전·스키마·보조 비용 정책과 일치한다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W10",
+      "title": "검증과 사용자 수용",
+      "goal": "B는 코어 증거를, A는 공급처와 실제 사용자 여정을 확인한다.",
+      "sections": [
+        {
+          "id": "W10.01",
+          "title": "자동 회귀와 장애 시험",
+          "tasks": [
+            {
+              "id": "W10.01.01",
+              "title": "정책·예약·저장 회귀 검사",
+              "owner": "B",
+              "stage": "M1",
+              "dependsOn": [
+                "W05.02.03",
+                "W06.02.03"
+              ],
+              "work": "네트워크 없이 고정 시계·가짜 어댑터로 모델 고정·비용 차단·경쟁·중복 완료·리셋을 시험한다.",
+              "deliverable": "핵심 자동 회귀 suite",
+              "acceptance": "개인 키 없이 재현 가능하고 실패가 실제 계약 위반을 보여 준다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W10.01.02",
+              "title": "스트림·프로세스·보호 실패 주입",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W07.01.02",
+                "W06.02.02"
+              ],
+              "work": "시작 전·후 연결 종료, 크래시, 느린 소비자, 자식 종료, 비밀 포함 오류를 주입한다. task 기능이 있으면 보호 차단도 검사한다.",
+              "deliverable": "장애 주입·마스킹 fixture",
+              "acceptance": "응답 혼합·무한 대기·예약 누수·다른 사용자 프로세스 종료가 없다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W10.01.03",
+              "title": "실제 공급처 기능·비용 대조",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W02.02.01",
+                "W02.02.02",
+                "W07.01.03"
+              ],
+              "work": "활성 경로에서 실제 모델·전체 usage·무료 근거를 확인한다. 실제 429를 만들려고 대량 소진하지 않는다.",
+              "deliverable": "공급처 계약 시험 기록",
+              "acceptance": "무료·기능 지원 주장을 실제 증거 범위로 제한하고 남은 unknown을 표시한다.",
+              "status": "planned",
+              "problemIds": [
+                "P1"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "W10.02",
+          "title": "출시 수용과 지원 범위",
+          "tasks": [
+            {
+              "id": "W10.02.01",
+              "title": "새 사용자 설치부터 복구까지 시험",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W09.01.01",
+                "W09.01.03",
+                "W11.01.03"
+              ],
+              "work": "깨끗한 대상 환경에서 설치·연결·첫 요청·잘못된 키·쿨다운·종료를 문서 순서대로 수행한다.",
+              "deliverable": "사용자 여정 수용 기록",
+              "acceptance": "개발자의 로컬 키·캐시·설정 없이 지원한다고 선언한 흐름이 동작한다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W10.02.02",
+              "title": "빈 데이터와 기존 암호화 데이터 시험",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W11.02.01",
+                "W11.02.02"
+              ],
+              "work": "기존 .data와 사용자 지정 경로의 키·상태·대화로 업데이트·실패 복구를 확인한다.",
+              "deliverable": "데이터 이전·rollback fixture",
+              "acceptance": "복호화 확인 전 경로를 전환하지 않고 실패 시 원본 데이터와 이전 버전을 사용할 수 있다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W10.02.03",
+              "title": "지원 OS와 설치 수용 게이트 판정",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W10.02.01",
+                "W10.02.02",
+                "W10.01.03"
+              ],
+              "work": "실제 통과한 OS·모델·기능만 지원표에 올린다. 조건부 기능을 제외했을 때도 필수 경로가 성립하는지 B와 확인한다.",
+              "deliverable": "지원 매트릭스와 출시 판정",
+              "acceptance": "미검증 OS·모델·브리지가 기본 지원으로 표시되지 않고 불충족 게이트가 숨겨지지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W11",
+      "title": "패키징과 설치 및 데이터 이전",
+      "goal": "A는 설치 경험을 구현하고 B와 사용자 상태 보존을 검증한다.",
+      "sections": [
+        {
+          "id": "W11.01",
+          "title": "릴리스 파일과 설치",
+          "tasks": [
+            {
+              "id": "W11.01.01",
+              "title": "산출물 파일 목록과 버전 계약",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W01.02.01",
+                "W01.01.03"
+              ],
+              "work": "실행 코드·자산·런타임·라이선스의 포함 목록을 고정한다. .env·.data·키·이력·로그·캐시를 제외한다.",
+              "deliverable": "패키지 manifest와 버전 규칙",
+              "acceptance": "개발 폴더 전체를 압축하지 않고 샘플 비밀·사용자 데이터가 산출물에 없다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W11.01.02",
+              "title": "런타임과 플랫폼 패키지 구성",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W11.01.01"
+              ],
+              "work": "지원 OS·CPU와 Node 번들 여부를 고정하고 런타임 라이선스를 포함한다. npm 또는 바이너리 전환은 별도 선택으로 기록한다.",
+              "deliverable": "대상별 패키지와 라이선스 목록",
+              "acceptance": "선언한 환경에서 실행되고 private 패키지를 공개 npx 설치로 안내하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W11.01.03",
+              "title": "Windows 설치와 경로 처리",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W11.01.02"
+              ],
+              "work": "기존 PowerShell 설치를 기준으로 다운로드·체크섬·추출·PATH·실행 검증을 다룬다. 실행 중 교체와 실패 시 정리를 정의한다.",
+              "deliverable": "설치 스크립트와 깨끗한 환경 시험",
+              "acceptance": "관리자 권한이 필요한지 명시하며 실패 설치가 기존 프로그램·데이터를 망가뜨리지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "W11.02",
+          "title": "업데이트·복구·제거",
+          "tasks": [
+            {
+              "id": "W11.02.01",
+              "title": "기존 암호화 데이터 이전",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W06.02.02",
+                "W11.01.01"
+              ],
+              "work": "실제 .data와 FREEWAY_DATA_DIR를 확인하고 종료·잠금 후 vault.key·상태·대화를 일관 백업한다. 복호화 후 전환한다.",
+              "deliverable": "데이터 이전과 실패 복구 구현",
+              "acceptance": "키를 재생성하거나 후보 경로를 자동 병합하지 않으며 실패 시 원본이 보존된다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W11.02.02",
+              "title": "버전 교체와 rollback",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W11.01.03",
+                "W11.02.01"
+              ],
+              "work": "임시 다운로드·체크섬·프로그램 종료·버전 교체·기동 검사를 연결한다. 스키마가 바뀌면 프로그램과 데이터 복구를 함께 다룬다.",
+              "deliverable": "업데이트와 이전 버전 복구 절차",
+              "acceptance": "잘못된 ZIP·기동 실패·스키마 불일치에서 기존 상태로 복구할 수 있다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W11.02.03",
+              "title": "제거와 추가 OS 정책",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W11.01.03",
+                "W11.02.01"
+              ],
+              "work": "프로그램 제거와 데이터 삭제를 분리한다. Linux·macOS는 지원 결정 후 같은 설치·취소·업데이트 기준으로 별도 시험한다.",
+              "deliverable": "제거 흐름과 추가 OS 진입 조건",
+              "acceptance": "기본 제거가 인증·대화를 조용히 지우지 않으며 미지원 OS를 지원한다고 쓰지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "W12",
+      "title": "CI와 릴리스 운영",
+      "goal": "B는 검증한 소스와 파일만 출시 후보로 만들고 A와 설치·지원 범위를 대조한다.",
+      "sections": [
+        {
+          "id": "W12.01",
+          "title": "자동화와 배포 채널",
+          "tasks": [
+            {
+              "id": "W12.01.01",
+              "title": "PR 검사와 빌드 파이프라인",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W10.01.01",
+                "W10.01.02",
+                "W11.01.01"
+              ],
+              "work": "비밀 없는 계약·회귀·문서 링크 검사와 대상 산출물 빌드를 자동화한다. 외부 기여 PR에는 계정 비밀을 주입하지 않는다.",
+              "deliverable": "CI workflow와 실패 게이트",
+              "acceptance": "실제 존재하는 검사만 실행하며 외부 무료 API 장애가 모든 PR을 막지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W12.01.02",
+              "title": "버전·체크섬·설치 정보 묶기",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W12.01.01",
+                "W11.01.02"
+              ],
+              "work": "커밋·패키지·CLI·태그·산출물·체크섬을 한 버전으로 묶는다. 설치 스크립트의 버전과 SHA도 같이 대조한다.",
+              "deliverable": "릴리스 manifest·체크섬·후보 파일",
+              "acceptance": "버전이 서로 어긋나면 게시 후보가 되지 않고 체크섬을 신원 서명으로 설명하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W12.01.03",
+              "title": "배포 채널과 공개 범위 결정",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W11.01.02",
+                "W12.01.02"
+              ],
+              "work": "GitHub Release·npm 등 선택한 채널의 포함 파일·패키지 설정·문서 링크를 확인한다. docs 사이트는 필요 시 별도 작업으로 둔다.",
+              "deliverable": "채널별 배포 절차와 공개 파일 목록",
+              "acceptance": "현재 private 설정과 계획이 일치하며 사용자 데이터나 개인 설정이 공개되지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "W12.02",
+          "title": "테스트 릴리스와 유지보수",
+          "tasks": [
+            {
+              "id": "W12.02.01",
+              "title": "릴리스 후보 설치 검증",
+              "owner": "A",
+              "stage": "M2",
+              "dependsOn": [
+                "W10.02.03",
+                "W12.01.02",
+                "W12.01.03"
+              ],
+              "work": "실제 후보 파일로 설치·업데이트·복구·제거를 다시 확인한다. 소스 실행 성공을 설치 성공으로 대신하지 않는다.",
+              "deliverable": "후보 버전의 설치 수용 결과",
+              "acceptance": "배포할 파일과 시험한 파일의 체크섬이 일치한다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W12.02.02",
+              "title": "릴리스 게시와 변경 안내",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W12.02.01",
+                "W09.02.03"
+              ],
+              "work": "기능·비용·지원·데이터 변경점과 알려진 제한을 붙여 검증한 범위로 게시한다. 실제 게시는 별도 실행 요청 범위에서 수행한다.",
+              "deliverable": "릴리스 페이지·설치 링크·변경 안내 초안",
+              "acceptance": "설치 링크·버전·지원표·문서가 같은 후보를 가리킨다. 이번 문서 작성은 게시를 실행하지 않는다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            },
+            {
+              "id": "W12.02.03",
+              "title": "출시 이슈 분류와 정정 릴리스 운영",
+              "owner": "B",
+              "stage": "M2",
+              "dependsOn": [
+                "W07.01.03",
+                "W12.02.02"
+              ],
+              "work": "사용자 피드백을 로그인·어댑터·CLI·설치 문제와 코어·데이터·CI 문제로 분류해 책임자에게 배정한다. 공급처 무료 조건과 카탈로그 수정은 A에게 전달하고 B는 공통 계약 영향과 정정 릴리스 필요성을 판정한다.",
+              "deliverable": "결함 담당·재현·영향 범위·정정 릴리스 기록",
+              "acceptance": "공급처 카탈로그와 설치기는 A, 공통 실행과 릴리스는 B의 작성 책임으로 유지되며 한 결함에 최종 수정 책임자가 있다.",
+              "status": "planned",
+              "problemIds": [
+                "E0"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "problems": {
+    "P1": "무료 접근 경로의 분산",
+    "P2": "무료 사용 상태의 분산",
+    "P3": "반복되는 연결·선택 작업",
+    "E0": "문제 해결을 제품으로 운영하기 위한 기반 작업"
+  },
+  "ownershipAuthority": "17-product-gap-and-ownership.md"
+}

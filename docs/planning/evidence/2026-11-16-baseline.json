@@ -1,0 +1,25 @@
+{
+  "recordedDate": "2026-11-16",
+  "timezone": "Asia/Seoul",
+  "repositoryCommit": "689856d9e07815752f8d0d60fd7edcf319755118",
+  "scope": "Planning baseline, public catalogs, official documentation and explicitly listed local probes. Not all providers were inference-tested.",
+  "versions": {
+    "ori": "0.17.0+31fbdff",
+    "opencode": "1.18.35"
+  },
+  "observations": [
+    {"id": "E 005", "path": "ori-code", "requestedModel": "openrouter/free", "actualModel": "nvidia/nemotron-3.5-lightning:free", "answer": "FREE_OK", "durationMs": 15506, "answerCostUsd": 0, "status": "succeeded_with_auxiliary_cost"},
+    {"id": "E 006", "path": "ori-code-auxiliary", "actualModel": "typesafe/jev-1.14-20261014", "costUsd": 0.000057036, "evidence": ["generation metadata", "account key usage", "ori operations usage"], "internalPurpose": "not_verified"},
+    {"id": "E 007", "path": "openrouter-direct-api", "requestedModel": "openrouter/free", "actualModel": "particle-ai/particle-1:free", "httpStatus": 200, "answer": "DIRECT_FREE_OK", "elapsedMs": 3276, "costUsd": 0},
+    {"id": "E 008", "path": "openrouter-direct-api", "case": "invalid model ID as first fallback candidate", "httpStatus": 400, "status": "rejected"},
+    {"id": "E 009", "path": "openrouter-direct-api", "requestedModel": "google/gemma-4-31b-it:free", "providerOnly": ["particle-ai"], "httpStatus": 404, "status": "no_matching_provider"},
+    {"id": "E 010", "path": "openrouter-direct-api", "requestedModels": ["google/gemma-4-31b-it:free", "particle-ai/particle-1:free"], "providerOnly": ["particle-ai"], "actualModel": "particle-ai/particle-1:free", "httpStatus": 200, "answer": "FALLBACK_OK", "elapsedMs": 6637, "costUsd": 0},
+    {"id": "E 011", "path": "opencode-cli-catalog", "model": "opencode/deepseek-v4.1-flash-free", "status": "listed_not_inference_verified"},
+    {"id": "E 012", "path": "opencode-cli", "model": "opencode/deepseek-v4.1-flash-free", "status": "initial_network_failure_retry_cancelled_without_final_response", "exitCode": 130, "successClaimed": false},
+    {"id": "E 013", "path": "cline-cli", "model": "cline-free/deepseek-v4.1-flash", "status": "reauthentication_required", "successClaimed": false},
+    {"id": "E 014", "path": "kilo-public-catalog", "status": "catalog_read", "deepseekAndMuseFreeInObservedCatalog": false},
+    {"id": "E 015", "path": "requesty-official-model-page", "model": "muse-glimmer-30b", "status": "documented_free_not_inference_verified"}
+  ],
+  "notVerified": ["all-provider authentication", "actual 429 fallback", "long coding tasks", "CLI-to-OpenAI tool-call equivalence", "Requesty authenticated inference", "NVIDIA authenticated inference"],
+  "secretsIncluded": false
+}

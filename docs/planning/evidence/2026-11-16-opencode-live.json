@@ -1,0 +1,79 @@
+{
+  "date": "2026-11-16T02:15:31.483Z",
+  "secretsIncluded": false,
+  "kind": "official-opencode-server-text-bridge",
+  "toolsEnabled": false,
+  "server": {
+    "installed": true,
+    "ready": true,
+    "managed": true,
+    "lastError": null,
+    "version": "1.18.35"
+  },
+  "freeModels": [
+    {
+      "id": "opencode/nemotron-3.5-lightning-free",
+      "upstreamId": "nemotron-3.5-lightning-free"
+    },
+    {
+      "id": "opencode/iceman-free",
+      "upstreamId": "iceman-free"
+    },
+    {
+      "id": "opencode/glm-5.3-flash-free",
+      "upstreamId": "glm-5.3-flash-free"
+    },
+    {
+      "id": "opencode/nemotron-3.5-super-vl-free",
+      "upstreamId": "nemotron-3.5-super-vl-free"
+    },
+    {
+      "id": "opencode/deepseek-v4.1-flash-free",
+      "upstreamId": "deepseek-v4.1-flash-free"
+    },
+    {
+      "id": "opencode/inkling-2-small-free",
+      "upstreamId": "inkling-2-small-free"
+    },
+    {
+      "id": "opencode/beam-free",
+      "upstreamId": "beam-free"
+    },
+    {
+      "id": "opencode/big-pickle",
+      "upstreamId": "big-pickle"
+    },
+    {
+      "id": "opencode/mimo-v2.6-flash-free",
+      "upstreamId": "mimo-v2.6-flash-free"
+    },
+    {
+      "id": "opencode/longcat-2.5-free",
+      "upstreamId": "longcat-2.5-free"
+    },
+    {
+      "id": "opencode/flint-40b-free",
+      "upstreamId": "flint-40b-free"
+    },
+    {
+      "id": "opencode/minimax-m3.1-flash-free",
+      "upstreamId": "minimax-m3.1-flash-free"
+    }
+  ],
+  "model": "deepseek-v4.1-flash-free",
+  "events": [],
+  "status": "request-error",
+  "error": {
+    "name": "Error",
+    "code": "upstream_retry",
+    "status": 503,
+    "message": "OpenCode 공급처가 요청을 완료하지 못해 재시도 중입니다. 잠시 후 다시 시도하세요."
+  },
+  "upstreamEvents": [
+    {
+      "kind": "upstream-retry",
+      "message": "Free usage exceeded, subscribe to Go",
+      "attempt": 1
+    }
+  ]
+}

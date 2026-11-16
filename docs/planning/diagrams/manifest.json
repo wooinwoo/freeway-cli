@@ -1,0 +1,32 @@
+{
+  "figures": [
+    {
+      "file": "01-openrouter.svg",
+      "format": "svg"
+    },
+    {
+      "file": "02-freeway.svg",
+      "format": "svg"
+    },
+    {
+      "file": "03-request-sequence.svg",
+      "format": "svg"
+    },
+    {
+      "file": "04-execution-contracts.svg",
+      "format": "svg"
+    },
+    {
+      "file": "05-data-and-quotas.svg",
+      "format": "svg"
+    },
+    {
+      "file": "06-ownership-and-handoffs.svg",
+      "format": "svg"
+    },
+    {
+      "file": "07-release-and-update.svg",
+      "format": "svg"
+    }
+  ]
+}

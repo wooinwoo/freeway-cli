@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-16",
+  "path": "official-cline-cli",
+  "authentication": "device-login-completed",
+  "model": "cline-free/deepseek-v4.1-flash",
+  "commandPolicy": {
+    "planMode": true,
+    "autoApprove": false,
+    "compaction": "off",
+    "timeoutSeconds": 30
+  },
+  "result": {
+    "exitCode": 1,
+    "upstreamMessage": "model not found",
+    "cliDiagnosis": "Free model promotion ended",
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "totalCost": 0
+  },
+  "secretsIncluded": false
+}

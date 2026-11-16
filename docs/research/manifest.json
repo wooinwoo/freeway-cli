@@ -1,0 +1,30 @@
+{
+  "capturedAt": "2026-11-16",
+  "method": "Shallow clones of default branches pinned to the listed commits; source analysis and the bounded mock-test results described in README.md.",
+  "repos": [
+    {
+      "name": "localrouter",
+      "remote": "https://github.com/LocalRouter/LocalRouter.git",
+      "commit": "5ecfce7d74f207965278c490c825b730fd84edbc",
+      "branch": "master",
+      "commitDate": "2026-11-15T19:28:55-05:00",
+      "trackedFiles": 1882
+    },
+    {
+      "name": "litellm",
+      "remote": "https://github.com/BerriAI/litellm.git",
+      "commit": "d034fb681ca296a0f082a224043eda62a2ce82d4",
+      "branch": "main",
+      "commitDate": "2026-11-15T19:24:06-08:00",
+      "trackedFiles": 16128
+    },
+    {
+      "name": "cliproxyapi",
+      "remote": "https://github.com/router-for-me/CLIProxyAPI.git",
+      "commit": "14144df573c77e8e0e1eeaa450d3e63a068372df",
+      "branch": "main",
+      "commitDate": "2026-11-16T10:43:08+08:00",
+      "trackedFiles": 2393
+    }
+  ]
+}

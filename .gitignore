@@ -3,3 +3,6 @@
 node_modules/
 runtime/
 *.log
+
+# Local document exports
+docs/planning/exports/

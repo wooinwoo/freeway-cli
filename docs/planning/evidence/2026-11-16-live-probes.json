@@ -1,0 +1,316 @@
+{
+  "date": "2026-11-16T02:20:30.646Z",
+  "results": [
+    {
+      "case": "openrouter-deepseek-catalog",
+      "status": 200,
+      "totalModels": 432,
+      "deepseekModels": [
+        {
+          "id": "deepseek/deepseek-v4.1-flash-1017",
+          "promptPrice": "0.000000036",
+          "completionPrice": "0.0000005"
+        },
+        {
+          "id": "deepseek/deepseek-v4.1-flash-1017:batch",
+          "promptPrice": "0.00000005",
+          "completionPrice": "0.00000015"
+        },
+        {
+          "id": "~deepseek/deepseek-pro-latest",
+          "promptPrice": "0.0000000999",
+          "completionPrice": "0.000008"
+        },
+        {
+          "id": "~deepseek/deepseek-flash-latest",
+          "promptPrice": "0.000000036",
+          "completionPrice": "0.0000005"
+        },
+        {
+          "id": "deepseek/deepseek-v4.1-flash",
+          "promptPrice": "0.00000014",
+          "completionPrice": "0.00000042"
+        },
+        {
+          "id": "deepseek/deepseek-v4.1-flash:batch",
+          "promptPrice": "0.000000112",
+          "completionPrice": "0.000000336"
+        },
+        {
+          "id": "deepseek/deepseek-v4-flash-vision-exp",
+          "promptPrice": "0.00000044",
+          "completionPrice": "0.00000132"
+        },
+        {
+          "id": "deepseek/deepseek-v4-pro-0813",
+          "promptPrice": "0.000000111",
+          "completionPrice": "0.00000444"
+        },
+        {
+          "id": "~deepseek/deepseek-v4-flash-latest",
+          "promptPrice": "0.0000000434",
+          "completionPrice": "0.0000003"
+        },
+        {
+          "id": "deepseek/deepseek-v4-flash-0731",
+          "promptPrice": "0.00000006",
+          "completionPrice": "0.00000018"
+        },
+        {
+          "id": "deepseek/deepseek-v4-flash-0731:batch",
+          "promptPrice": "0.000000048",
+          "completionPrice": "0.000000144"
+        },
+        {
+          "id": "deepseek/deepseek-v4-pro",
+          "promptPrice": "0.0000009",
+          "completionPrice": "0.0000015"
+        },
+        {
+          "id": "deepseek/deepseek-v4-flash",
+          "promptPrice": "0.00000009",
+          "completionPrice": "0.00000018"
+        },
+        {
+          "id": "deepseek/deepseek-v3.2",
+          "promptPrice": "0.00000026",
+          "completionPrice": "0.00000038"
+        },
+        {
+          "id": "deepseek/deepseek-v3.2-exp",
+          "promptPrice": "0.00000027",
+          "completionPrice": "0.00000041"
+        },
+        {
+          "id": "deepseek/deepseek-v3.1-terminus",
+          "promptPrice": "0.00000027",
+          "completionPrice": "0.000001"
+        },
+        {
+          "id": "deepseek/deepseek-chat-v3.1",
+          "promptPrice": "0.00000025",
+          "completionPrice": "0.00000095"
+        },
+        {
+          "id": "deepseek/deepseek-r1-0528",
+          "promptPrice": "0.0000005",
+          "completionPrice": "0.00000215"
+        },
+        {
+          "id": "deepseek/deepseek-chat-v3-0324",
+          "promptPrice": "0.00000029",
+          "completionPrice": "0.00000114"
+        },
+        {
+          "id": "deepseek/deepseek-chat",
+          "promptPrice": "0.0000002574",
+          "completionPrice": "0.0000010287"
+        }
+      ],
+      "deepseekZeroPriceCount": 0
+    },
+    {
+      "case": "key-before",
+      "status": 200,
+      "usage": 0.000057036,
+      "freeQuota": {
+        "used": 4,
+        "limit": 50,
+        "remaining": 46
+      }
+    },
+    {
+      "case": "free-router",
+      "status": 200,
+      "elapsedMs": 356,
+      "model": "cohere/north-mini-code:free",
+      "answer": "FREEWAY_OK.FREEWAY_OK.",
+      "costUsd": 0
+    },
+    {
+      "case": "unavailable-route",
+      "status": 404,
+      "elapsedMs": 40,
+      "error": {
+        "code": 404,
+        "message": "No allowed providers are available for the selected model. Providers serving google/gemma-4-31b-it-20260402:free: google-ai-studio, but your request's provider.only preference permits only: particle-ai."
+      }
+    },
+    {
+      "case": "fallback",
+      "status": 429,
+      "elapsedMs": 5330,
+      "error": {
+        "code": 429,
+        "message": "Provider returned error"
+      }
+    },
+    {
+      "case": "external-opencode-model-id",
+      "status": 400,
+      "elapsedMs": 42,
+      "error": {
+        "code": 400,
+        "message": "opencode/deepseek-v4.1-flash-free is not a valid model ID"
+      }
+    },
+    {
+      "case": "key-after",
+      "status": 200,
+      "usage": 0.000057036,
+      "usageDelta": 0,
+      "freeQuota": {
+        "used": 4,
+        "limit": 50,
+        "remaining": 46
+      }
+    },
+    {
+      "case": "openrouter-deepseek-catalog",
+      "status": 200,
+      "totalModels": 432,
+      "deepseekModels": [
+        {
+          "id": "deepseek/deepseek-v4.1-flash-1017",
+          "promptPrice": "0.000000036",
+          "completionPrice": "0.0000005"
+        },
+        {
+          "id": "deepseek/deepseek-v4.1-flash-1017:batch",
+          "promptPrice": "0.00000005",
+          "completionPrice": "0.00000015"
+        },
+        {
+          "id": "~deepseek/deepseek-pro-latest",
+          "promptPrice": "0.0000000999",
+          "completionPrice": "0.000008"
+        },
+        {
+          "id": "~deepseek/deepseek-flash-latest",
+          "promptPrice": "0.000000036",
+          "completionPrice": "0.0000005"
+        },
+        {
+          "id": "deepseek/deepseek-v4.1-flash",
+          "promptPrice": "0.00000014",
+          "completionPrice": "0.00000042"
+        },
+        {
+          "id": "deepseek/deepseek-v4.1-flash:batch",
+          "promptPrice": "0.000000112",
+          "completionPrice": "0.000000336"
+        },
+        {
+          "id": "deepseek/deepseek-v4-flash-vision-exp",
+          "promptPrice": "0.00000044",
+          "completionPrice": "0.00000132"
+        },
+        {
+          "id": "deepseek/deepseek-v4-pro-0813",
+          "promptPrice": "0.000000111",
+          "completionPrice": "0.00000444"
+        },
+        {
+          "id": "~deepseek/deepseek-v4-flash-latest",
+          "promptPrice": "0.0000000434",
+          "completionPrice": "0.0000003"
+        },
+        {
+          "id": "deepseek/deepseek-v4-flash-0731",
+          "promptPrice": "0.00000006",
+          "completionPrice": "0.00000018"
+        },
+        {
+          "id": "deepseek/deepseek-v4-flash-0731:batch",
+          "promptPrice": "0.000000048",
+          "completionPrice": "0.000000144"
+        },
+        {
+          "id": "deepseek/deepseek-v4-pro",
+          "promptPrice": "0.0000009",
+          "completionPrice": "0.0000015"
+        },
+        {
+          "id": "deepseek/deepseek-v4-flash",
+          "promptPrice": "0.00000009",
+          "completionPrice": "0.00000018"
+        },
+        {
+          "id": "deepseek/deepseek-v3.2",
+          "promptPrice": "0.00000026",
+          "completionPrice": "0.00000038"
+        },
+        {
+          "id": "deepseek/deepseek-v3.2-exp",
+          "promptPrice": "0.00000027",
+          "completionPrice": "0.00000041"
+        },
+        {
+          "id": "deepseek/deepseek-v3.1-terminus",
+          "promptPrice": "0.00000027",
+          "completionPrice": "0.000001"
+        },
+        {
+          "id": "deepseek/deepseek-chat-v3.1",
+          "promptPrice": "0.00000025",
+          "completionPrice": "0.00000095"
+        },
+        {
+          "id": "deepseek/deepseek-r1-0528",
+          "promptPrice": "0.0000005",
+          "completionPrice": "0.00000215"
+        },
+        {
+          "id": "deepseek/deepseek-chat-v3-0324",
+          "promptPrice": "0.00000029",
+          "completionPrice": "0.00000114"
+        },
+        {
+          "id": "deepseek/deepseek-chat",
+          "promptPrice": "0.0000002574",
+          "completionPrice": "0.0000010287"
+        }
+      ],
+      "deepseekZeroPriceCount": 0
+    },
+    {
+      "case": "key-before",
+      "status": 200,
+      "usage": 0.000057036,
+      "freeQuota": {
+        "used": 5,
+        "limit": 50,
+        "remaining": 45
+      }
+    },
+    {
+      "case": "rate-limit-control",
+      "status": 429,
+      "elapsedMs": 7465,
+      "error": {
+        "code": 429,
+        "message": "Provider returned error"
+      }
+    },
+    {
+      "case": "rate-limit-fallback",
+      "status": 200,
+      "elapsedMs": 5968,
+      "model": "cohere/north-mini-code:free",
+      "answer": "FREEWAY_OK.FREEWAY_OK.",
+      "costUsd": 0
+    },
+    {
+      "case": "key-after",
+      "status": 200,
+      "usage": 0.000057036,
+      "usageDelta": 0,
+      "freeQuota": {
+        "used": 5,
+        "limit": 50,
+        "remaining": 45
+      }
+    }
+  ],
+  "secretsIncluded": false
+}
