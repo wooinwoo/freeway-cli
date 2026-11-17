@@ -116,6 +116,9 @@ async function login(p) {
 
 function publicProvider(p) {
   return { id: p.id, name: p.name, kind: p.kind, base: p.base || null, env: p.env || null,
+    transport: p.kind === 'openai' ? 'http' : 'cli',
+    protocol: p.kind === 'openai' ? 'openai_compatible' : p.kind === 'opencode' ? 'opencode_session' : 'acp',
+    requiresCLI: p.kind !== 'openai',
     authUrl: p.authUrl, docsUrl: p.docsUrl, freeBasis: p.proof, quota: p.quota,
     modelSource: p.catalog || p.kind !== 'openai' ? 'remote_catalog' : 'documented_allowlist',
     commands: Object.fromEntries(['auth', 'status', 'quota', 'models', 'probe'].map(cmd => [cmd, [process.execPath, join(root, 'manage.mjs'), cmd, p.id]])) };

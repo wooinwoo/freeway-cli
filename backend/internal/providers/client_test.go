@@ -91,6 +91,14 @@ func TestClientModelsQuotaAuthenticationAndStream(t *testing.T) {
 	if err != nil || len(providers) != 11 {
 		t.Fatalf("providers: %v %v", providers, err)
 	}
+	for _, provider := range providers {
+		if provider.ID == "kilo" && (provider.Transport != "http" || provider.Protocol != "openai_compatible" || provider.RequiresCLI) {
+			t.Fatalf("wrong API connection metadata: %+v", provider)
+		}
+		if provider.ID == "cline" && (provider.Transport != "cli" || provider.Protocol != "acp" || !provider.RequiresCLI) {
+			t.Fatalf("wrong CLI connection metadata: %+v", provider)
+		}
+	}
 	auth, err := client.Authenticate(ctx, "kilo", AuthOptions{Key: "private-test-key"})
 	if err != nil || auth.Status != "configured" || auth.InferenceVerified {
 		t.Fatalf("auth: %+v %v", auth, err)
@@ -184,6 +192,34 @@ func TestRejectsNonLocalOrCredentialBearingBaseURL(t *testing.T) {
 		if _, err := New(Config{BridgePath: bridge, BaseURL: base}); err == nil {
 			t.Errorf("accepted %s", base)
 		}
+	}
+}
+
+func TestManagedNodeIsUsedWithoutChangingTheGlobalPATH(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("FREEWAY_PROVIDER_HOME", root)
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(map[string]any{"schemaVersion": 1, "node": map[string]string{"path": node}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "install.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	bridge, err := filepath.Abs("bridge.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "")
+	client, err := New(Config{BridgePath: bridge})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.config.NodePath != node {
+		t.Fatalf("managed node not selected: %s", client.config.NodePath)
 	}
 }
 

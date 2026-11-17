@@ -1,6 +1,6 @@
 # 공급처 API 명세
 
-명세 문서 버전: 0.1.0. 기준일: 2026-11-17. 대상 구현: [client.go](client.go), [bridge.mjs](bridge.mjs), [manage.mjs](manage.mjs). 이 버전은 문서의 버전이며 현재 메시지에 `version` 필드나 버전 협상은 없습니다.
+명세 문서 버전: 0.1.1. 기준일: 2026-11-17. 대상 구현: [client.go](client.go), [types.go](types.go), [bridge.mjs](bridge.mjs). 이 버전은 문서의 버전이며 현재 메시지에 `version` 필드나 버전 협상은 없습니다.
 
 ## 1. 제공하는 API와 실행 조건
 
@@ -15,7 +15,7 @@
 Go backend → providers.Client → bridge.mjs → 기존 로컬 POC gateway → 공급처 API/공식 CLI
 ```
 
-Node.js 22 이상, 이 폴더와 저장소의 `POC/`, 실행 중인 로컬 게이트웨이가 필요합니다. OpenCode·Cline에는 공식 실행 파일과 필요한 로그인이 있어야 합니다. 키·한도 원장은 같은 게이트웨이를 재사용합니다. 설치·실행 순서는 [연동 방법](INTEGRATION.md)을 따릅니다.
+Node.js 22 이상, 이 폴더와 저장소의 `POC/`, 실행 중인 로컬 게이트웨이가 필요합니다. OpenCode·Cline에는 공식 실행 파일과 필요한 로그인이 있어야 합니다. 키·한도 원장은 같은 게이트웨이를 재사용합니다. 설치·실행 순서는 [연동 방법](README.md)을 따릅니다.
 
 ## 2. Go 함수 계약
 
@@ -36,7 +36,7 @@ func (c *Client) Stream(ctx context.Context, request Request, emit func(string))
 
 | Go 필드 | 필수·기본값 | 계약 |
 | --- | --- | --- |
-| `NodePath string` | 생략 시 PATH에서 `node` 검색 | 절대 경로여야 함. Node 버전·실행 가능 여부는 실행 환경에서 보장 |
+| `NodePath string` | 생략 시 전용 설치의 Node, 없으면 PATH 검색 | 절대 경로여야 함. 설치·업데이트는 [공통 설치기](../../../scripts/install/README.md) 사용 |
 | `BridgePath string` | 필수 | 이 폴더의 `bridge.mjs` 절대 경로. 생성 시 존재 여부 확인 |
 | `BaseURL string` | 기본 `http://127.0.0.1:4141` | `http`와 `127.0.0.1`·`localhost`·`::1`만 허용. 사용자 정보·쿼리·fragment·`/v1` 등 하위 경로 금지. 루트 `/`는 허용 |
 
@@ -44,15 +44,15 @@ func (c *Client) Stream(ctx context.Context, request Request, emit func(string))
 
 ### 공급처 목록: Providers
 
-게이트웨이에 접속하지 않고 공급처 정의를 반환합니다. 반환 `Provider`의 필드는 `ID`, `Name`, `Kind`, `AuthURL`, `Env`입니다. 키의 값은 반환하지 않습니다.
+게이트웨이에 접속하지 않고 공급처 정의를 반환합니다. `Provider`의 필드는 `ID`, `Name`, `Transport`, `Protocol`, `RequiresCLI`, `Kind`, `AuthURL`, `Env`입니다. 키의 값은 반환하지 않습니다. 새 코드에서는 Transport·Protocol로 연결 방식을 판단합니다.
 
-| Kind | 공급처 ID |
-| --- | --- |
-| `openai` | `kilo`, `nvidia`, `zai`, `requesty`, `vikasit`, `openrouter`, `groq`, `gemini_api`, `novita` |
-| `opencode` | `opencode` |
-| `cli` | `cline` |
+| Transport | Protocol | RequiresCLI | 공급처 ID |
+| --- | --- | --- | --- |
+| `http` | `openai_compatible` | false | `kilo`, `nvidia`, `zai`, `requesty`, `vikasit`, `openrouter`, `groq`, `gemini_api`, `novita` |
+| `cli` | `opencode_session` | true | `opencode` |
+| `cli` | `acp` | true | `cline` |
 
-`openai`는 전송 형식을 뜻하며 OpenAI 업체 계정이라는 뜻은 아닙니다.
+`openai_compatible`은 HTTP 요청 형식이며 OpenAI 업체·계정을 뜻하지 않습니다. HTTP API 9곳은 별도 업체 프로그램 설치가 필요하지 않습니다. Kind의 기존 `openai`·`opencode`·`cli` 값은 호환용입니다. 공통 Node와 필요한 공식 CLI는 공통 설치기가 준비합니다.
 
 ### 인증 구성: Authenticate와 Login
 
@@ -203,6 +203,6 @@ JSON Schema는 패킷 구조·정적 범위를 검사합니다. 추가 필드를
 현재 실호출 검증 공급처는 Kilo·OpenCode·Cline입니다. 나머지 API 8곳은 키가 없어 추론 미검증입니다. Windows는 크로스컴파일까지 확인했고 실제 로그인·호출은 미검증입니다. 현재 문서는 이 구현의 계약이며 최종 Go HTTP 서버의 설계를 대신하지 않습니다.
 
 - [코드와 실행 명령](README.md)
-- [인증·HTTP·Go 이식 설명](INTEGRATION.md)
+- [공통 구조와 책임](../../../docs/development/architecture.md)
 - [실행 가능한 Go 예제](examples/basic/main.go)
 - [동작 검증](client_test.go), [브리지 검증](bridge.test.mjs)

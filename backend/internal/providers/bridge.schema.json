@@ -52,6 +52,9 @@
         "id": { "$ref": "#/$defs/providerId" },
         "name": { "type": "string" },
         "kind": { "enum": ["openai", "opencode", "cli"] },
+        "transport": { "enum": ["http", "cli"] },
+        "protocol": { "enum": ["openai_compatible", "opencode_session", "acp"] },
+        "requiresCLI": { "type": "boolean" },
         "authUrl": { "type": "string" },
         "env": { "type": ["string", "null"] }
       }

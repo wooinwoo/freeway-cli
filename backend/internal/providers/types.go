@@ -1,0 +1,108 @@
+package providers
+
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+)
+
+type Config struct {
+	NodePath   string
+	BridgePath string
+	BaseURL    string
+}
+
+type Provider struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Deprecated: use Transport and Protocol to identify the connection format.
+	Kind        string `json:"kind"`
+	AuthURL     string `json:"authUrl"`
+	Env         string `json:"env"`
+	Transport   string `json:"transport"`
+	Protocol    string `json:"protocol"`
+	RequiresCLI bool   `json:"requiresCLI"`
+}
+
+type AuthOptions struct {
+	// Key travels only over stdin. Empty leaves existing credentials unchanged.
+	Key         string `json:"key,omitempty"`
+	ConfirmFree bool   `json:"confirmFree,omitempty"`
+}
+
+type AuthResult struct {
+	ID                string `json:"id"`
+	Status            string `json:"status"`
+	Ready             bool   `json:"ready"`
+	Reason            string `json:"reason"`
+	InferenceVerified bool   `json:"inferenceVerified"`
+	ModelCount        int    `json:"modelCount"`
+}
+
+type Reasoning struct {
+	Parameter string   `json:"parameter"`
+	Efforts   []string `json:"efforts"`
+}
+
+type Model struct {
+	ID         string    `json:"id"`
+	UpstreamID string    `json:"upstreamId"`
+	Name       string    `json:"name"`
+	Ready      bool      `json:"ready"`
+	Reason     string    `json:"reason"`
+	Reasoning  Reasoning `json:"reasoning"`
+}
+
+type Bucket struct {
+	Requests        int `json:"requests"`
+	Tokens          int `json:"tokens"`
+	EstimatedTokens int `json:"estimatedTokens"`
+}
+
+type Quota struct {
+	Provider            string            `json:"provider"`
+	Source              string            `json:"source"`
+	Authoritative       bool              `json:"authoritative"`
+	ObservedAt          time.Time         `json:"observedAt"`
+	Ready               bool              `json:"ready"`
+	Reason              string            `json:"reason"`
+	Limits              map[string]int    `json:"limits"`
+	Usage               map[string]Bucket `json:"usage"`
+	LocalRemaining      map[string]int    `json:"localRemaining"`
+	LocalTokenRemaining map[string]int    `json:"localTokenRemaining"`
+	// Nil means the provider has not reported an authoritative remaining allowance.
+	ProviderRemaining *int            `json:"providerRemaining"`
+	LastFailure       json.RawMessage `json:"lastFailure"`
+}
+
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type Request struct {
+	Provider        string    `json:"provider"`
+	Model           string    `json:"model"`
+	Messages        []Message `json:"messages"`
+	MaxTokens       int       `json:"maxTokens,omitempty"`
+	ReasoningEffort string    `json:"reasoningEffort,omitempty"`
+}
+
+type Completion struct {
+	Model           string          `json:"model"`
+	Provider        string          `json:"provider"`
+	Content         string          `json:"content"`
+	ReasoningEffort string          `json:"reasoningEffort"`
+	Usage           json.RawMessage `json:"usage"`
+	ElapsedMS       int64           `json:"elapsedMs"`
+}
+
+type Error struct {
+	Code       string `json:"code"`
+	Status     int    `json:"status"`
+	RetryAfter int    `json:"retryAfter"`
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("provider request failed: %s (HTTP %d)", e.Code, e.Status)
+}
