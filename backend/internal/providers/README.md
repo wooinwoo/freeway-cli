@@ -3,7 +3,8 @@
 백엔드에서 인증·모델 조회·추론 설정·한도 확인·호출을 사용하는 Go 패키지입니다. 검증된 Node 어댑터와 같은 로컬 게이트웨이·비밀 저장소·사용량 원장을 재사용합니다. 최종 Go HTTP 서버인 `freewayd`는 별도 구현 영역입니다.
 
 - **처음 실행:** 아래 설치·인증 순서
-- **백엔드 개발:** [Go 예제](examples/basic/main.go) · [API 명세](API.md)
+- **그대로 실행:** [설치·인증·호출 예제](examples/README.md)
+- **백엔드 개발:** [Go 예제 모음](examples/README.md#3-go-백엔드-예제) · [API 명세](API.md)
 - **다른 언어:** [브리지 JSON Schema](bridge.schema.json)
 - **설치·업데이트 세부사항:** [설치기 안내](../../../scripts/install/README.md)
 
@@ -73,7 +74,7 @@ NVIDIA·Vikasit·Groq·Gemini API·Novita는 계정의 무료 조건을 확인�
 
 ## Go에서 사용
 
-`github.com/wooinwoo/freeway-cli/backend/internal/providers`를 import합니다. 실제 연결 순서는 [실행 가능한 Go 예제](examples/basic/main.go)에 있습니다.
+`github.com/wooinwoo/freeway-cli/backend/internal/providers`를 import합니다. 설치부터 실제 연결까지의 순서는 [실행 예제](examples/README.md)에 있습니다.
 
 | 함수 | 역할 |
 | --- | --- |
@@ -139,4 +140,4 @@ node --test backend/internal/providers/*.test.mjs POC/tests/*.test.mjs tests/ins
 
 실호출 기록은 업체별 README에 있습니다. Kilo 무료 13개·Cline 무료 3개는 전부 응답했고 OpenCode는 당시 무료 13개 중 12개 응답, `iceman-free`는 상위 배포 설정 오류였습니다. Go 예제로 Kilo low/high·OpenCode low/max도 확인했습니다. 이 수치는 현재 가용성을 보장하지 않습니다. 나머지 API 8곳은 키가 없어 실호출 미검증입니다.
 
-설치·업데이트·진단과 새 설치 바이너리의 호출은 Linux/WSL에서 검증했습니다. Windows는 PowerShell 문법 검사·Go 크로스컴파일까지 확인했으며 실제 설치·인증과 macOS 실행은 미검증입니다.
+설치·업데이트·진단과 새 설치 바이너리의 호출은 Linux/WSL에서 검증했습니다. Windows에서도 전용 Node·OpenCode·Cline 설치와 Kilo 익명 인증·네 Go 예제 실행을 확인했습니다. Windows의 OpenCode·Cline 로그인·추론, macOS 실행과 키 없는 API 8곳의 추론은 미검증입니다. [예제 검증 기록](examples/README.md#예제-검증-기록)을 참고합니다.

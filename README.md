@@ -18,6 +18,6 @@ POC/       기존 Node.js 구현
 
 [전체 구조](docs/development/architecture.md) · [개발 참여](CONTRIBUTING.md) · [기획](docs/planning/00-index.md)
 
-[공급처 사용법](backend/internal/providers/README.md) · [API 명세](backend/internal/providers/API.md) · [설치·업데이트](scripts/install/README.md)
+[공급처 사용법](backend/internal/providers/README.md) · [설치부터 호출까지 예제](backend/internal/providers/examples/README.md) · [API 명세](backend/internal/providers/API.md) · [설치·업데이트](scripts/install/README.md)
 
 [MIT License](LICENSE) · [라이선스 선택과 재사용 조건](docs/development/licensing.md)

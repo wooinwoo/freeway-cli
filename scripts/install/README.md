@@ -96,7 +96,7 @@ launchers는 소스의 절대 경로를 사용합니다. 소스 폴더를 옮겼
 - 소유자 불명·알 수 없는 파일이 있는 불완전 락은 자동 삭제하지 않습니다. 프로세스 종료와 전용 폴더를 점검해야 합니다.
 - 사용자 로그인 저장소·기존 게이트웨이 데이터는 설치 폴더와 별도입니다.
 
-검증: `node --test tests/install/providers.test.mjs`. Windows 실제 설치·인증과 macOS 실행은 별도 플랫폼 검증이 필요합니다.
+검증: `node --test tests/install/providers.test.mjs`. Linux/WSL과 Windows x64에서 실제 전용 런타임·두 CLI 설치를 확인했습니다. [설치부터 호출까지 실행 예제](../../backend/internal/providers/examples/README.md)를 제공합니다. Windows의 OpenCode·Cline 로그인·추론과 macOS 실행은 별도 검증이 필요합니다.
 
 ## 코드 구조
 

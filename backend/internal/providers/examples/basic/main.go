@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"time"
 
@@ -32,7 +33,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	provider := os.Getenv("FREEWAY_PROVIDER")
 	if provider == "" {
@@ -69,9 +72,13 @@ func run() error {
 	if err := json.NewEncoder(os.Stderr).Encode(quota); err != nil {
 		return err
 	}
+	prompt := os.Getenv("FREEWAY_PROMPT")
+	if prompt == "" {
+		prompt = "Reply with exactly FREEWAY_PROVIDER_OK. Do not use tools."
+	}
 	_, err = client.Stream(ctx, providers.Request{
 		Provider: provider, Model: model, ReasoningEffort: os.Getenv("FREEWAY_REASONING_EFFORT"),
-		MaxTokens: 2048, Messages: []providers.Message{{Role: "user", Content: "Reply with exactly FREEWAY_PROVIDER_OK. Do not use tools."}},
+		MaxTokens: 2048, Messages: []providers.Message{{Role: "user", Content: prompt}},
 	}, func(text string) { fmt.Print(text) })
 	if err != nil {
 		return err

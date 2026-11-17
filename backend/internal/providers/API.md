@@ -200,9 +200,9 @@ JSON Schema는 패킷 구조·정적 범위를 검사합니다. 추가 필드를
 
 ## 5. 범위와 참고
 
-현재 실호출 검증 공급처는 Kilo·OpenCode·Cline입니다. 나머지 API 8곳은 키가 없어 추론 미검증입니다. Windows는 크로스컴파일까지 확인했고 실제 로그인·호출은 미검증입니다. 현재 문서는 이 구현의 계약이며 최종 Go HTTP 서버의 설계를 대신하지 않습니다.
+현재 실호출 검증 공급처는 Kilo·OpenCode·Cline입니다. 나머지 API 8곳은 키가 없어 추론 미검증입니다. Windows는 실행 환경 설치와 Kilo 익명 인증·Go 예제 호출을 확인했으며 OpenCode·Cline 로그인·추론은 미검증입니다. 현재 문서는 이 구현의 계약이며 최종 Go HTTP 서버의 설계를 대신하지 않습니다.
 
 - [코드와 실행 명령](README.md)
 - [공통 구조와 책임](../../../docs/development/architecture.md)
-- [실행 가능한 Go 예제](examples/basic/main.go)
+- [설치·인증·Go 실행 예제](examples/README.md)
 - [동작 검증](client_test.go), [브리지 검증](bridge.test.mjs)
