@@ -2,10 +2,10 @@ export const definitions = [
   { id: 'kilo', name: 'Kilo', kind: 'openai', base: 'https://api.kilo.ai/api/gateway', env: 'KILO_API_KEY', keyOptional: true, priority: 10, limits: { hour: 200 }, quota: '시간당 200요청 / IP', proof: 'catalog-zero', catalog: true, url: 'https://kilo.ai/docs/gateway/usage-and-billing' },
   { id: 'opencode', name: 'OpenCode', kind: 'opencode', priority: 20, limits: {}, quota: '무료 모델별 한도', proof: 'catalog-zero', url: 'https://opencode.ai/v1/docs/server/' },
   { id: 'cline', name: 'Cline CLI', kind: 'cli', priority: 21, limits: {}, quota: 'Cline 공식 무료 프로모션 한도', proof: 'cli-free-catalog', url: 'https://docs.cline.bot/getting-started/free-models' },
-  { id: 'nvidia', name: 'NVIDIA NIM', kind: 'openai', base: 'https://integrate.api.nvidia.com/v1', env: 'NVIDIA_API_KEY', priority: 30, limits: { minute: 40 }, quota: '대부분 모델 최대 40요청 / 분', proof: 'free-prototype', catalog: true, url: 'https://build.nvidia.com/' },
+  { id: 'nvidia', name: 'NVIDIA NIM', kind: 'openai', base: 'https://integrate.api.nvidia.com/v1', env: 'NVIDIA_API_KEY', priority: 30, limits: { minute: 40 }, quota: '대부분 모델 최대 40요청 / 분', proof: 'free-prototype', catalog: true, needsConfirmation: true, url: 'https://build.nvidia.com/' },
   { id: 'zai', name: 'Z.ai', kind: 'openai', base: 'https://api.z.ai/api/paas/v4', env: 'ZAI_API_KEY', priority: 40, limits: {}, quota: '지정 Flash 모델 입출력 $0', proof: 'allowlist', seed: ['glm-4.7-flash', 'glm-4.5-flash'], url: 'https://docs.z.ai/guides/overview/pricing' },
   { id: 'requesty', name: 'Requesty', kind: 'openai', base: 'https://router.requesty.ai/v1', env: 'REQUESTY_API_KEY', priority: 50, limits: { day: 200 }, quota: '무료 모델 일 200요청', proof: 'catalog-zero', catalog: true, url: 'https://www.requesty.ai/models/free' },
-  { id: 'vikasit', name: 'Vikasit', kind: 'openai', base: 'https://api.vikasit.ai/v1', env: 'VIKASIT_API_KEY', priority: 60, limits: { dayTokens: 2000000 }, quota: 'Nova 일 200만 토큰 · 계정 확인', proof: 'allowlist', seed: ['vikasit-nova'], url: 'https://vikasit.ai/' },
+  { id: 'vikasit', name: 'Vikasit', kind: 'openai', base: 'https://api.vikasit.ai/v1', env: 'VIKASIT_API_KEY', priority: 60, limits: { dayTokens: 2000000 }, quota: 'Nova 일 200만 토큰 · 계정 확인', proof: 'allowlist', seed: ['vikasit-nova'], needsConfirmation: true, url: 'https://vikasit.ai/' },
   { id: 'openrouter', name: 'OpenRouter', kind: 'openai', base: 'https://openrouter.ai/api/v1', env: 'OPENROUTER_API_KEY', priority: 70, limits: { minute: 20, day: 50 }, quota: '무결제 기준 일 50요청', proof: 'suffix-free', catalog: true, url: 'https://openrouter.ai/collections/free-models/' },
   { id: 'groq', name: 'Groq', kind: 'openai', base: 'https://api.groq.com/openai/v1', env: 'GROQ_API_KEY', priority: 80, limits: { minute: 30, day: 1000, dayTokens: 200000 }, quota: '무료 계정 한도 확인 필요', proof: 'free-account', seed: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'], needsConfirmation: true, url: 'https://console.groq.com/docs/rate-limits' },
   { id: 'gemini_api', name: 'Gemini API', kind: 'openai', base: 'https://generativelanguage.googleapis.com/v1beta/openai', env: 'GEMINI_API_KEY', priority: 90, limits: {}, quota: '프로젝트별 무료 한도', proof: 'free-account', seed: ['gemini-2.5-flash', 'gemini-2.5-flash-lite'], needsConfirmation: true, url: 'https://aistudio.google.com/docs/pricing' },
@@ -14,6 +14,7 @@ export const definitions = [
 
 export function freeModel(provider, model) {
   const id = model.id || model.name || '';
+  if (model.isFree === false) return false;
   if (!id || model.architecture?.modality && !model.architecture.modality.includes('text')) return false;
   const pricing = model.pricing || model.cost;
   const isZero = value => (typeof value === 'number' || typeof value === 'string' && value.trim() !== '') && Number(value) === 0;
@@ -44,7 +45,7 @@ export function catalogModel(provider, model) {
   const entry=normalizeModel(provider,model);
   entry.free=freeModel(provider,model)&&model.status!=='deprecated'&&!model.disabled;
   entry.pricing={input:numeric(input),output:numeric(output),unit:model.pricing?'per_token':'per_million_tokens'};
-  entry.catalogStatus=model.status==='deprecated'||model.disabled?'deprecated':entry.free?'free':numeric(input)>0||numeric(output)>0?'paid':'unverified';
+  entry.catalogStatus=model.status==='deprecated'||model.disabled?'deprecated':entry.free?'free':model.isFree===false||numeric(input)>0||numeric(output)>0?'paid':'unverified';
   return entry;
 }
 

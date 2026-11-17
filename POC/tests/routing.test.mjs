@@ -6,6 +6,36 @@ import { join } from 'node:path';
 import { Store } from '../src/store.mjs';
 import { Engine } from '../src/engine.mjs';
 import { GatewayError } from '../src/streams.mjs';
+import { definitions } from '../src/catalog.mjs';
+
+test('Kilo explicitly paid models stay out of free routes even with zero token prices', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'freeway-kilo-catalog-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const provider = definitions.find(p => p.id === 'kilo');
+  const paidIds = ['google/lyria-3-pro-preview', 'google/lyria-3-clip-preview', 'recursive/flint-v1.0', 'humansand/ampersand-v0.1'];
+  const models = [
+    ...paidIds.map(id => ({ id, isFree: false, pricing: { prompt: '0', completion: '0' } })),
+    { id: 'verified-free', isFree: true, pricing: { prompt: '0', completion: '0' } },
+    { id: 'charged', isFree: true, pricing: { prompt: '1', completion: '1' } }
+  ];
+  const store = new Store(dir);
+  let requests = 0;
+  const engine = new Engine(store, null, { providers: [provider], fetcher: async url => {
+    requests++;
+    assert.equal(url, provider.base + '/models');
+    return Response.json({ data: models });
+  } });
+  await engine.refresh('kilo');
+  assert.deepEqual(engine.models().map(m => m.upstreamId), ['verified-free']);
+  for (const id of paidIds) {
+    const entry = engine.catalog().find(m => m.upstreamId === id);
+    assert.equal(entry.free, false);
+    assert.equal(entry.catalogStatus, 'paid');
+    assert.equal(entry.ready, false);
+    await assert.rejects(engine.candidates({ model: 'kilo/' + id, messages: [{ role: 'user', content: 'test' }] }), { code: 'model_not_found' });
+  }
+  assert.equal(requests, 1);
+});
 
 test('Auto falls back from exhausted OpenCode to Cline and records a cooldown', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'freeway-routing-'));
