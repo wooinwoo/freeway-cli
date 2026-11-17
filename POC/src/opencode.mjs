@@ -8,7 +8,8 @@ import { AsyncQueue, sseEvents, GatewayError } from './streams.mjs';
 import { normalizeModel, catalogModel } from './catalog.mjs';
 import { findExecutable } from './executables.mjs';
 
-const deniedTools = Object.fromEntries(['*', 'bash', 'read', 'write', 'edit', 'patch', 'apply_patch', 'glob', 'grep', 'list', 'task', 'webfetch', 'websearch', 'codesearch', 'todowrite', 'todoread', 'question', 'skill', 'lsp'].map(k => [k, false]));
+// Keep a read schema for OpenCode's free route; every read still requires approval and is rejected below.
+const toolPermission = { '*': 'deny', read: 'ask' };
 
 function modelError(error) {
   const description = JSON.stringify(error || {});
@@ -40,8 +41,8 @@ async function freePort() {
 }
 
 export class OpenCodeBridge {
-  constructor(dir, { fetcher = fetch } = {}) {
-    this.dir = dir; this.fetcher = fetcher; this.ready = false; this.child = null;
+  constructor(dir, { fetcher = fetch, runner = spawn } = {}) {
+    this.dir = dir; this.fetcher = fetcher; this.runner = runner; this.ready = false; this.child = null;
     this.binary = findOpenCode(); this.version = null; this.base = null;
     this.lastError = null; this.password = randomBytes(24).toString('hex');
   }
@@ -60,14 +61,14 @@ export class OpenCodeBridge {
     this.base = 'http://127.0.0.1:' + port;
     const config = {
       enabled_providers: ['opencode'], share: 'disabled', compaction: { auto: false },
-      permission: { '*': 'deny' },
+      permission: toolPermission,
       agent: { title: { disable: true }, summary: { disable: true }, compaction: { disable: true }, freeway: {
         description: 'Conversational gateway without filesystem or command access.',
-        mode: 'primary', tools: deniedTools, permission: { '*': 'deny' }, steps: 1,
+        mode: 'primary', permission: toolPermission,
         prompt: 'Answer the user conversationally. Do not use any tools, inspect local files, or execute commands.'
       } }
     };
-    this.child = spawn(this.binary, ['serve', '--hostname', '127.0.0.1', '--port', String(port)], {
+    this.child = this.runner(this.binary, ['serve', '--hostname', '127.0.0.1', '--port', String(port)], {
       cwd: this.dir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, OPENCODE_SERVER_PASSWORD: this.password, OPENCODE_SERVER_USERNAME: 'opencode',
         OPENCODE_DISABLE_AUTOUPDATE: 'true', OPENCODE_DISABLE_SHARE: 'true',
@@ -139,14 +140,16 @@ export class OpenCodeBridge {
       if (!r.ok) throw new GatewayError('OpenCode 요청 실패 (HTTP ' + r.status + ')', r.status, 'opencode_error');
       return r;
     };
-    const created = await request('/session', { method: 'POST', body: JSON.stringify({ title: 'Freeway chat' }), signal });
+    const created = await request('/session', { method: 'POST', body: JSON.stringify({ title: 'Freeway chat',
+      permission: Object.entries(toolPermission).map(([permission, action]) => ({ permission, pattern: '*', action }))
+    }), signal });
     const session = await created.json();
     const eventController = new AbortController();
     const eventsSignal = AbortSignal.any([signal, eventController.signal]);
     const queue = new AsyncQueue();
     const partTexts = new Map();
     const assistantMessages = new Set();
-    let emitted = '', completed = false, failed = false;
+    let emitted = '', completed = false, failed = false, blockedTool = false, resultReceived = false;
     const fail = error => {
       if (failed) return;
       failed = true; queue.push({ type: 'error', error }); queue.end();
@@ -165,6 +168,20 @@ export class OpenCodeBridge {
             const envelope = JSON.parse(raw);
             const event = envelope.payload || envelope;
             const props = event.properties || {};
+            if (event.type === 'permission.asked' && props.sessionID === session.id) {
+              blockedTool = true;
+              try {
+                if (typeof props.id !== 'string' || !props.id) throw new Error('Missing permission ID');
+                await request('/permission/' + encodeURIComponent(props.id) + '/reply', {
+                  method: 'POST', signal, body: JSON.stringify({ reply: 'reject' })
+                });
+                fail(new GatewayError('OpenCode의 도구 실행 요청을 거절했습니다. 이 연결은 텍스트 대화만 지원합니다.', 400, 'unsupported_capability'));
+              } catch {
+                fail(new GatewayError('OpenCode 도구 권한을 거절하지 못해 요청을 중지했습니다.', 502, 'tool_rejection_failed'));
+              }
+              abortSession();
+              continue;
+            }
             if (event.type === 'session.error' && props.sessionID === session.id) fail(modelError(props.error));
             if (event.type === 'session.status' && props.sessionID === session.id && props.status?.type === 'retry') {
               const retry = modelError(props.status);
@@ -185,7 +202,7 @@ export class OpenCodeBridge {
               }
               partTexts.set(part.id, text);
             }
-            if (event.type === 'message.part.delta' && props.sessionID === session.id && props.field === 'text' && assistantMessages.has(props.messageID)) {
+            if (event.type === 'message.part.delta' && props.sessionID === session.id && props.field === 'text' && assistantMessages.has(props.messageID) && partTexts.has(props.partID)) {
               const delta = props.delta || '';
               partTexts.set(props.partID, (partTexts.get(props.partID) || '') + delta);
               if (delta) queue.push({ type: 'text', text: delta });
@@ -203,22 +220,25 @@ export class OpenCodeBridge {
           const response = await request('/session/' + session.id + '/message', {
             method: 'POST', signal, body: JSON.stringify({
               model: { providerID: model.opencodeProvider, modelID: model.upstreamId },
-              agent: 'freeway', system, tools: deniedTools,
+              agent: 'freeway', system,
               parts: [{ type: 'text', text: 'Continue this conversation and answer the last user message:\n\n' + history }]
             })
           });
           const result = await response.json();
+          if (blockedTool) return;
           if (result.info?.error) throw modelError(result.info.error);
           queue.push({ type: 'result', result });
         } catch (error) { queue.push({ type: 'error', error }); }
-        finally { queue.end(); }
+        finally { if (!blockedTool) queue.end(); }
       })();
       for await (const event of queue) {
         if (event.type === 'error') throw event.error;
         if (event.type === 'text') {
+          if (resultReceived) continue;
           emitted += event.text;
           yield { choices: [{ index: 0, delta: { content: event.text }, finish_reason: null }] };
         } else {
+          resultReceived = true;
           const text = (event.result.parts || []).filter(p => p.type === 'text').map(p => p.text || '').join('\n');
           if (text.startsWith(emitted) && text.length > emitted.length) {
             yield { choices: [{ index: 0, delta: { content: text.slice(emitted.length) }, finish_reason: null }] };
