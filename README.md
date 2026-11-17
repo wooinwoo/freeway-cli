@@ -18,4 +18,6 @@ POC/       기존 Node.js 구현
 
 [전체 구조](docs/development/architecture.md) · [개발 참여](CONTRIBUTING.md) · [기획](docs/planning/00-index.md)
 
+[공급처별 인증·연결·모델 시험 명령](backend/internal/providers/README.md)
+
 [MIT License](LICENSE) · [라이선스 선택과 재사용 조건](docs/development/licensing.md)
