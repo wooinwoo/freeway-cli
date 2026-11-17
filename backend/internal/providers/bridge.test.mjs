@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { createGateway } from '../../../POC/server.mjs';
 import { Client } from '../../../POC/src/client.mjs';
 import { definitions } from '../../../POC/src/catalog.mjs';
-import { execute } from './bridge.mjs';
+import { execute, errorEvent } from './bridge.mjs';
 import { run } from './manage.mjs';
 import { GatewayError } from '../../../POC/src/streams.mjs';
 
@@ -31,6 +31,21 @@ async function setup(t) {
 test('backend package lists all providers without contacting a gateway', async () => {
   const result = await execute({ action: 'providers' });
   assert.equal(result.length, 11);
+});
+
+test('bridge errors conform to Go string codes and integer retry seconds even for DOM exceptions', () => {
+  assert.deepEqual(errorEvent(new DOMException('private timeout detail', 'TimeoutError')), {
+    type: 'error', error: { code: 'request_timeout', status: 504, retryAfter: 0 }
+  });
+  assert.deepEqual(errorEvent(new DOMException('private cancellation detail', 'AbortError')), {
+    type: 'error', error: { code: 'cancelled', status: 499, retryAfter: 0 }
+  });
+  assert.deepEqual(errorEvent({ code: 23, status: '504', message: 'secret' }), {
+    type: 'error', error: { code: 'bridge_failed', status: 502, retryAfter: 0 }
+  });
+  assert.deepEqual(errorEvent({ code: 'rate_limit_exceeded', status: 429, retryAfter: 2.5 }), {
+    type: 'error', error: { code: 'rate_limit_exceeded', status: 429, retryAfter: 3 }
+  });
 });
 
 test('backend authentication reuses encrypted credentials without returning the key', async t => {

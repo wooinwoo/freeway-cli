@@ -14,6 +14,15 @@ function unwrap(result) {
   return result.results[0];
 }
 
+export function errorEvent(error) {
+  const code = error?.name === 'TimeoutError' ? 'request_timeout' : error?.name === 'AbortError' ? 'cancelled'
+    : typeof error?.code === 'string' && error.code ? error.code : 'bridge_failed';
+  const fallback = code === 'request_timeout' ? 504 : code === 'cancelled' ? 499 : code === 'rate_limit_exceeded' ? 429 : 502;
+  const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599 ? error.status : fallback;
+  const retryAfter = Number.isFinite(error?.retryAfter) && error.retryAfter > 0 ? Math.ceil(error.retryAfter) : 0;
+  return { type: 'error', error: { code, status, retryAfter } };
+}
+
 // Backend operations reuse the existing gateway's credentials, adapters and usage ledger.
 export async function execute(input, { client, emit = () => {} } = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw problem('invalid_request');
@@ -65,8 +74,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     emit({ type: 'result', result });
   } catch (error) {
     // Raw upstream/child errors may contain secrets; expose only normalized codes.
-    emit({ type: 'error', error: { code: error.code || 'bridge_failed', status: error.status || (error.code === 'rate_limit_exceeded' ? 429 : 502),
-      retryAfter: error.retryAfter || 0 } });
+    emit(errorEvent(error));
     process.exitCode = 1;
   }
 }
