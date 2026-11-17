@@ -1,12 +1,10 @@
 # Kilo
 
-공급처 ID: `kilo`. 인증·연결·모델 시험용 인계 자료입니다. Go 어댑터 구현 완료를 뜻하지 않습니다. 공통 실행 조건은 [상위 안내](../README.md)를 따릅니다.
+공급처 ID: `kilo`. 공통 실행 순서와 Go 사용법은 [공급처 README](../README.md)를 따릅니다.
 
 ## 인증과 연결
 
 무료 모델은 키 없이 auth kilo로 연결할 수 있습니다. 계정 키를 쓸 때는 공식 대시보드에서 발급한 KILO_API_KEY를 숨김 입력 또는 --from-env로 전달합니다.
-
-저장소 루트에서 실행합니다. 키는 화면에 표시하지 않는 터미널 입력으로 받으며 코드나 명령행 인수로 전달하지 않습니다.
 
 ```sh
 node backend/internal/providers/manage.mjs auth kilo
@@ -18,7 +16,7 @@ node backend/internal/providers/manage.mjs models kilo
 
 ## 모델 변경과 실제 요청
 
-Go 백엔드는 공통 [공급처 패키지](../INTEGRATION.md#go-공급처-패키지-사용)에 `Provider: "kilo"`를 지정합니다. 모델별 `Reasoning.Efforts`를 조회하고 `Request.ReasoningEffort`를 설정합니다. CLI는 `--reasoning-effort high`를 지원합니다. 예를 들어 `reflection/beam-free`의 `low/high` 요청을 실제 Go 코드로 확인했습니다. `Quota`·`quota kilo`는 로컬 집계이며 업체의 정확한 잔여량은 미제공이면 `null`입니다.
+Go 백엔드는 공통 [공급처 패키지](../README.md#go에서-사용)에 `Provider: "kilo"`를 지정합니다. 모델별 `Reasoning.Efforts`를 조회하고 `Request.ReasoningEffort`를 설정합니다. CLI는 `--reasoning-effort high`를 지원합니다. 예를 들어 `reflection/beam-free`의 `low/high` 요청을 실제 Go 코드로 확인했습니다. `Quota`·`quota kilo`는 로컬 집계이며 업체의 정확한 잔여량은 미제공이면 `null`입니다.
 
 다음 ID는 예시입니다. 현재 목록에 있을 때만 사용할 수 있습니다. `models kilo`는 각 모델의 실제 ID와 실행 가능한 `select`, `probe`, `ask` argv 배열을 함께 출력합니다.
 
@@ -28,11 +26,9 @@ node backend/internal/providers/manage.mjs probe kilo --model nvidia/nemotron-3-
 node backend/internal/providers/manage.mjs ask kilo --model nvidia/nemotron-3-ultra-550b-a55b:free -- "한 문장으로 인사해 주세요."
 ```
 
-`select`는 POC의 기본 모델을 저장합니다. `--model`은 한 요청에서만 모델을 바꿉니다. 업체를 지정한 시험은 다른 업체로 자동 전환하지 않습니다. `probe`는 실제 assistant 응답이 확인 문자열과 일치해야 통과합니다.
-
 ## 백엔드 연결 근거
 
-현재 공식 문서는 기본 주소를 `https://ai-gateway.kilo.ai/api/v1`로 안내합니다. 아래는 이번 실계정 시험에서 동작한 기존 POC 주소이며, Go 이식 시 공식 주소의 모델 조회와 요청 계약을 재검증합니다.
+현재 공식 문서는 기본 주소를 `https://ai-gateway.kilo.ai/api/v1`로 안내합니다. 아래는 이번 익명 시험에서 동작한 기존 POC 주소이며, Go 이식 시 공식 주소의 모델 조회와 요청 계약을 재검증합니다.
 
 - 요청 기본 주소: `https://api.kilo.ai/api/gateway` (현재 POC 설정).
 - 인증: `Authorization: Bearer`와 계정 API 키. 이 공급처의 무료 경로는 키를 생략할 수 있습니다.
@@ -46,8 +42,6 @@ node backend/internal/providers/manage.mjs ask kilo --model nvidia/nemotron-3-ul
 입력·출력 단가가 모두 0이고 공식 카탈로그가 `isFree: false`로 표시하지 않은 모델만 사용합니다. 토큰 단가 0만으로는 요청·음악 생성 등 다른 요금까지 무료라는 뜻이 아닙니다. 익명 무료 요청은 IP별 제한을 받습니다. API 키와 연결된 BYOK의 별도 과금 조건도 확인해야 합니다.
 
 무료·한도 설명: [공식 안내](https://kilo.ai/docs/gateway/usage-and-billing). 공식 인증·API 안내: [문서](https://kilo.ai/docs/gateway). 확인 기준일: 2026-11-17. 공급처 정책이 바뀔 수 있으므로 실제 실행 결과를 별도로 확인해야 합니다.
-
-인증 실패, 권한 거부, 무료 한도 소진, 프로모션 종료를 성공으로 처리하지 않습니다. HTTP 429와 CLI의 무료 할당 소진은 대기·다른 경로 선택 사유이며 유료 전환 근거가 아닙니다. CLI 출력 제한은 공식 클라이언트가 결정하므로 Freeway의 `max_tokens`만으로 강제된다고 가정하지 않습니다.
 
 ## 전체 모델 실제 호출 결과
 

@@ -1,14 +1,12 @@
 # Cline CLI
 
-공급처 ID: `cline`. 인증·연결·모델 시험용 인계 자료입니다. Go 어댑터 구현 완료를 뜻하지 않습니다. 공통 실행 조건은 [상위 안내](../README.md)를 따릅니다.
+공급처 ID: `cline`. 공통 실행 순서와 Go 사용법은 [공급처 README](../README.md)를 따릅니다.
 
 ## 인증과 연결
 
 공식 CLI 설치 후 auth cline --login으로 cline auth cline을 실행합니다. 브라우저·기기 인증은 사용자가 공식 화면에서 완료합니다. 공식 CLI가 토큰 갱신을 담당합니다.
 
-공식 CLI 설치 명령: `npm install -g cline`.
-
-저장소 루트에서 실행합니다. 키는 화면에 표시하지 않는 터미널 입력으로 받으며 코드나 명령행 인수로 전달하지 않습니다.
+설치·버전 확인·업데이트는 [공통 설치기](../../../../scripts/install/README.md)의 `--only cline`을 사용합니다. 수동 공식 npm 설치가 필요한 경우 검증 버전은 `npm install -g cline@3.0.62`입니다.
 
 ```sh
 node backend/internal/providers/manage.mjs auth cline --login
@@ -18,7 +16,7 @@ node backend/internal/providers/manage.mjs models cline
 
 ## 모델 변경과 실제 요청
 
-Go 백엔드는 공통 [공급처 패키지](../INTEGRATION.md#go-공급처-패키지-사용)에 `Provider: "cline"`을 지정합니다. `Authenticate`는 기존 공식 로그인을 재사용하고, `Login`은 운영 터미널에서 공식 인증을 시작합니다. 현재 ACP 브리지의 `Reasoning.Efforts`는 비어 있습니다. 추론 깊이를 지정하면 무시하지 않고 `unsupported_reasoning`으로 거절합니다. 일반 CLI의 `--thinking`을 ACP 요청에 그대로 붙이지 않습니다. 관련 [공식 프로젝트 이슈](https://github.com/cline/cline/issues/14820)를 참고합니다. `Quota`·`quota cline`은 로컬 집계이며 업체의 정확한 잔여량은 미제공이면 `null`입니다.
+Go 백엔드는 공통 [공급처 패키지](../README.md#go에서-사용)에 `Provider: "cline"`을 지정합니다. `Authenticate`는 기존 공식 로그인을 재사용하고, `Login`은 운영 터미널에서 공식 인증을 시작합니다. 현재 ACP 브리지의 `Reasoning.Efforts`는 비어 있습니다. 추론 깊이를 지정하면 무시하지 않고 `unsupported_reasoning`으로 거절합니다. 일반 CLI의 `--thinking`을 ACP 요청에 그대로 붙이지 않습니다. 관련 [공식 프로젝트 이슈](https://github.com/cline/cline/issues/14820)를 참고합니다. `Quota`·`quota cline`은 로컬 집계이며 업체의 정확한 잔여량은 미제공이면 `null`입니다.
 
 다음 ID는 예시입니다. 현재 목록에 있을 때만 사용할 수 있습니다. `models cline`는 각 모델의 실제 ID와 실행 가능한 `select`, `probe`, `ask` argv 배열을 함께 출력합니다.
 
@@ -27,8 +25,6 @@ node backend/internal/providers/manage.mjs select cline cline-free/nemotron-3.5-
 node backend/internal/providers/manage.mjs probe cline --model cline-free/nemotron-3.5-super-vl
 node backend/internal/providers/manage.mjs ask cline --model cline-free/nemotron-3.5-super-vl -- "한 문장으로 인사해 주세요."
 ```
-
-`select`는 POC의 기본 모델을 저장합니다. `--model`은 한 요청에서만 모델을 바꿉니다. 업체를 지정한 시험은 다른 업체로 자동 전환하지 않습니다. `probe`는 실제 assistant 응답이 확인 문자열과 일치해야 통과합니다.
 
 ## 백엔드 연결 근거
 
@@ -45,8 +41,6 @@ node backend/internal/providers/manage.mjs ask cline --model cline-free/nemotron
 공식 카탈로그의 free 배열만 사용합니다. recommended와 ClinePass 목록을 무료로 취급하지 않습니다. 무료 모델은 기간·할당량에 따라 사라질 수 있습니다.
 
 무료·한도 설명: [공식 안내](https://docs.cline.bot/getting-started/free-models). 공식 인증·API 안내: [문서](https://raw.githubusercontent.com/cline/cline/main/apps/cli/README.md). 확인 기준일: 2026-11-17. 공급처 정책이 바뀔 수 있으므로 실제 실행 결과를 별도로 확인해야 합니다.
-
-인증 실패, 권한 거부, 무료 한도 소진, 프로모션 종료를 성공으로 처리하지 않습니다. HTTP 429와 CLI의 무료 할당 소진은 대기·다른 경로 선택 사유이며 유료 전환 근거가 아닙니다. CLI 출력 제한은 공식 클라이언트가 결정하므로 Freeway의 `max_tokens`만으로 강제된다고 가정하지 않습니다.
 
 ## 전체 모델 실제 호출 결과
 

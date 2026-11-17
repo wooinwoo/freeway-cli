@@ -89,7 +89,7 @@ Go TUI
 
 이 연결은 TUI에서 실제 무료 모델을 사용하기 위한 임시 구현입니다. 최종 Go 서버를 대신 완성한 것이 아니며, POC의 내부 통신 형식을 최종 HTTP 계약으로 채택하지 않습니다. 모델·스트림·대화 저장 어댑터를 교체하고 TUI를 유지하는 경계를 둡니다. `backend/`와 `api/openapi.yaml`은 이번 연결로 변경하지 않습니다. Go TUI의 대화·초안은 기존 POC의 암호화된 대화 API로 저장하며, 비밀 저장 파일을 직접 열지 않습니다. 기존 POC와 같은 revision 충돌 검사를 사용합니다.
 
-현재 공급처 준비·백엔드 호출·모델 ID·오류 처리와 Go 이식에 필요한 원본 코드 위치는 [백엔드 연동 가이드](../../backend/internal/providers/INTEGRATION.md)에 정리합니다. 업체별 프로토콜과 실행 명령은 [공급처 안내](../../backend/internal/providers/README.md)를 따릅니다.
+공급처 실행 순서는 [사용법](../../backend/internal/providers/README.md), 함수·메시지 계약은 [API 명세](../../backend/internal/providers/API.md), 설치·업데이트는 [설치기 안내](../../scripts/install/README.md)를 따릅니다.
 
 `backend/internal/providers/client.go`는 현재 백엔드에서 import할 수 있는 Go 공급처 클라이언트입니다. `bridge.mjs`를 통해 같은 POC 게이트웨이의 인증·모델·한도·추론을 재사용하며, 독립적인 Go 서버·비밀 저장소·원장을 추가하지 않습니다. `examples/basic/main.go`에서 실제 호출할 수 있습니다. 최종 공통 Go 계약과 `freewayd` 구현은 여전히 별도 작업입니다.
 

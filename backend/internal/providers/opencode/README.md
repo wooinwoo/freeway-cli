@@ -1,16 +1,14 @@
 # OpenCode
 
-공급처 ID: `opencode`. 인증·연결·모델 시험용 인계 자료입니다. Go 어댑터 구현 완료를 뜻하지 않습니다. 공통 실행 조건은 [상위 안내](../README.md)를 따릅니다.
+공급처 ID: `opencode`. 공통 실행 순서와 Go 사용법은 [공급처 README](../README.md)를 따릅니다.
 
 ## 인증과 연결
 
 공식 CLI를 먼저 설치합니다. 자체 무료 모델은 auth opencode로 로컬 서버를 연결합니다. 계정 인증이 필요한 경우 auth opencode --login은 opencode auth login을 실행합니다.
 
-공식 CLI 설치 명령: `npm install -g opencode-ai`.
+설치·버전 확인·업데이트는 [공통 설치기](../../../../scripts/install/README.md)의 `--only opencode`를 사용합니다. 수동 공식 npm 설치가 필요한 경우 검증 버전은 `npm install -g opencode-ai@1.18.35`입니다.
 
 현재 POC 브리지는 V1 서버 API를 사용하며 WSL의 1.18.35에서 검증했습니다. 최신 V2 패키지 `@opencode/cli`의 서버 API를 지원한다는 뜻은 아닙니다. 정상 사용 중인 설치를 이 검증 때문에 교체할 필요는 없습니다.
-
-저장소 루트에서 실행합니다. 키는 화면에 표시하지 않는 터미널 입력으로 받으며 코드나 명령행 인수로 전달하지 않습니다.
 
 ```sh
 node backend/internal/providers/manage.mjs auth opencode
@@ -20,7 +18,7 @@ node backend/internal/providers/manage.mjs models opencode
 
 ## 모델 변경과 실제 요청
 
-Go 백엔드는 공통 [공급처 패키지](../INTEGRATION.md#go-공급처-패키지-사용)에 `Provider: "opencode"`를 지정합니다. `Request.ReasoningEffort`는 모델 조회의 `Reasoning.Efforts`에 있는 공식 `variant` 값으로 전달합니다. DeepSeek의 `low/max`를 실제 Go 코드로 확인했습니다. 지원값이 없는 모델에는 추론 깊이를 지정하지 않습니다. `Quota`·`quota opencode`는 로컬 관측이며 업체의 정확한 무료 잔여량을 보장하지 않습니다.
+Go 백엔드는 공통 [공급처 패키지](../README.md#go에서-사용)에 `Provider: "opencode"`를 지정합니다. `Request.ReasoningEffort`는 모델 조회의 `Reasoning.Efforts`에 있는 공식 `variant` 값으로 전달합니다. DeepSeek의 `low/max`를 실제 Go 코드로 확인했습니다. 지원값이 없는 모델에는 추론 깊이를 지정하지 않습니다. `Quota`·`quota opencode`는 로컬 관측이며 업체의 정확한 무료 잔여량을 보장하지 않습니다.
 
 다음 ID는 예시입니다. 현재 목록에 있을 때만 사용할 수 있습니다. `models opencode`는 각 모델의 실제 ID와 실행 가능한 `select`, `probe`, `ask` argv 배열을 함께 출력합니다.
 
@@ -29,8 +27,6 @@ node backend/internal/providers/manage.mjs select opencode deepseek-v4.1-flash-f
 node backend/internal/providers/manage.mjs probe opencode --model deepseek-v4.1-flash-free
 node backend/internal/providers/manage.mjs ask opencode --model deepseek-v4.1-flash-free -- "한 문장으로 인사해 주세요."
 ```
-
-`select`는 POC의 기본 모델을 저장합니다. `--model`은 한 요청에서만 모델을 바꿉니다. 업체를 지정한 시험은 다른 업체로 자동 전환하지 않습니다. `probe`는 실제 assistant 응답이 확인 문자열과 일치해야 통과합니다.
 
 ## 백엔드 연결 근거
 
@@ -46,8 +42,6 @@ node backend/internal/providers/manage.mjs ask opencode --model deepseek-v4.1-fl
 OpenCode 자체 공급처의 입출력 단가 0인 모델만 사용합니다. 무료 프로모션 종료·한도 소진을 구분합니다. 다른 공급처 키는 이 경로에 혼합하지 않습니다.
 
 무료·한도 설명: [공식 안내](https://opencode.ai/v1/docs/server/). 공식 인증·API 안내: [문서](https://opencode.ai/docs/cli/). 확인 기준일: 2026-11-17. 공급처 정책이 바뀔 수 있으므로 실제 실행 결과를 별도로 확인해야 합니다.
-
-인증 실패, 권한 거부, 무료 한도 소진, 프로모션 종료를 성공으로 처리하지 않습니다. HTTP 429와 CLI의 무료 할당 소진은 대기·다른 경로 선택 사유이며 유료 전환 근거가 아닙니다. CLI 출력 제한은 공식 클라이언트가 결정하므로 Freeway의 `max_tokens`만으로 강제된다고 가정하지 않습니다.
 
 ## 연결 설정 비교 결과
 

@@ -1,12 +1,10 @@
 # Requesty
 
-공급처 ID: `requesty`. 인증·연결·모델 시험용 인계 자료입니다. Go 어댑터 구현 완료를 뜻하지 않습니다. 공통 실행 조건은 [상위 안내](../README.md)를 따릅니다.
+공급처 ID: `requesty`. 공통 실행 순서와 Go 사용법은 [공급처 README](../README.md)를 따릅니다.
 
 ## 인증과 연결
 
 공식 Requesty 계정의 API 키를 발급해 REQUESTY_API_KEY로 전달합니다. 무료 모델 목록과 계정·조직의 한도를 확인합니다.
-
-저장소 루트에서 실행합니다. 키는 화면에 표시하지 않는 터미널 입력으로 받으며 코드나 명령행 인수로 전달하지 않습니다.
 
 ```sh
 node backend/internal/providers/manage.mjs auth requesty
@@ -25,8 +23,6 @@ node backend/internal/providers/manage.mjs select requesty nvidia/nemotron-3-ult
 node backend/internal/providers/manage.mjs probe requesty --model nvidia/nemotron-3-ultra-550b-a55b
 node backend/internal/providers/manage.mjs ask requesty --model nvidia/nemotron-3-ultra-550b-a55b -- "한 문장으로 인사해 주세요."
 ```
-
-`select`는 POC의 기본 모델을 저장합니다. `--model`은 한 요청에서만 모델을 바꿉니다. 업체를 지정한 시험은 다른 업체로 자동 전환하지 않습니다. `probe`는 실제 assistant 응답이 확인 문자열과 일치해야 통과합니다.
 
 ## 백엔드 연결 근거
 
