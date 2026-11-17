@@ -89,6 +89,8 @@ Go TUI
 
 이 연결은 TUI에서 실제 무료 모델을 사용하기 위한 임시 구현입니다. 최종 Go 서버를 대신 완성한 것이 아니며, POC의 내부 통신 형식을 최종 HTTP 계약으로 채택하지 않습니다. 모델·스트림·대화 저장 어댑터를 교체하고 TUI를 유지하는 경계를 둡니다. `backend/`와 `api/openapi.yaml`은 이번 연결로 변경하지 않습니다. Go TUI의 대화·초안은 기존 POC의 암호화된 대화 API로 저장하며, 비밀 저장 파일을 직접 열지 않습니다. 기존 POC와 같은 revision 충돌 검사를 사용합니다.
 
+현재 공급처 준비·백엔드 호출·모델 ID·오류 처리와 Go 이식에 필요한 원본 코드 위치는 [백엔드 연동 가이드](../../backend/internal/providers/INTEGRATION.md)에 정리합니다. 업체별 프로토콜과 실행 명령은 [공급처 안내](../../backend/internal/providers/README.md)를 따릅니다.
+
 임시 공급처는 Kilo API, OpenCode CLI, Cline CLI입니다. POC 라우터가 모델의 무료 상태와 공급처 가용성을 판단합니다. CLI 계층은 사용자 PC의 공식 실행 파일만 호출하며, 최종 `backend/internal/providers/`에 구현이 완료됐다는 뜻은 아닙니다. Cline은 무료 카탈로그 확인 후 ACP 모델 선택 응답을 받은 뒤에만 프롬프트를 전달합니다. OpenCode는 무료 할당량 소진을 429·cooldown으로 처리합니다.
 
 ## 실행과 통신 경계
