@@ -30,8 +30,11 @@ exit $LASTEXITCODE
 `
         : `param([Parameter(ValueFromRemainingArguments=$true)][string[]]$ForwardArgs)
 $env:FREEWAY_PROVIDER_HOME = ${psQuote(root)}
+# Redirected native stderr may contain ordinary progress or login prompts.
+$ErrorActionPreference = 'Continue'
+$global:LASTEXITCODE = 1
 & ${psQuote(nodePath)} ${psQuote(manage)} @ForwardArgs
-exit $LASTEXITCODE
+exit $global:LASTEXITCODE
 `;
       writeFileSync(join(bin, name + '.ps1'), text);
     } else {

@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  rmSync,
+  copyFileSync,
+  linkSync
+} from 'node:fs';
 import { join, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -17,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { managedExecutable } from '../../POC/src/provider-runtime.mjs';
 import { findExecutable } from '../../POC/src/executables.mjs';
 import { run as manage } from '../../backend/internal/providers/manage.mjs';
+import { writeLaunchers } from '../../scripts/install/lib/launchers.mjs';
 
 function setup(t) {
   const root = mkdtempSync(join(tmpdir(), 'freeway-install-test-'));
@@ -336,3 +346,68 @@ test('platform resolution uses native Windows binaries and supported pinned targ
   assert.throws(() => parseArgs(['install', '--root', '/']), /dedicated/);
   assert.throws(() => parseArgs(['install', '--only', 'cline', '--api-only']), /invalid/);
 });
+
+test(
+  'PowerShell redirected progress preserves native success and failure exit codes',
+  {
+    skip: process.platform !== 'win32'
+  },
+  async (t) => {
+    const { root } = setup(t);
+    const source = join(root, 'source');
+    const directory = join(source, 'scripts', 'install');
+    const providerDir = join(source, 'backend', 'internal', 'providers');
+    const installRoot = join(root, 'installation');
+    const runtime = join(installRoot, 'runtime', `node-v${versions.node}-win-${process.arch}`);
+    for (const path of [directory, providerDir, runtime]) mkdirSync(path, { recursive: true });
+    copyFileSync(
+      fileURLToPath(new URL('../../scripts/install/providers.ps1', import.meta.url)),
+      join(directory, 'providers.ps1')
+    );
+    writeFileSync(join(directory, 'versions.json'), JSON.stringify(versions));
+    try {
+      linkSync(process.execPath, join(runtime, 'node.exe'));
+    } catch {
+      copyFileSync(process.execPath, join(runtime, 'node.exe'));
+    }
+    const fixture = `console.error('ordinary progress');console.log(JSON.stringify({args:process.argv.slice(2)}));process.exitCode=Number(process.env.FREEWAY_TEST_NATIVE_EXIT);`;
+    writeFileSync(join(directory, 'providers.mjs'), fixture);
+    writeFileSync(join(providerDir, 'manage.mjs'), fixture);
+    const bin = writeLaunchers({
+      root: installRoot,
+      nodePath: process.execPath,
+      repo: source,
+      directory
+    });
+    const quote = (value) => "'" + value.replaceAll("'", "''") + "'";
+    const verifier = join(root, 'verify.ps1');
+    writeFileSync(
+      verifier,
+      `
+$ErrorActionPreference = 'Stop'
+$commands = @(
+  @{ Path=${quote(join(directory, 'providers.ps1'))}; Arguments=@{Action='check';Root=${quote(installRoot)}} },
+  @{ Path=${quote(join(bin, 'freeway-providers.ps1'))}; Arguments=@{ForwardArgs=@('models','kilo')} }
+)
+foreach ($code in @(0,7)) {
+  $env:FREEWAY_TEST_NATIVE_EXIT = [string]$code
+  foreach ($command in $commands) {
+    $parameters = $command.Arguments
+    & $command.Path @parameters *> ${quote(join(root, 'native.log'))}
+    if ($LASTEXITCODE -ne $code) { throw 'Native exit code was lost' }
+    $text = Get-Content -LiteralPath ${quote(join(root, 'native.log'))} -Raw
+    if (-not $text.Contains('ordinary progress')) { throw 'Progress log was lost' }
+    if (-not $text.Contains('"args"')) { throw 'Native command did not complete' }
+  }
+}
+Write-Output 'Redirected native stderr regression OK'
+`
+    );
+    const result = await runProcess(
+      join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', verifier],
+      { capture: true }
+    );
+    assert(result.includes('regression OK'));
+  }
+);

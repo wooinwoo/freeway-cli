@@ -59,5 +59,9 @@ if (-not (Test-Path -LiteralPath $node -PathType Leaf)) {
 $arguments = @((Join-Path $PSScriptRoot 'providers.mjs'), $Action, '--root', $Root)
 if ($ApiOnly) { $arguments += '--api-only' }
 if ($Only) { $arguments += @('--only', $Only) }
+# PowerShell 5.1 turns redirected native stderr into error records, even for progress logs.
+# The native exit code decides success; initialize it so a launch failure cannot reuse zero.
+$ErrorActionPreference = 'Continue'
+$global:LASTEXITCODE = 1
 & $node @arguments
-exit $LASTEXITCODE
+exit $global:LASTEXITCODE
