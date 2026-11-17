@@ -13,7 +13,7 @@ export const providers = definitions.map(p => ({ ...p,
   ...JSON.parse(readFileSync(join(root, p.id, 'auth.json'), 'utf8')) }));
 const marker = 'FREEWAY_PROVIDER_OK';
 const script = 'backend/internal/providers/manage.mjs';
-const commands = new Set(['list', 'auth', 'status', 'models', 'select', 'probe', 'ask']);
+const commands = new Set(['list', 'auth', 'status', 'quota', 'models', 'select', 'probe', 'ask']);
 
 class UsageError extends Error {}
 function parse(args) {
@@ -21,9 +21,9 @@ function parse(args) {
   const flags = { '--from-env': ['fromEnv', ['auth']], '--stdin': ['stdin', ['auth']],
     '--login': ['login', ['auth']], '--confirm-free': ['confirmFree', ['auth']] };
   const values = { '--model': ['model', ['probe', 'ask']], '--timeout': ['timeout', ['probe', 'ask']],
-    '--max-tokens': ['maxTokens', ['probe', 'ask']] };
+    '--max-tokens': ['maxTokens', ['probe', 'ask']], '--reasoning-effort': ['reasoningEffort', ['probe', 'ask']] };
   if (['--help', '-h', 'help'].includes(options.command)) return { command: 'help' };
-  if (!commands.has(options.command)) throw new UsageError('지원 명령: list, auth, status, models, select, probe, ask.');
+  if (!commands.has(options.command)) throw new UsageError('지원 명령: list, auth, status, quota, models, select, probe, ask.');
   for (let i = 1; i < args.length; i++) {
     const a = args[i];
     if (a === '--') { options.positional.push(...args.slice(i + 1)); break; }
@@ -118,17 +118,17 @@ function publicProvider(p) {
   return { id: p.id, name: p.name, kind: p.kind, base: p.base || null, env: p.env || null,
     authUrl: p.authUrl, docsUrl: p.docsUrl, freeBasis: p.proof, quota: p.quota,
     modelSource: p.catalog || p.kind !== 'openai' ? 'remote_catalog' : 'documented_allowlist',
-    commands: Object.fromEntries(['auth', 'status', 'models', 'probe'].map(cmd => [cmd, [process.execPath, join(root, 'manage.mjs'), cmd, p.id]])) };
+    commands: Object.fromEntries(['auth', 'status', 'quota', 'models', 'probe'].map(cmd => [cmd, [process.execPath, join(root, 'manage.mjs'), cmd, p.id]])) };
 }
 
 export async function run(args, deps = {}) {
   const options = parse(args);
   if (options.command === 'help') return { ok: true, usage: [
     `node ${script} list`, `node ${script} auth PROVIDER|all [--from-env|--stdin] [--confirm-free]`,
-    `node ${script} auth cline --login`, `node ${script} status [PROVIDER|all]`,
+    `node ${script} auth cline --login`, `node ${script} status [PROVIDER|all]`, `node ${script} quota [PROVIDER|all]`,
     `node ${script} models [PROVIDER|all]`, `node ${script} select PROVIDER MODEL_ID`,
-    `node ${script} probe [PROVIDER|all] [--model MODEL_ID] [--timeout 45] [--max-tokens 256]`,
-    `node ${script} ask PROVIDER [--model MODEL_ID] -- "질문"`
+    `node ${script} probe [PROVIDER|all] [--model MODEL_ID] [--timeout 45] [--max-tokens 256] [--reasoning-effort VALUE]`,
+    `node ${script} ask PROVIDER [--model MODEL_ID] [--reasoning-effort VALUE] -- "질문"`
   ], notes: ['API 키는 숨김 입력·환경변수·표준입력으로만 받습니다.', '인증 구성과 모델 조회는 실제 추론 성공이 아닙니다.',
     'probe는 실제 무료 사용량을 소비하며 정확한 응답 표식을 검사합니다.', 'list는 서버를 시작하지 않습니다. 다른 명령은 기존 POC 게이트웨이를 사용합니다.'] };
   if (options.command === 'list') return { ok: true, providers: providers.map(publicProvider) };
@@ -188,6 +188,20 @@ export async function run(args, deps = {}) {
           selectedModel: snapshot.settings.chatDefaults?.model || 'free/auto' });
         continue;
       }
+      if (options.command === 'quota') {
+        const localRemaining = {};
+        const localTokenRemaining = {};
+        for (const period of ['minute', 'hour', 'day']) {
+          if (connection.limits[period]) localRemaining[period] = Math.max(0, connection.limits[period] - (connection.usage[period]?.requests || 0));
+        }
+        if (connection.limits.dayTokens) localTokenRemaining.day = Math.max(0, connection.limits.dayTokens
+          - (connection.usage.day?.tokens || 0) - (connection.usage.day?.estimatedTokens || 0));
+        results.push({ id: p.id, provider: p.id, source: 'local_gateway', authoritative: false,
+          observedAt: new Date().toISOString(), ready: connection.ready, reason: connection.reason,
+          limits: connection.limits, usage: connection.usage, localRemaining, localTokenRemaining, providerRemaining: null,
+          lastFailure: snapshot.logs.find(log => log.provider === p.id && !log.ok) || null });
+        continue;
+      }
       // A catalog query does not prove authentication for allowlist-only providers.
       if (connection.enabled) {
         if (p.kind !== 'openai') await api(`/api/providers/${p.id}/connect`, 'POST', {});
@@ -200,6 +214,7 @@ export async function run(args, deps = {}) {
         results.push({ id: p.id, status: 'listed', source: publicProvider(p).modelSource,
           ready: connection.ready, reason: connection.reason,
           models: models.map(m => ({ id: m.id, upstreamId: m.upstreamId, name: m.name, ready: m.ready, reason: m.reason,
+            reasoning: m.reasoning || { parameter: null, efforts: [] },
             commands: {
               select: [process.execPath, join(root, 'manage.mjs'), 'select', p.id, m.upstreamId],
               probe: [process.execPath, join(root, 'manage.mjs'), 'probe', p.id, '--model', m.upstreamId],
@@ -227,7 +242,9 @@ export async function run(args, deps = {}) {
         continue;
       }
       if (!model.ready) throw problem(model.reason || 'provider_not_ready');
+      if (options.reasoningEffort !== undefined && !model.reasoning?.efforts?.includes(options.reasoningEffort)) throw problem('unsupported_reasoning');
       const result = await client.complete({ model: model.id, max_tokens: Number(options.maxTokens),
+        ...(options.reasoningEffort !== undefined ? { reasoning_effort: options.reasoningEffort } : {}),
         messages: [{ role: 'user', content: options.command === 'probe'
           ? `Reply with exactly ${marker}. Do not use tools.` : options.prompt }] }, { signal: signal() });
       if (result.provider !== p.id || result.model !== model.id) throw problem('unexpected_route');

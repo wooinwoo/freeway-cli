@@ -16,6 +16,7 @@ export function validateRequest(body) {
     if (body[name] !== undefined && (!Number.isInteger(body[name]) || body[name] < 1 || body[name] > 32768)) throw new GatewayError(name + '는 1~32768 정수여야 합니다.', 400, 'invalid_parameter');
   }
   if (body.stream !== undefined && typeof body.stream !== 'boolean') throw new GatewayError('stream은 boolean이어야 합니다.', 400, 'invalid_parameter');
+  if (body.reasoning_effort !== undefined && typeof body.reasoning_effort !== 'string') throw new GatewayError('reasoning_effort는 모델이 지원하는 문자열이어야 합니다.', 400, 'invalid_parameter');
   if (body.tools !== undefined && !Array.isArray(body.tools)) throw new GatewayError('tools는 배열이어야 합니다.', 400, 'invalid_tools');
   if (body.tools?.some(tool => tool?.type !== 'function' || !tool.function?.name)) throw new GatewayError('무료 라우터는 클라이언트가 실행하는 function 도구만 지원합니다.', 400, 'unsupported_tools');
   if (body.models !== undefined && (!Array.isArray(body.models) || !body.models.length || body.models.some(m => typeof m !== 'string'))) throw new GatewayError('models는 모델 ID 배열이어야 합니다.', 400, 'invalid_models');
@@ -124,6 +125,10 @@ export class Engine {
       }
     }
     if (body.tools?.length || body.messages.some(m => m.role === 'tool' || m.tool_calls)) candidates = candidates.filter(m => m.capabilities.tools);
+    if (body.reasoning_effort !== undefined && candidates.length) {
+      candidates = candidates.filter(m => m.reasoning?.efforts?.includes(body.reasoning_effort));
+      if (!candidates.length) throw new GatewayError('이 모델에서 지원하는 추론 설정을 선택하세요.', 400, 'unsupported_reasoning');
+    }
     const seen = new Set();
     candidates = candidates.filter(m => !seen.has(m.id) && seen.add(m.id));
     if (!candidates.length) {

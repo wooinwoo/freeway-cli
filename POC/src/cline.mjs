@@ -46,6 +46,7 @@ export class ClineBridge {
   }
   async *complete(body, model, { signal }) {
     if (!this.ready) throw new GatewayError('CLI provider is disconnected.', 503, 'cli_disconnected');
+    if (body.reasoning_effort !== undefined) throw new GatewayError('Cline ACP reasoning control is not supported by this bridge.', 400, 'unsupported_reasoning');
     if (!this.freeIds.has(model.upstreamId)) throw new GatewayError('Model is not in the current free CLI catalog.', 400, 'not_free_model');
     if (body.tools?.length || body.messages.some(m => m.tool_calls || m.role === 'tool' || Array.isArray(m.content) && m.content.some(p => p.type !== 'text'))) {
       throw new GatewayError('CLI providers support text conversations only.', 400, 'unsupported_capability');

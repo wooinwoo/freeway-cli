@@ -6,7 +6,28 @@ import { join } from 'node:path';
 import { Store } from '../src/store.mjs';
 import { Engine } from '../src/engine.mjs';
 import { GatewayError } from '../src/streams.mjs';
-import { definitions } from '../src/catalog.mjs';
+import { definitions, normalizeModel } from '../src/catalog.mjs';
+
+test('reasoning selection keeps compatible Auto and model-group routes before applying the fallback budget', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'freeway-reasoning-routes-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const providers = ['first', 'second'].map((id, index) => ({ id, kind: 'openai', keyOptional: true, priority: index, limits: {} }));
+  const store = new Store(dir);
+  for (const p of providers) store.configure(p.id, { enabled: true });
+  store.data.settings.maxFallbacks = 1;
+  store.data.models = providers.map((p, index) => normalizeModel(p, { id: 'vendor/same-model', name: 'Same Model',
+    supported_parameters: index ? ['reasoning'] : [],
+    opencode: { reasoning_options: index ? [{ type: 'effort', values: ['high'] }] : [] } }));
+  const engine = new Engine(store, null, { providers });
+  const group = engine.modelGroups().find(g => g.routes.length === 2);
+  assert.ok(group);
+  for (const model of ['free/auto', group.id]) {
+    const candidates = await engine.candidates({ model, reasoning_effort: 'high', messages: [{ role: 'user', content: 'test' }] });
+    assert.deepEqual(candidates.map(m => m.id), ['second/vendor/same-model']);
+  }
+  await assert.rejects(engine.candidates({ model: 'first/vendor/same-model', reasoning_effort: 'high', messages: [] }), { code: 'unsupported_reasoning' });
+  await assert.rejects(engine.candidates({ model: 'free/auto', reasoning_effort: 'max', messages: [] }), { code: 'unsupported_reasoning' });
+});
 
 test('Kilo explicitly paid models stay out of free routes even with zero token prices', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'freeway-kilo-catalog-'));

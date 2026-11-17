@@ -1,8 +1,18 @@
 # 공급처 인증·연결·모델 시험
 
-11개 공급처의 인증 자료와 실행 가능한 시험 명령을 이 폴더에 모았습니다. 각 업체의 `auth.json`은 공개 인증 안내이며 비밀 값은 포함하지 않습니다. `manage.mjs`는 기존 Node.js POC 게이트웨이·어댑터를 재사용하는 인계 도구입니다. Go 백엔드 어댑터가 구현됐다는 뜻은 아닙니다.
+11개 공급처를 사용하는 Go 패키지와 실행 가능한 인증·모델·한도·호출 명령을 이 폴더에 모았습니다. `client.go`는 백엔드에서 import하는 실제 코드이며, `bridge.mjs`를 통해 기존 Node.js POC의 공급처 구현과 같은 게이트웨이·비밀 저장소·한도 원장을 재사용합니다. 독립적인 Go 공급처 재구현이나 최종 `freewayd` 서버가 완성됐다는 뜻은 아닙니다. 각 업체의 `auth.json`은 공개 인증 안내이며 비밀 값은 포함하지 않습니다.
 
-백엔드에서 실제로 연결할 때는 [백엔드 연동 가이드](INTEGRATION.md)를 먼저 읽습니다. 초기 인증부터 모델 ID 선택, Go HTTP 호출 예제, 관리 명령의 JSON 처리, 스트림 오류·취소, Go 이식 책임을 설명합니다.
+백엔드는 [Go 패키지 사용법](INTEGRATION.md#go-공급처-패키지-사용)과 [실행 가능한 Go 예제](examples/basic/main.go)를 사용합니다. 아래에는 같은 기능의 CLI 명령을 정리했습니다.
+
+## 코드 구성
+
+| 파일 | 백엔드에서 사용하는 기능 |
+| --- | --- |
+| [client.go](client.go) | `New`, `Providers`, `Authenticate`, `Login`, `Models`, `Quota`, `Complete`, `Stream` |
+| [bridge.mjs](bridge.mjs) | Go의 stdin JSON 요청을 기존 어댑터에 연결하고 stdout JSON Lines로 결과·텍스트·정규화 오류 반환 |
+| [manage.mjs](manage.mjs) | 터미널 인증·모델 변경·추론 설정·한도 조회·실제 응답 검사 |
+| [examples/basic/main.go](examples/basic/main.go) | 연결 확인, 모델 조회, 한도 확인, 모델·추론 깊이 지정, 스트림 호출까지 실행 |
+| [client_test.go](client_test.go), [bridge.test.mjs](bridge.test.mjs) | 실제 Go→Node→로컬 HTTP 연결, 키 보호, 추론 옵션 전달, 한도, 실패와 취소 검사 |
 
 Node.js 22 이상과 저장소의 `POC/`가 필요합니다. 아래 명령은 저장소 루트에서 실행하며 Bash와 PowerShell에서 같습니다. `list`를 제외한 명령은 기존 POC 서버를 시작하거나 재사용합니다. `FREEWAY_URL`과 `FREEWAY_DATA_DIR`은 기존 POC와 같습니다. 사용자 데이터는 Git에 포함하지 않습니다.
 
@@ -12,6 +22,7 @@ Node.js 22 이상과 저장소의 `POC/`가 필요합니다. 아래 명령은 �
 node backend/internal/providers/manage.mjs list
 node backend/internal/providers/manage.mjs auth all
 node backend/internal/providers/manage.mjs status all
+node backend/internal/providers/manage.mjs quota all
 node backend/internal/providers/manage.mjs models all
 node backend/internal/providers/manage.mjs probe all
 ```
@@ -53,10 +64,12 @@ NVIDIA·Vikasit·Groq·Gemini API·Novita는 공통 게이트웨이의 무료 �
 | `auth cline --login` | 공식 `cline auth cline`을 실행하고 연결합니다. |
 | `auth opencode --login` | 공식 `opencode auth login`을 실행하고 자체 무료 풀을 연결합니다. |
 | `status 업체ID\|all` | 비밀 값 없이 연결·키 존재 여부·무료 계정 확인·모델 수를 출력합니다. |
+| `quota 업체ID\|all` | 추론 없이 로컬 요청·토큰 집계·잔여 상한·마지막 실패를 조회합니다. 업체의 실제 잔여 한도는 모르면 `null`입니다. |
 | `models 업체ID\|all` | 활성 공급처의 모델을 동기화하고 무료 모델 ID·준비 상태·출처·모델별 명령 argv를 출력합니다. |
 | `select 업체ID 모델ID` | 해당 업체의 등록된 무료 모델을 POC 기본값으로 저장합니다. 출력 길이와 온도는 유지합니다. |
 | `probe 업체ID\|all` | 업체별로 모델 하나를 호출하고 실제 답변이 `FREEWAY_PROVIDER_OK`인지 검사합니다. |
 | `ask 업체ID -- "질문"` | 저장된 모델이 해당 업체에 있으면 사용하고, 없으면 준비된 무료 모델 하나를 사용합니다. |
+| `ask 업체ID --model 모델ID --reasoning-effort 값 -- "질문"` | 해당 모델이 공개한 추론 깊이를 지정합니다. 미지원 값은 호출 전에 거절합니다. `probe`에도 같은 옵션을 사용할 수 있습니다. |
 
 `select`에는 `models`가 반환한 전체 경로 ID 또는 `upstreamId`를 사용합니다. `probe`와 `ask`의 `--model`은 한 번의 요청에만 적용합니다. 업체 시험에는 모델 그룹이나 `free/auto`를 입력하지 않으며 다른 업체로 자동 전환하지 않습니다. 각 모델의 `commands`는 셸 문자열 대신 argv 배열이므로 백엔드는 셸을 거치지 않고 실행할 수 있습니다.
 
@@ -69,6 +82,20 @@ node backend/internal/providers/manage.mjs probe cline --timeout 60 --max-tokens
 ```
 
 모델 ID는 공급처에서 바뀔 수 있습니다. 예제를 실행하기 전에 현재 목록을 확인합니다. `select`는 POC의 다음 기본 요청에 적용되며 실행 중인 Go TUI의 선택을 원격으로 바꾸지는 않습니다. CLI 공급처의 출력 상한은 공식 CLI가 결정하므로 `--max-tokens`만으로 강제되지 않습니다.
+
+## 모델·추론 깊이·한도 사용
+
+```sh
+node backend/internal/providers/manage.mjs models kilo
+node backend/internal/providers/manage.mjs ask kilo --model reflection/beam-free --reasoning-effort high -- "한 문장으로 인사해 주세요."
+node backend/internal/providers/manage.mjs ask opencode --model deepseek-v4.1-flash-free --reasoning-effort low -- "한 문장으로 인사해 주세요."
+node backend/internal/providers/manage.mjs quota kilo
+node backend/internal/providers/manage.mjs quota cline
+```
+
+`models`의 각 모델에 `reasoning.parameter`와 `reasoning.efforts`가 있습니다. 고정 enum을 추측하지 않고 반환된 값을 사용합니다. Kilo는 모델별 `reasoning` 또는 `reasoning_effort`, OpenCode는 공식 세션의 `variant`로 전달합니다. Cline ACP는 현재 이 브리지에서 추론 깊이를 제어하지 않으므로 목록이 비어 있고 지정하면 `unsupported_reasoning`으로 실패합니다. 지정한 값을 조용히 무시하지 않습니다. `max_tokens`는 답변 길이 상한이며 추론 깊이와 다릅니다.
+
+`quota`의 `localRemaining`은 로컬 설정상 남은 요청 수, `localTokenRemaining`은 관측·추정 토큰을 반영한 로컬 토큰 상한입니다. 해당 제한을 모르면 항목을 만들지 않습니다. `providerRemaining: null`, `authoritative: false`는 업체가 실제 잔여량을 제공하지 않았다는 뜻입니다. 이를 무제한이나 잔여 0으로 해석하지 않습니다. 다른 앱·PC·같은 IP에서 발생한 사용량은 이 집계에 포함되지 않습니다. 오류 코드·`ready`·`reason`도 함께 확인합니다.
 
 ## 백엔드가 사용할 경계
 
@@ -84,7 +111,7 @@ node backend/internal/providers/manage.mjs probe cline --timeout 60 --max-tokens
 먼저 기존 POC 테스트 8개를 통과했고, 이 도구의 테스트를 실패 상태부터 추가한 뒤 구현했습니다. 명령 테스트는 실제 loopback HTTP 서버와 가짜 공급처를 사용하며 키 암호화·표준입력·배치 실패·모델 변경·업체 고정·401/403/429·잘못된 답변을 검사합니다. 실제 키나 유료 추론을 요구하지 않습니다.
 
 ```sh
-node --test backend/internal/providers/manage.test.mjs POC/tests/*.test.mjs
+node --test backend/internal/providers/manage.test.mjs backend/internal/providers/bridge.test.mjs POC/tests/*.test.mjs
 ```
 
 2026-11-17에는 별도 임시 데이터 디렉터리와 임의 loopback 포트로 실제 호출도 실행했습니다. 기존 사용자 설정과 키 저장소는 변경하지 않았습니다.
@@ -101,3 +128,5 @@ node --test backend/internal/providers/manage.test.mjs POC/tests/*.test.mjs
 OpenCode 결과 정정: 같은 WSL 실행 파일 1.18.35에서 기본 TUI·CLI는 성공했고, `permission: {"*":"deny"}`만 추가하면 무료 제한 오류가 나타났습니다. 전체 권한 거부를 제거한 다음 요청은 다시 성공했습니다. 이를 실제 할당량 소진이나 버전 문제로 단정하면 안 됩니다. 수정본은 기본적으로 모든 도구를 거부하되 읽기 스키마만 승인 대기로 남기고 실제 권한 요청은 거절합니다. 최종 게이트웨이 시험에서 DeepSeek·MiMo 응답, 모델 변경, 권한 거절과 파일 내용 미노출을 확인했습니다. 상세 근거는 [OpenCode 안내](opencode/README.md#연결-설정-비교-결과)를 따릅니다.
 
 위 결과는 Linux/WSL에서 실행한 관측입니다. Windows의 실제 인증·호출과 모든 모델·계정의 현재 가용성을 검증한 것은 아닙니다. 기본 인증 저장과 CLI 프로토콜의 플랫폼별 차이는 각각 기존 POC와 공식 CLI의 지원 범위를 따릅니다.
+
+추가로 실제 Go 실행 예제로 Kilo `reflection/beam-free`의 `low`·`high`, OpenCode `deepseek-v4.1-flash-free`의 `low`·`max`, Cline 기본 추론의 확인 응답을 받았습니다. 외부 HTTP 요청의 `reasoning.effort`와 OpenCode 세션의 `variant`에 각각 지정한 값이 들어갔습니다. Cline에 `high`를 지정하면 추론 전에 `unsupported_reasoning`으로 거절됐습니다. 이 시험은 새로운 임시 게이트웨이에서 실행해 기존 사용자 설정을 바꾸지 않았습니다.

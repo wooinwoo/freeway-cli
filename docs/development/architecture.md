@@ -91,6 +91,8 @@ Go TUI
 
 현재 공급처 준비·백엔드 호출·모델 ID·오류 처리와 Go 이식에 필요한 원본 코드 위치는 [백엔드 연동 가이드](../../backend/internal/providers/INTEGRATION.md)에 정리합니다. 업체별 프로토콜과 실행 명령은 [공급처 안내](../../backend/internal/providers/README.md)를 따릅니다.
 
+`backend/internal/providers/client.go`는 현재 백엔드에서 import할 수 있는 Go 공급처 클라이언트입니다. `bridge.mjs`를 통해 같은 POC 게이트웨이의 인증·모델·한도·추론을 재사용하며, 독립적인 Go 서버·비밀 저장소·원장을 추가하지 않습니다. `examples/basic/main.go`에서 실제 호출할 수 있습니다. 최종 공통 Go 계약과 `freewayd` 구현은 여전히 별도 작업입니다.
+
 임시 공급처는 Kilo API, OpenCode CLI, Cline CLI입니다. POC 라우터가 모델의 무료 상태와 공급처 가용성을 판단합니다. CLI 계층은 사용자 PC의 공식 실행 파일만 호출하며, 최종 `backend/internal/providers/`에 구현이 완료됐다는 뜻은 아닙니다. Cline은 무료 카탈로그 확인 후 ACP 모델 선택 응답을 받은 뒤에만 프롬프트를 전달합니다. OpenCode는 무료 할당량 소진을 429·cooldown으로 처리합니다.
 
 ## 실행과 통신 경계

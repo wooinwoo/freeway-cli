@@ -37,6 +37,16 @@ test('only the official free array is registered', async t => {
   assert.deepEqual(models.map(m => m.upstreamId), ['cline-free/test']);
   await assert.rejects(async () => { for await (const _ of bridge.complete({ messages: [] }, { upstreamId: 'paid/default' }, { signal: AbortSignal.timeout(1000) })) {} }, { code: 'not_free_model' });
 });
+test('ACP reasoning requests are rejected before a CLI process or workspace is created', async t => {
+  const { bridge, dir } = setup(t);
+  const [model] = await bridge.models(provider);
+  await assert.rejects(async () => {
+    for await (const _ of bridge.complete({ reasoning_effort: 'high', messages: [] }, model,
+      { signal: AbortSignal.timeout(1000) })) {}
+  }, { code: 'unsupported_reasoning' });
+  assert.deepEqual(readdirSync(dir), []);
+  assert.equal(bridge.children.size, 0);
+});
 test('ACP selects the free model before transmitting Unicode conversation on stdin', async t => {
   const original = process.env.CLINE_PROVIDER;
   process.env.CLINE_PROVIDER = 'openrouter';

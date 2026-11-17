@@ -49,11 +49,11 @@ export class Client {
   async complete(body,{signal,onText,onChunk}={}){
     await this.connect();const start=Date.now();
     const response=await this.fetcher(this.base+'/v1/chat/completions',{method:'POST',signal,headers:{cookie:this.cookie,'content-type':'application/json'},body:JSON.stringify({...body,stream:true})});
-    if(!response.ok){const result=await response.json();const error=new Error(result.error?.message||'모델 요청 실패');error.status=response.status;error.code=result.error?.code;throw error;}
+    if(!response.ok){const result=await response.json();const error=new Error(result.error?.message||'모델 요청 실패');error.status=response.status;error.code=result.error?.code;error.retryAfter=result.error?.retryAfter;throw error;}
     let content='',reasoning='',model=body.model,modelGroup,provider,usage,done=false;
     for await(const raw of sseEvents(response.body)){
       if(raw==='[DONE]'){done=true;break;}
-      const chunk=JSON.parse(raw);if(chunk.error){const error=new Error(chunk.error.message);error.code=chunk.error.code;throw error;}
+      const chunk=JSON.parse(raw);if(chunk.error){const error=new Error(chunk.error.message);error.code=chunk.error.code;error.status=chunk.error.status;error.retryAfter=chunk.error.retryAfter;throw error;}
       model=chunk.model||model;modelGroup=chunk.model_group||modelGroup;provider=chunk.provider||provider;if(chunk.usage)usage=chunk.usage;
       for(const choice of chunk.choices||[]){const delta=choice.delta||{};if(delta.content){content+=delta.content;onText?.(delta.content);}reasoning+=delta.reasoning_content||delta.reasoning||'';}
       onChunk?.(chunk);

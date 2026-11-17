@@ -218,8 +218,9 @@ export function createGateway(options = {}) {
       if (response.destroyed) return;
       const status = error.status || (error.name === 'TimeoutError' ? 504 : 500);
       const payload = { error: { message: error instanceof GatewayError ? error.message : status === 504 ? '요청 시간이 초과되었습니다.' : '게이트웨이 내부 오류가 발생했습니다.',
-        type: status === 401 ? 'authentication_error' : 'gateway_error', code: error.code || 'internal_error' } };
-      if (error.retryAfter) response.setHeader('retry-after', String(error.retryAfter));
+        type: status === 401 ? 'authentication_error' : 'gateway_error', code: error.code || 'internal_error', status,
+        ...(error.retryAfter ? { retryAfter: error.retryAfter } : {}) } };
+      if (error.retryAfter && !response.headersSent) response.setHeader('retry-after', String(error.retryAfter));
       if (response.headersSent) response.end('data: ' + JSON.stringify(payload) + '\n\ndata: [DONE]\n\n');
       else json(response, payload, status >= 400 && status <= 599 ? status : 502);
     }

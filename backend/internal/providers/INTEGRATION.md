@@ -1,6 +1,41 @@
 # 백엔드에서 공급처를 사용하는 방법
 
-기준일: 2026-11-17. 현재 실행 가능한 공급처 구현은 Node.js POC에 있습니다. 이 폴더의 `manage.mjs`는 인증·모델 조회·선택·점검 도구이며 Go 패키지가 아닙니다. `backend/cmd/freewayd/main.go`는 안내 후 종료하는 개발 틀입니다. 아래는 현재 POC를 이용하는 방법이며 최종 Go 내부 인터페이스나 `api/openapi.yaml`의 확정 계약이 아닙니다.
+기준일: 2026-11-17. 이 폴더의 [client.go](client.go)는 백엔드에서 import해 실행하는 Go 공급처 클라이언트입니다. [bridge.mjs](bridge.mjs)를 통해 기존 Node.js POC의 어댑터·비밀 저장소·한도 원장을 재사용합니다. Node.js 22 이상, 이 폴더의 코드, 저장소의 `POC/`, 실행 중인 로컬 POC 게이트웨이가 필요합니다. Go 바이너리 하나만으로 독립 실행하는 공급처 재구현은 아닙니다. `backend/cmd/freewayd/main.go`와 최종 `api/openapi.yaml`은 여전히 개발 틀입니다.
+
+## Go 공급처 패키지 사용
+
+백엔드 모듈 안에서 `github.com/wooinwoo/freeway-cli/backend/internal/providers`를 import합니다. `providers.New(providers.Config{NodePath: nodeAbsolutePath, BridgePath: bridgeAbsolutePath, BaseURL: "http://127.0.0.1:4141"})`로 클라이언트를 만듭니다. `NodePath`를 생략하면 PATH에서 Node를 찾습니다. `BridgePath`는 이 폴더의 `bridge.mjs` 절대 경로이며 원격 URL을 받지 않습니다. `BaseURL`은 loopback HTTP 원점만 허용합니다.
+
+| Go 함수 | 입력과 결과 |
+| --- | --- |
+| `Providers(ctx)` | 11개 공급처 ID·종류·인증 URL·환경변수 이름 조회. 게이트웨이를 호출하지 않음 |
+| `Authenticate(ctx, id, AuthOptions{})` | Kilo 익명 연결 또는 기존 키·CLI 로그인 재사용. 결과의 `Ready`, `Reason` 확인 |
+| `Authenticate(ctx, id, AuthOptions{Key: key, ConfirmFree: confirmed})` | 비밀 저장 계층에서 받은 API 키를 자식 stdin으로 전달. 키 교체 시 무료 확인 재설정. argv·응답에 키를 넣지 않음 |
+| `Login(ctx, "cline", os.Stdin, os.Stdout, os.Stderr)` | 공식 CLI의 브라우저·기기 인증을 대화형 터미널에서 실행. `opencode`도 가능. context 취소 시 해당 로그인과 자식 종료 |
+| `Models(ctx, id)` | 무료 모델의 `ID`, `UpstreamID`, `Ready`, `Reason`, `Reasoning.Parameter`, `Reasoning.Efforts` 반환 |
+| `Quota(ctx, id)` | 추론 없이 같은 게이트웨이의 로컬 집계와 실패 조회. `ProviderRemaining == nil`은 업체 잔여량 미제공 |
+| `Complete(ctx, Request{...})` | 모델·추론 깊이·대화를 지정해 완료된 `Completion` 반환 |
+| `Stream(ctx, Request{...}, func(text string))` | 검증한 경로의 텍스트를 순서대로 전달하고 완료 결과 반환. 부분 출력 뒤에도 오류 확인 필요 |
+
+`Request.Provider`와 `Request.Model`은 필수입니다. `Model`에는 그 업체의 전체 경로 ID 또는 `UpstreamID`를 씁니다. 대화의 모델을 바꾸려면 다음 요청의 `Request.Model`을 바꿉니다. 이 패키지는 다른 업체나 `free/auto`로 자동 전환하지 않고 공유 기본 모델도 변경하지 않습니다. fallback·동시성·애플리케이션 상태 정책은 호출하는 백엔드가 소유합니다.
+
+`Request.ReasoningEffort`는 `Models`가 반환한 `Reasoning.Efforts` 중 하나입니다. 빈 문자열이면 업체 기본값을 사용합니다. Kilo와 OpenCode의 같은 `high`가 같은 토큰 예산·시간·품질을 보장하지는 않습니다. `Request.MaxTokens`는 출력 길이 상한이며 CLI 공급처에는 강제되지 않습니다. 현재 패키지의 메시지는 텍스트 대화이며 도구 실행 API를 제공하지 않습니다.
+
+`Quota.LocalRemaining`은 로컬 요청 수 상한, `Quota.LocalTokenRemaining`은 로컬 토큰 상한입니다. map에 항목이 없으면 그 제한을 모르는 것입니다. 0과 구분합니다. `Usage`의 추정 토큰은 실제 공급처 집계가 아닙니다. `ProviderRemaining == nil`, `Authoritative == false`인 상태를 업체의 실시간 잔여 한도로 표시하지 않습니다. `Ready`, `Reason`, `LastFailure`도 함께 확인합니다.
+
+실패는 `errors.As(err, &providerError)`로 `*providers.Error`를 받아 `Code`, `Status`, `RetryAfter`를 확인합니다. context 취소·만료는 `context.Canceled`·`context.DeadlineExceeded`로 반환합니다. 공급처 오류 원문·키·자식 stderr는 일반 오류에 합치지 않습니다. `Login`에 연결한 터미널 출력은 별도 대화형 흐름입니다.
+
+### 실행 가능한 Go 예제
+
+[examples/basic/main.go](examples/basic/main.go)는 실제 코드입니다. 연결 확인, 모델 조회, 한도 조회, 모델·추론 설정, 스트림 호출을 한 번 실행합니다. 아래는 WSL/Bash 예시이며 `backend/`를 작업 디렉터리로 사용합니다. 처음에는 아래의 관리 명령으로 공급처를 준비합니다.
+
+```sh
+FREEWAY_MODEL=reflection/beam-free FREEWAY_REASONING_EFFORT=high /home/rst010/freeway-research/tools/go/bin/go run ./internal/providers/examples/basic
+FREEWAY_PROVIDER=opencode FREEWAY_MODEL=deepseek-v4.1-flash-free FREEWAY_REASONING_EFFORT=low /home/rst010/freeway-research/tools/go/bin/go run ./internal/providers/examples/basic
+FREEWAY_PROVIDER=cline /home/rst010/freeway-research/tools/go/bin/go run ./internal/providers/examples/basic
+```
+
+예제의 `FREEWAY_PROVIDER_BRIDGE`를 지정하면 작업 디렉터리에 의존하지 않고 브리지 절대 경로를 전달할 수 있습니다. `FREEWAY_URL`은 서버 원점입니다. 실제 백엔드 함수의 사용법은 예제의 `providers.New`, `Authenticate`, `Models`, `Quota`, `Stream` 호출을 따릅니다. `Complete`는 콜백 없이 같은 요청을 실행합니다. Go 함수는 게이트웨이를 자동 시작하지 않으며, 대화형 `Login`은 자동 시작 기능이 있는 기존 관리 명령을 실행합니다. 게이트웨이의 시작·종료는 앱 계층에서 한 번만 소유합니다.
 
 ## 연결 순서
 
@@ -69,11 +104,11 @@ API 키는 argv에 넣지 않습니다. 키가 바뀌면 이전 무료 계정 �
 
 `select 업체 모델`은 POC의 **공유 기본 설정**을 저장합니다. `ask`·`probe`가 모델을 생략했을 때 해당 업체의 저장 모델을 우선 사용합니다. 백엔드의 HTTP 요청에는 `model`을 매번 넣습니다. 대화별 모델을 바꾸려고 공유 `select`를 덮어쓰지 않습니다. 현재 원시 `/v1/chat/completions`에서 `model`을 생략하면 `free/auto`를 사용하며 저장한 `chatDefaults.model`을 자동 적용하지 않습니다.
 
-## 3. 요청 처리: 로컬 HTTP API
+## 3. Go 패키지 외 클라이언트: 로컬 HTTP API
 
 호출 주소는 `http://127.0.0.1:4141/v1`입니다. 여기의 Bearer 키는 **Freeway 로컬 API 키**이며 `KILO_API_KEY` 등 공급처 키와 다릅니다. 기존 관리 화면의 연결 정보에서 확인하거나, 인증된 로컬 관리 클라이언트의 `GET /api/key` 결과를 비밀 저장 계층에 전달합니다. 키·쿠키·인증 헤더는 로그와 응답에 노출하지 않습니다.
 
-아래 Go 예제는 공급처 연결이 끝난 뒤 실행합니다. `FREEWAY_API_KEY`는 이 예제를 실행하는 프로세스에 비밀 저장 계층이 주입하는 값입니다. 별도 HTTP 서비스의 사용자 요청 본문으로 공급처 키를 받거나, 소스 코드에 키를 넣는 예제가 아닙니다.
+아래는 Go 패키지 대신 HTTP를 직접 호출해야 할 때의 예제입니다. 위 공급처 패키지는 내부적으로 로컬 쿠키 인증을 재사용하므로 `FREEWAY_API_KEY`를 따로 주입하지 않습니다. 직접 HTTP를 쓰는 경우에는 공급처 연결을 먼저 끝내고, 비밀 저장 계층이 `FREEWAY_API_KEY`를 프로세스에 주입합니다. 별도 HTTP 서비스의 사용자 요청 본문으로 공급처 키를 받거나, 소스 코드에 키를 넣는 예제가 아닙니다.
 
 ```go
 package main
@@ -187,6 +222,7 @@ Go TUI가 사용하는 기존 예제는 [poc.go](../../../cli/client/poc.go)와 
 | HTTP 503 `provider_not_ready` | 미연결·무료 조건 미확인·로컬 cooldown 등을 상태 조회로 확인. HTTP 503만 보고 무료 모델이 없다고 단정하지 않음 |
 | HTTP 404 `model_not_found` | 현재 무료 목록에 없는 경로. 모델 목록을 다시 조회하고 사용자 선택을 갱신 |
 | HTTP 400 `unsupported_capability` | CLI 브리지의 비텍스트 입력 거절이나 OpenCode의 실제 도구 권한 요청 거절. 같은 입력을 무한 재시도하지 않음 |
+| HTTP 400 `unsupported_reasoning` | 현재 모델의 추론 옵션에 없는 값. `Models`의 `Reasoning.Efforts`로 설정을 갱신. raw HTTP의 Auto·모델 그룹은 같은 값을 지원하는 후보만 선택 |
 | CLI 경로에 `tools`·도구 이력 전달 | HTTP 라우터가 도구 미지원 경로를 먼저 제외. 후보가 없으면 `503 no_free_models`, 다른 경로에 한도 상태가 있으면 `429 rate_limit_exceeded`. 브리지 직접 호출의 400과 구분 |
 | 사용자 취소·제한 시간 | Go HTTP request context 또는 Node AbortSignal 취소. 게이트웨이가 HTTP 요청 중단·OpenCode 세션 중단·Cline 자식 프로세스 종료를 담당 |
 
@@ -220,6 +256,8 @@ Go로 옮길 때는 아래 기존 구현을 출발점으로 사용합니다. 관
 
 ## 문서 예제 검증
 
-2026-11-17, 위 Go 코드 블록을 그대로 추출해 `go build`한 뒤 기존 로컬 게이트웨이에서 실제 확인 응답을 받았습니다. API 키 누락 시 요청 전 실패, 잘못된 Freeway 키의 HTTP 401 처리도 확인했습니다. Node 코드 블록도 그대로 실행해 SSE 경로의 확인 응답을 받았고, `/v1/models`가 반환하는 `routes[].id`에서 예제의 고정 경로를 확인했습니다. 검증 과정에서 키는 프로세스 메모리·자식 환경으로만 전달하고 출력하지 않았습니다.
+2026-11-17, 실제 [Go 패키지 예제](examples/basic/main.go)를 빌드해 임시 로컬 게이트웨이에서 Kilo `low/high`, OpenCode `low/max`, Cline 기본 추론의 확인 응답을 받았습니다. Kilo 요청의 `reasoning.effort`와 OpenCode 요청의 `variant`에 지정값이 전달됐고, Cline의 `high` 지정은 `unsupported_reasoning`으로 거절됐습니다. 한도 조회는 `source: local_gateway`, 업체 잔여 미제공은 `null`로 반환했습니다.
+
+직접 HTTP Go 코드 블록과 Node 코드 블록도 그대로 추출해 실제 확인 응답을 받았습니다. HTTP API 키 누락·잘못된 키 401 처리와 `/v1/models`의 `routes[].id`도 확인했습니다. 검증 과정에서 키는 프로세스 메모리·자식 환경으로만 전달하고 출력하지 않았습니다.
 
 공급처 검증 범위와 실제 모델별 결과는 [운영 안내의 검증](README.md#검증)을 따릅니다. 현재 실호출 근거가 있는 공급처는 Kilo·OpenCode·Cline이며 나머지 API 8곳은 키가 없어 추론 미검증입니다. Windows의 실제 인증·호출과 Go 공급처 구현 완료를 보장하지 않습니다.

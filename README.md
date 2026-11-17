@@ -20,6 +20,6 @@ POC/       기존 Node.js 구현
 
 [공급처별 인증·연결·모델 시험 명령](backend/internal/providers/README.md)
 
-[백엔드 연동 방법과 Go 호출 예제](backend/internal/providers/INTEGRATION.md)
+[백엔드 공급처 Go 코드](backend/internal/providers/client.go) · [실행 예제와 사용법](backend/internal/providers/INTEGRATION.md)
 
 [MIT License](LICENSE) · [라이선스 선택과 재사용 조건](docs/development/licensing.md)

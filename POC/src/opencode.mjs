@@ -127,6 +127,9 @@ export class OpenCodeBridge {
   }
   async *complete(body, model, { signal }) {
     if (!this.ready) throw new GatewayError('OpenCode 서버가 연결되어 있지 않습니다.', 503, 'opencode_disconnected');
+    if (body.reasoning_effort !== undefined && !model.reasoning?.efforts?.includes(body.reasoning_effort)) {
+      throw new GatewayError('OpenCode 모델이 지원하는 추론 variant를 선택하세요.', 400, 'unsupported_reasoning');
+    }
     if (body.tools?.length || body.messages.some(m => m.role === 'tool' || m.tool_calls)) {
       throw new GatewayError('OpenCode 브리지는 현재 텍스트 대화만 지원합니다. 도구 호출은 API 공급처를 선택하세요.', 400, 'unsupported_capability');
     }
@@ -221,6 +224,7 @@ export class OpenCodeBridge {
             method: 'POST', signal, body: JSON.stringify({
               model: { providerID: model.opencodeProvider, modelID: model.upstreamId },
               agent: 'freeway', system,
+              ...(body.reasoning_effort !== undefined ? { variant: body.reasoning_effort } : {}),
               parts: [{ type: 'text', text: 'Continue this conversation and answer the last user message:\n\n' + history }]
             })
           });

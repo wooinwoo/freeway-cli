@@ -61,6 +61,20 @@ const permissionEvent = { type: 'permission.asked', properties: {
   id: 'request-1', sessionID: 'session-1', permission: 'read', patterns: ['canary.txt']
 } };
 
+test('OpenCode sends a supported reasoning variant without weakening tool permissions', async () => {
+  const { bridge, calls } = protocolBridge([]);
+  const model = { ...freeModel, reasoning: { parameter: 'variant', efforts: ['low', 'high'] } };
+  for await (const _ of bridge.complete({ reasoning_effort: 'high', messages: [{ role: 'user', content: 'test' }] }, model,
+    { signal: AbortSignal.timeout(1000) })) {}
+  assert.equal(calls.find(c => c.path.endsWith('/message')).body.variant, 'high');
+  const before = calls.length;
+  await assert.rejects(async () => {
+    for await (const _ of bridge.complete({ reasoning_effort: 'max', messages: [] }, model,
+      { signal: AbortSignal.timeout(1000) })) {}
+  }, { code: 'unsupported_reasoning' });
+  assert.equal(calls.length, before);
+});
+
 test('OpenCode streams conversation without executing tools and preserves usage', async () => {
   const { bridge } = protocolBridge([
     { type: 'message.updated', properties: { info: { id: 'assistant-1', role: 'assistant', sessionID: 'session-1' } } },

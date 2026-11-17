@@ -25,6 +25,10 @@ export async function* openAICompletion(provider, model, body, { store, signal, 
   const key = store.key(provider);
   const request = { model: model.upstreamId, stream: true, stream_options: { include_usage: true } };
   for (const field of allowed) if (body[field] !== undefined) request[field] = body[field];
+  if (body.reasoning_effort !== undefined && model.reasoning?.parameter === 'reasoning') {
+    delete request.reasoning_effort;
+    request.reasoning = { effort: body.reasoning_effort };
+  }
   if (request.max_tokens === undefined && request.max_completion_tokens === undefined) request.max_tokens = 2048;
   const response = await fetcher(provider.base + '/chat/completions', {
     method: 'POST', signal,

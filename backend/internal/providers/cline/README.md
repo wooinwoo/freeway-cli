@@ -18,6 +18,8 @@ node backend/internal/providers/manage.mjs models cline
 
 ## 모델 변경과 실제 요청
 
+Go 백엔드는 공통 [공급처 패키지](../INTEGRATION.md#go-공급처-패키지-사용)에 `Provider: "cline"`을 지정합니다. `Authenticate`는 기존 공식 로그인을 재사용하고, `Login`은 운영 터미널에서 공식 인증을 시작합니다. 현재 ACP 브리지의 `Reasoning.Efforts`는 비어 있습니다. 추론 깊이를 지정하면 무시하지 않고 `unsupported_reasoning`으로 거절합니다. 일반 CLI의 `--thinking`을 ACP 요청에 그대로 붙이지 않습니다. 관련 [공식 프로젝트 이슈](https://github.com/cline/cline/issues/14820)를 참고합니다. `Quota`·`quota cline`은 로컬 집계이며 업체의 정확한 잔여량은 미제공이면 `null`입니다.
+
 다음 ID는 예시입니다. 현재 목록에 있을 때만 사용할 수 있습니다. `models cline`는 각 모델의 실제 ID와 실행 가능한 `select`, `probe`, `ask` argv 배열을 함께 출력합니다.
 
 ```sh

@@ -30,11 +30,17 @@ export function freeModel(provider, model) {
 
 export function normalizeModel(provider, model) {
   const upstreamId = model.id || model.name;
+  const supported = Array.isArray(model.supported_parameters) ? model.supported_parameters : [];
+  const efforts = provider.kind === 'opencode' ? Object.keys(model.variants || {})
+    : (model.opencode?.reasoning_options || []).filter(option => option.type === 'effort').flatMap(option => option.values || []);
+  const parameter = provider.kind === 'opencode' ? 'variant'
+    : supported.includes('reasoning') ? 'reasoning' : supported.includes('reasoning_effort') ? 'reasoning_effort' : null;
   return {
     id: provider.id + '/' + upstreamId, provider: provider.id, upstreamId,
     name: model.name || upstreamId, context: model.context_length || model.limit?.context || null,
     free: true, freeBasis: provider.proof, discoveredAt: new Date().toISOString(),
-    capabilities: { stream: true, tools: model.supported_parameters?.includes('tools') ?? (provider.kind !== 'opencode') }
+    capabilities: { stream: true, tools: model.supported_parameters?.includes('tools') ?? (provider.kind !== 'opencode') },
+    reasoning: { parameter, efforts: parameter ? [...new Set(efforts.filter(value => typeof value === 'string'))] : [] }
   };
 }
 

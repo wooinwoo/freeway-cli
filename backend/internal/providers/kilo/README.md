@@ -18,6 +18,8 @@ node backend/internal/providers/manage.mjs models kilo
 
 ## 모델 변경과 실제 요청
 
+Go 백엔드는 공통 [공급처 패키지](../INTEGRATION.md#go-공급처-패키지-사용)에 `Provider: "kilo"`를 지정합니다. 모델별 `Reasoning.Efforts`를 조회하고 `Request.ReasoningEffort`를 설정합니다. CLI는 `--reasoning-effort high`를 지원합니다. 예를 들어 `reflection/beam-free`의 `low/high` 요청을 실제 Go 코드로 확인했습니다. `Quota`·`quota kilo`는 로컬 집계이며 업체의 정확한 잔여량은 미제공이면 `null`입니다.
+
 다음 ID는 예시입니다. 현재 목록에 있을 때만 사용할 수 있습니다. `models kilo`는 각 모델의 실제 ID와 실행 가능한 `select`, `probe`, `ask` argv 배열을 함께 출력합니다.
 
 ```sh
