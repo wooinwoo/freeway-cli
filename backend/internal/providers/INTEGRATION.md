@@ -2,6 +2,8 @@
 
 기준일: 2026-11-17. 이 폴더의 [client.go](client.go)는 백엔드에서 import해 실행하는 Go 공급처 클라이언트입니다. [bridge.mjs](bridge.mjs)를 통해 기존 Node.js POC의 어댑터·비밀 저장소·한도 원장을 재사용합니다. Node.js 22 이상, 이 폴더의 코드, 저장소의 `POC/`, 실행 중인 로컬 POC 게이트웨이가 필요합니다. Go 바이너리 하나만으로 독립 실행하는 공급처 재구현은 아닙니다. `backend/cmd/freewayd/main.go`와 최종 `api/openapi.yaml`은 여전히 개발 틀입니다.
 
+정확한 함수 시그니처·필드·오류·내부 메시지 계약은 [API 명세](API.md)와 [JSON Schema](bridge.schema.json)를 따릅니다. 이 문서는 연동 순서와 실행 예제를 설명합니다.
+
 ## Go 공급처 패키지 사용
 
 백엔드 모듈 안에서 `github.com/wooinwoo/freeway-cli/backend/internal/providers`를 import합니다. `providers.New(providers.Config{NodePath: nodeAbsolutePath, BridgePath: bridgeAbsolutePath, BaseURL: "http://127.0.0.1:4141"})`로 클라이언트를 만듭니다. `NodePath`를 생략하면 PATH에서 Node를 찾습니다. `BridgePath`는 이 폴더의 `bridge.mjs` 절대 경로이며 원격 URL을 받지 않습니다. `BaseURL`은 loopback HTTP 원점만 허용합니다.

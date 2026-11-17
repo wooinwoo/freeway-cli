@@ -22,4 +22,6 @@ POC/       기존 Node.js 구현
 
 [백엔드 공급처 Go 코드](backend/internal/providers/client.go) · [실행 예제와 사용법](backend/internal/providers/INTEGRATION.md)
 
+[공급처 API 명세](backend/internal/providers/API.md) · [메시지 JSON Schema](backend/internal/providers/bridge.schema.json)
+
 [MIT License](LICENSE) · [라이선스 선택과 재사용 조건](docs/development/licensing.md)
