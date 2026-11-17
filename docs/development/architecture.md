@@ -74,7 +74,7 @@ freeway-cli/
     └── research/                   기존 프로젝트 소스 분석
 ```
 
-`cli/`는 별도 Go 모듈이며 Bubble Tea·Bubbles·Lip Gloss를 사용합니다. `commands/`는 비어 있습니다. Go 서버·설치기·CI는 개발 틀입니다. 기본 TUI는 임시 POC 어댑터를 사용하며 `--preview`에서만 샘플 모델을 표시합니다.
+`cli/`는 별도 Go 모듈이며 Bubble Tea·Bubbles·Lip Gloss를 사용합니다. `commands/`는 비어 있습니다. Go 서버·CI는 개발 틀입니다. 공급처 전용 설치·인증 도구는 Go로 구현했습니다. 기본 TUI는 임시 POC 어댑터를 사용하며 `--preview`에서만 샘플 모델을 표시합니다.
 
 ## 임시 실행 경로
 
@@ -91,7 +91,7 @@ Go TUI
 
 공급처 실행 순서는 [사용법](../../backend/internal/providers/README.md), 함수·메시지 계약은 [API 명세](../../backend/internal/providers/API.md), 설치·업데이트는 [설치기 안내](../../scripts/install/README.md)를 따릅니다.
 
-`backend/internal/providers/client.go`는 현재 백엔드에서 import할 수 있는 Go 공급처 클라이언트입니다. `bridge.mjs`를 통해 같은 POC 게이트웨이의 인증·모델·한도·추론을 재사용하며, 독립적인 Go 서버·비밀 저장소·원장을 추가하지 않습니다. `examples/basic/main.go`에서 실제 호출할 수 있습니다. 최종 공통 Go 계약과 `freewayd` 구현은 여전히 별도 작업입니다.
+`backend/internal/providers/client.go`는 업체 API와 공식 CLI에 직접 연결하는 Go 공급처 클라이언트입니다. Node 브리지·POC 게이트웨이에 의존하지 않으며 별도의 Go HTTP 서버·라우터·쿼터 원장을 만들지 않습니다. 공통 비밀 저장소는 `CredentialStore`로 주입합니다. 독립 인증 도구·예제용 선택형 암호화 파일 저장소는 공통 백엔드 저장소와 구분합니다. `backend/cmd/providerctl`에서 인증·모델·호출·공식 네이티브 CLI 설치를 실행합니다. 최종 공통 Go 계약·`freewayd`·TUI의 최종 API 연결은 별도 작업입니다.
 
 임시 공급처는 Kilo API, OpenCode CLI, Cline CLI입니다. POC 라우터가 모델의 무료 상태와 공급처 가용성을 판단합니다. CLI 계층은 사용자 PC의 공식 실행 파일만 호출하며, 최종 `backend/internal/providers/`에 구현이 완료됐다는 뜻은 아닙니다. Cline은 무료 카탈로그 확인 후 ACP 모델 선택 응답을 받은 뒤에만 프롬프트를 전달합니다. OpenCode는 무료 할당량 소진을 429·cooldown으로 처리합니다.
 

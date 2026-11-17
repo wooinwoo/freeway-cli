@@ -1,15 +1,33 @@
 package providers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 )
 
 type Config struct {
-	NodePath   string
-	BridgePath string
-	BaseURL    string
+	HTTPClient     *http.Client
+	Credentials    CredentialStore
+	WorkDir        string
+	OpenCodeBinary string
+	ClineBinary    string
+}
+
+// Credential binds a free-account confirmation to one specific API key.
+// Key is never included when this value is encoded as JSON.
+type Credential struct {
+	Key           string `json:"-"`
+	FreeConfirmed bool   `json:"freeConfirmed"`
+}
+
+// CredentialStore is supplied by the backend's existing secret store.
+// Load returns a zero value and nil when no credential has been saved.
+type CredentialStore interface {
+	Load(context.Context, string) (Credential, error)
+	Save(context.Context, string, Credential) error
 }
 
 type Provider struct {
@@ -25,7 +43,7 @@ type Provider struct {
 }
 
 type AuthOptions struct {
-	// Key travels only over stdin. Empty leaves existing credentials unchanged.
+	// Key is passed directly to the adapter, never to CLI arguments. Empty preserves existing credentials.
 	Key         string `json:"key,omitempty"`
 	ConfirmFree bool   `json:"confirmFree,omitempty"`
 }
@@ -45,12 +63,16 @@ type Reasoning struct {
 }
 
 type Model struct {
-	ID         string    `json:"id"`
-	UpstreamID string    `json:"upstreamId"`
-	Name       string    `json:"name"`
-	Ready      bool      `json:"ready"`
-	Reason     string    `json:"reason"`
-	Reasoning  Reasoning `json:"reasoning"`
+	ID           string    `json:"id"`
+	Provider     string    `json:"provider"`
+	UpstreamID   string    `json:"upstreamId"`
+	Name         string    `json:"name"`
+	Free         bool      `json:"free"`
+	Context      int       `json:"context,omitempty"`
+	DiscoveredAt time.Time `json:"discoveredAt"`
+	Ready        bool      `json:"ready"`
+	Reason       string    `json:"reason"`
+	Reasoning    Reasoning `json:"reasoning"`
 }
 
 type Bucket struct {
@@ -86,6 +108,7 @@ type Request struct {
 	Messages        []Message `json:"messages"`
 	MaxTokens       int       `json:"maxTokens,omitempty"`
 	ReasoningEffort string    `json:"reasoningEffort,omitempty"`
+	Temperature     *float64  `json:"temperature,omitempty"`
 }
 
 type Completion struct {

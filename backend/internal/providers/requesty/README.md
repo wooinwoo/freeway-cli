@@ -7,31 +7,31 @@
 공식 Requesty 계정의 API 키를 발급해 REQUESTY_API_KEY로 전달합니다. 무료 모델 목록과 계정·조직의 한도를 확인합니다.
 
 ```sh
-node backend/internal/providers/manage.mjs auth requesty
-node backend/internal/providers/manage.mjs status requesty
-node backend/internal/providers/manage.mjs models requesty
+freeway-providers auth requesty
+freeway-providers status requesty
+freeway-providers models requesty
 ```
 
-이미 `REQUESTY_API_KEY` 환경변수가 준비되어 있으면 `node backend/internal/providers/manage.mjs auth requesty --from-env`로 가져옵니다. 비대화형 입력은 `auth requesty --stdin`을 사용합니다.
+이미 `REQUESTY_API_KEY` 환경변수가 준비되어 있으면 `freeway-providers auth requesty --from-env`로 가져옵니다. 비대화형 입력은 `auth requesty --stdin`을 사용합니다.
 
 ## 모델 변경과 실제 요청
 
 다음 ID는 예시입니다. 현재 목록에 있을 때만 사용할 수 있습니다. `models requesty`는 각 모델의 실제 ID와 실행 가능한 `select`, `probe`, `ask` argv 배열을 함께 출력합니다.
 
 ```sh
-node backend/internal/providers/manage.mjs select requesty nvidia/nemotron-3-ultra-550b-a55b
-node backend/internal/providers/manage.mjs probe requesty --model nvidia/nemotron-3-ultra-550b-a55b
-node backend/internal/providers/manage.mjs ask requesty --model nvidia/nemotron-3-ultra-550b-a55b -- "한 문장으로 인사해 주세요."
+freeway-providers select requesty nvidia/nemotron-3-ultra-550b-a55b
+freeway-providers probe requesty --model nvidia/nemotron-3-ultra-550b-a55b
+freeway-providers ask requesty --model nvidia/nemotron-3-ultra-550b-a55b -- "한 문장으로 인사해 주세요."
 ```
 
 ## 백엔드 연결 근거
 
-- 요청 기본 주소: `https://router.requesty.ai/v1` (현재 POC 설정).
+- 요청 기본 주소: `https://router.requesty.ai/v1` (현재 Go 어댑터 설정).
 - 인증: `Authorization: Bearer`와 계정 API 키. API 키가 필요합니다.
-- 모델 조회: `GET https://router.requesty.ai/v1/models`. POC의 무료 필터를 거친 결과만 실행합니다.
-- 추론: `POST https://router.requesty.ai/v1/chat/completions`. 공급처의 `upstreamId`를 `model`로 보냅니다. JSON 응답 또는 SSE 응답을 기존 어댑터가 처리합니다.
-- 취소: HTTP 요청의 AbortSignal을 중단합니다. Go 이식 시 HTTP 요청 context 취소를 연결해야 합니다.
-- 기존 구현: [공통 API 어댑터](../../../../POC/src/adapters.mjs), [공급처 정의·무료 필터](../../../../POC/src/catalog.mjs).
+- 모델 조회: `GET https://router.requesty.ai/v1/models`. Go 무료 필터를 거친 결과만 실행합니다.
+- 추론: `POST https://router.requesty.ai/v1/chat/completions`. 공급처의 `upstreamId`를 `model`로 보냅니다. JSON 응답 또는 SSE 응답을 Go 어댑터가 처리합니다.
+- 취소: Go HTTP 요청의 context를 취소해 연결·스트림을 중단합니다.
+- Go 구현: [Go HTTP 어댑터](../native_http.go), [Go 공급처 정의·무료 필터](../catalog.go).
 
 ## 무료 판정과 오류
 

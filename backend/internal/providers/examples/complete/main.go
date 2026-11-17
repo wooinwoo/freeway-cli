@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/wooinwoo/freeway-cli/backend/internal/providers"
@@ -35,19 +36,17 @@ func run() error {
 	if model == "" {
 		return fmt.Errorf("set FREEWAY_MODEL to an ID returned by the inspect example")
 	}
-	bridge := os.Getenv("FREEWAY_PROVIDER_BRIDGE")
-	if bridge == "" {
-		var err error
-		bridge, err = filepath.Abs("internal/providers/bridge.mjs")
-		if err != nil {
-			return err
-		}
-	}
-	client, err := providers.New(providers.Config{BridgePath: bridge, BaseURL: os.Getenv("FREEWAY_URL")})
+	// The standalone tool uses this optional store. A backend supplies its own CredentialStore.
+	credentials, err := providers.NewFileCredentials(filepath.Join(providers.ProviderHome(), "auth"))
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	client, err := providers.New(providers.Config{Credentials: credentials})
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
