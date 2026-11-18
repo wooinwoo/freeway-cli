@@ -1,0 +1,56 @@
+---
+title: 공급처 연결
+description: 본인의 API 키와 공식 CLI 계정을 사용합니다.
+---
+어댑터는 한 서비스에 연결해 모델·응답·사용량·오류를 전달합니다. 선택과 대체 정책은 게이트웨이가 담당합니다. Freeway는 계정을 모으거나 공용 추론 서비스를 운영하지 않습니다.
+
+## HTTP 공급처
+
+~~~sh
+freeway providers auth kilo
+freeway providers auth groq --from-env --confirm-free
+freeway providers models kilo
+freeway providers quota all
+~~~
+
+키는 숨김 입력, 업체별 환경변수, `--stdin`으로 받으며 명령행 인수로 받지 않습니다. 인증 구성이 완료되어도 실제 추론 성공까지 확인된 것은 아닙니다.
+
+| 공급처 | 환경변수 | 무료 사용 기준 |
+| --- | --- | --- |
+| Kilo | `KILO_API_KEY` | 현재 카탈로그 가격, 익명 경로 제공 가능 |
+| OpenRouter | `OPENROUTER_API_KEY` | 무료 경로와 계정별 한도 |
+| Requesty | `REQUESTY_API_KEY` | 현재 카탈로그의 단가 0 모델 |
+| Z.ai | `ZAI_API_KEY` | 명시적으로 지원하는 Flash 모델 |
+| NVIDIA | `NVIDIA_API_KEY` | 평가·체험 권한 확인 |
+| Groq | `GROQ_API_KEY` | 계정 무료 플랜 확인 |
+| Gemini API | `GEMINI_API_KEY` | 프로젝트 티어·지역 확인 |
+| Novita | `NOVITA_API_KEY` | 지원 모델의 무료 권한 확인 |
+| Vikasit | `VIKASIT_API_KEY` | Nova의 현재 무료 권한 확인 |
+
+새 키를 저장하면 이전 무료 확인은 초기화됩니다. 같은 인증 정보가 동시에 바뀌면 이전 키를 복원하지 않고 `credential_conflict`로 거절합니다. 계정을 확인한 뒤 다시 실행하세요.
+
+## 공식 CLI 공급처
+
+~~~sh
+freeway providers install --only opencode
+freeway providers auth opencode --login
+freeway providers models opencode
+~~~
+
+Cline은 `--only cline`, `auth cline --login`을 사용합니다. 인증은 공식 CLI가 관리합니다. OpenCode는 검증된 V1 서버 인터페이스를 사용하며 V2와는 다릅니다. Cline은 ACP를 사용합니다. 두 어댑터는 텍스트 응답용이며 파일·명령 권한을 거부합니다.
+
+## 실제 응답 확인
+
+현재 모델 목록의 ID를 사용합니다.
+
+~~~sh
+freeway providers ask kilo --model MODEL_ID -- "한 문장으로 인사해 주세요."
+~~~
+
+실제 호출은 할당량을 소비합니다. 단위 테스트는 로컬 가짜 서버를 사용합니다. 연동 지원·무료 권한·실제 응답 성공은 서로 다른 상태입니다.
+
+## 서비스 이용 조건
+
+개인 사용에도 각 공급처 약관이 적용됩니다. [OpenCode](https://opencode.ai/docs/console/api/inference)는 무료 chat 모델을 자체 클라이언트로 제한합니다. V1 서버 인터페이스만으로 범용 라우팅 중계까지 허용되었다고 볼 수 없습니다. [Cline](https://docs.cline.bot/getting-started/free-models)은 무료 모델을 CLI·IDE에서 제공하며 공개 API에서는 지원하지 않습니다. ACP 지원도 모든 라우팅 용도의 승인을 뜻하지는 않습니다.
+
+[NVIDIA 체험 API](https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf)는 내부 시험·평가용입니다. [Gemini API](https://aistudio.google.com/docs/terms)는 개발 목적·연령·지역·티어 조건을 확인해야 합니다. 현재 계정·모델 조건을 따르세요. 호환성 표시는 업체의 보증이 아닙니다.

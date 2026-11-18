@@ -1,0 +1,56 @@
+---
+title: Provider connections
+description: Use your own API keys and official CLI accounts.
+---
+Each adapter calls one service and reports models, responses, usage, and errors. The gateway owns selection and fallback. Freeway does not pool accounts or operate a shared inference service.
+
+## HTTP providers
+
+~~~sh
+freeway providers auth kilo
+freeway providers auth groq --from-env --confirm-free
+freeway providers models kilo
+freeway providers quota all
+~~~
+
+Keys are accepted through hidden input, provider environment variables, or `--stdin`, never command-line arguments. Configuration success does not prove live inference success.
+
+| Provider | Environment variable | Free eligibility |
+| --- | --- | --- |
+| Kilo | `KILO_API_KEY` | Current catalog pricing; anonymous access may be available |
+| OpenRouter | `OPENROUTER_API_KEY` | Free routes and account limits |
+| Requesty | `REQUESTY_API_KEY` | Current zero-price catalog entries |
+| Z.ai | `ZAI_API_KEY` | Explicit supported Flash models |
+| NVIDIA | `NVIDIA_API_KEY` | Confirm evaluation/trial entitlement |
+| Groq | `GROQ_API_KEY` | Confirm the account's free plan |
+| Gemini API | `GEMINI_API_KEY` | Confirm project tier and region |
+| Novita | `NOVITA_API_KEY` | Confirm the supported model's entitlement |
+| Vikasit | `VIKASIT_API_KEY` | Confirm Nova's current free entitlement |
+
+A new key clears the old free-account confirmation. Concurrent changes to the same credential return `credential_conflict` instead of restoring an old key. Check the account before retrying.
+
+## Official CLI providers
+
+~~~sh
+freeway providers install --only opencode
+freeway providers auth opencode --login
+freeway providers models opencode
+~~~
+
+For Cline, use `--only cline` and `auth cline --login`. Authentication stays with the official CLI. OpenCode uses the verified V1 server interface; V2 is a different interface. Cline uses ACP. Both adapters provide text and deny filesystem and command permissions.
+
+## Test a real response
+
+Use an ID from the current model list:
+
+~~~sh
+freeway providers ask kilo --model MODEL_ID -- "Say hello in one sentence."
+~~~
+
+Real probes consume allowance. Unit tests use local fixtures. Connection support, account eligibility, and live success are separate states.
+
+## Service conditions
+
+Personal use remains subject to each provider's terms. [OpenCode](https://opencode.ai/docs/console/api/inference) limits free chat models to its own client; permission for general routing through the V1 CLI is not established by its server interface alone. [Cline](https://docs.cline.bot/getting-started/free-models) offers free models through its CLI/IDE, not the public API. ACP support does not establish approval of every routing use.
+
+[NVIDIA trial API](https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf) is for internal testing and evaluation. [Gemini API](https://aistudio.google.com/docs/terms) has developer, age, region, and tier conditions. Review current account and model terms. Compatibility is not vendor endorsement.

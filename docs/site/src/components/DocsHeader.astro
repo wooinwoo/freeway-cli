@@ -1,0 +1,31 @@
+---
+import Search from '@astrojs/starlight/components/Search.astro';
+import LanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro';
+import ThemeSelect from './DocsThemeSelect.astro';
+import DocIcon from './DocIcon.astro';
+const ko = Astro.url.pathname.startsWith('/ko/');
+const base = `/${ko ? 'ko' : 'en'}/docs/`;
+const path = Astro.url.pathname;
+const section = path.includes('/connections/') ? 'providers' : /\/(models|sessions|shortcuts)\//.test(path) ? 'cli' : path.includes('/updates/') ? 'updates' : 'docs';
+const tabs = [
+  { id:'docs', label:ko?'문서':'Docs', href:base, icon:'book' },
+  { id:'providers', label:ko?'공급처':'Providers', href:base+'connections/', icon:'cube' },
+  { id:'cli', label:'CLI', href:base+'shortcuts/', icon:'terminal' },
+  { id:'updates', label:ko?'업데이트':'Updates', href:base+'updates/', icon:'history' },
+];
+---
+<div class="docs-header">
+  <div class="docs-topbar">
+    <a class="site-title freeway-wordmark" href={base} aria-label="Freeway documentation">freeway</a>
+    <div class="docs-search"><Search/></div>
+    <div class="docs-utilities">
+      <a class="github-link" href="https://github.com/wooinwoo/freeway-cli" target="_blank" rel="noreferrer">GitHub<DocIcon name="arrow" size={14}/></a>
+      <span class="desktop-control"><LanguageSelect/></span>
+      <ThemeSelect/>
+    </div>
+  </div>
+  <nav class="docs-tabs" aria-label={ko?'문서 분야':'Documentation sections'}>
+    {tabs.map(tab=><a href={tab.href} class:list={{ selected:section===tab.id }} aria-current={section===tab.id?'page':undefined}><DocIcon name={tab.icon} size={17}/>{tab.label}</a>)}
+  </nav>
+  <div class="docs-mobile-breadcrumb"><span>{ko?'문서':'Documentation'}</span><span aria-hidden="true">›</span><span>{Astro.locals.starlightRoute.entry.data.title}</span></div>
+</div>

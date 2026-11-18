@@ -1,0 +1,15 @@
+---
+import MobileMenuFooter from '@astrojs/starlight/components/MobileMenuFooter.astro';
+import DocIcon from './DocIcon.astro';
+const ko = Astro.url.pathname.startsWith('/ko/');
+const groups = Astro.locals.starlightRoute.sidebar.map(entry=>entry.type==='group' ? entry : { type:'group' as const, label:ko?'개요':'Overview', entries:[entry] });
+const icons: Record<string,string> = { installation:'cube', connections:'layers', models:'cube', sessions:'history', shortcuts:'keyboard', updates:'history', troubleshooting:'help', privacy:'shield' };
+---
+<div class="docs-sidebar-groups">
+  {groups.map((group,index)=><section class="docs-nav-group" aria-label={group.label}>
+    <div class="docs-nav-heading"><DocIcon name={['compass','cube','terminal','settings'][index] ?? 'book'} size={16}/>{group.label}</div>
+    <ul>{group.entries.map(entry=>entry.type==='link' && <li><a href={entry.href} aria-current={entry.isCurrent?'page':undefined}><DocIcon name={icons[entry.href.split('/').filter(Boolean).at(-1) ?? ''] ?? 'rocket'} size={17}/><span>{entry.label}</span></a></li>)}</ul>
+  </section>)}
+</div>
+<div class="docs-sidebar-footer"><span>Freeway</span><span>Personal. Native. Open source.</span></div>
+<div class="md:sl-hidden"><MobileMenuFooter/></div>

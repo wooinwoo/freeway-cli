@@ -1,0 +1,25 @@
+---
+title: Models and responses
+description: Choose a route and stop safely.
+---
+## Select a model
+
+Open `/model`, **F2**, or **Alt+P**. Search, select, and continue writing. Closing the menu preserves your draft.
+
+Only models explicitly marked free and ready by the gateway appear. Auto selection is gateway policy. Responses identify the actual model.
+
+## Write and stream
+
+**Enter** sends. **Ctrl+J**, **Ctrl+O**, **Alt+Enter**, or **Shift+Enter** inserts a newline. Input grows up to six visible lines.
+
+During generation, write a follow-up and press **Tab** or **Enter** to queue it. Use `/queue pause`, `resume`, or `clear`. Restored queues start paused.
+
+## Stop and retry
+
+**Esc** stops the response while keeping your next draft. **Alt+R** regenerates the last question. Regeneration is disabled during session loading.
+
+If a selected route fails before output, the client may retry through Auto and shows a notice. Once output starts, it preserves the partial response and reports the error. Failed and stopped assistant messages are excluded from later model context.
+
+## Understand usage
+
+Unknown usage is not a confirmed zero. The provider quota view reports configuration and observed errors, not guaranteed remaining allowance. Other applications can share that allowance, and free promotions can end.

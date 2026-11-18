@@ -18,6 +18,9 @@ docs/planning/exports/
 *.test
 *.test.exe
 coverage.out
+/docs/site/.astro/
+/docs/site/dist/
+/.impeccable/
 *.db
 *.db-shm
 *.db-wal

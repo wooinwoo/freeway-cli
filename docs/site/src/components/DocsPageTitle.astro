@@ -1,0 +1,25 @@
+---
+import DocIcon from './DocIcon.astro';
+const ko = Astro.url.pathname.startsWith('/ko/');
+const { entry, sidebar } = Astro.locals.starlightRoute;
+const group = sidebar.find(item=>item.type==='group' && item.entries.some(child=>child.type==='link' && child.isCurrent));
+const category = group?.label ?? (ko?'개요':'Overview');
+---
+<div class="docs-page-header">
+  <div class="docs-section-label">{category}</div>
+  <h1 id="_top">{entry.data.title}</h1>
+  {entry.data.description && <p class="docs-description">{entry.data.description}</p>}
+  <button class="copy-page" data-copy-page data-idle={ko?'페이지 복사':'Copy page'} data-success={ko?'복사됨':'Copied'} data-error={ko?'복사 실패':'Copy failed'}><DocIcon name="copy" size={16}/><span aria-live="polite">{ko?'페이지 복사':'Copy page'}</span></button>
+</div>
+<script>
+  document.querySelectorAll<HTMLButtonElement>('[data-copy-page]').forEach(button=>{
+    button.addEventListener('click',async()=>{
+      const label=button.querySelector('span')!;
+      try {
+        await navigator.clipboard.writeText(document.querySelector<HTMLElement>('main')?.innerText ?? '');
+        label.textContent=button.dataset.success!;
+      } catch { label.textContent=button.dataset.error!; }
+      window.setTimeout(()=>{label.textContent=button.dataset.idle!},2000);
+    });
+  });
+</script>

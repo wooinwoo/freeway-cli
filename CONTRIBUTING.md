@@ -1,53 +1,32 @@
 # 개발 참여
 
-현재 저장소는 Go 백엔드의 개발 틀, 기존 Node.js POC에 임시 연결한 Go TUI를 함께 보관합니다. 최종 Go 서버·라우팅·공급처 연동은 아직 구현하지 않았습니다.
+현재 구현은 Go TUI, 네이티브 공급처 어댑터·도구, 설치·업데이트와 Astro 정적 문서입니다. 공통 Go 게이트웨이는 별도 구현 대상입니다. [구조와 책임](docs/development/architecture.md), [클라이언트 완료 조건](docs/development/client-delivery.md)을 기준으로 작업합니다.
 
-## 구조와 담당
+## 검사
 
-전체 폴더와 책임은 [아키텍처](docs/development/architecture.md)를 기준으로 합니다.
+Go 1.26 이상에서 저장소 루트를 기준으로 실행합니다. 실제 모델 호출은 기본 검사에 포함하지 않습니다.
 
-- A: 업체 조사·로그인·공급처 어댑터·CLI/TUI·사용자 문서·패키징·설치.
-- B: 공통 계약·로컬 인증·비밀 저장·라우팅·한도·세션·API·데이터 이전·CI/릴리스.
-- 업체별 OAuth와 토큰 갱신은 A, 공통 비밀 저장과 로컬 API 인증은 B가 담당합니다.
-
-기능을 추가할 때는 실제로 필요한 패키지부터 구현합니다. `.gitkeep`은 빈 폴더를 Git에 남기는 관례이며 기능을 제공하지 않습니다. 실제 파일이 생기면 해당 폴더의 `.gitkeep`을 지웁니다.
-
-## Go 백엔드 확인
-
-Go 1.26.0 이상에서 저장소 루트를 기준으로 실행합니다.
-
-```bash
-go -C backend test ./...
-go -C backend build -o ../build/freewayd ./cmd/freewayd
+```sh
+FREEWAY_LIVE=0 go -C cli test -race ./...
+FREEWAY_LIVE=0 go -C backend test -race ./...
+go -C cli run ./cmd/package --root "$PWD" --targets linux/amd64
+python3 tests/e2e/native_smoke.py dist/native/freeway_0.6.0-dev_linux_amd64.tar.gz
 ```
 
-현재 `go test`는 테스트 파일이 없는 진입점 패키지의 컴파일을 확인합니다. 동작 시험이 통과했다는 뜻이 아닙니다. 생성한 실행 파일은 미구현 안내를 표준 오류에 출력하고 종료 코드 1로 끝납니다. 서버·로그인·모델 요청·MCP 서버를 시작하지 않습니다.
+실행 파일 시험의 아카이브 버전은 `VERSION`과 맞춰 사용합니다. 로컬 HTTP fixture를 열 수 있는 환경이 필요합니다. 공급처 실계정 시험은 별도로 실행하며 실제 할당량을 소비합니다.
 
-백엔드에는 외부 Go 모듈이 없습니다. CLI는 별도 모듈이며 `cli/go.mod`와 `cli/go.sum`으로 TUI 의존성을 고정합니다.
-
-## Go TUI 확인
-
-```bash
-go -C cli test ./...
-go -C cli build -o ../build/freeway ./cmd/freeway
-go -C cli run ./cmd/freeway
+```sh
+npm --prefix docs/site ci
+npm --prefix docs/site run typecheck
+npm --prefix docs/site run build
 ```
 
-검사는 가짜 POC와 응답을 사용하며 실제 모델을 호출하지 않습니다. Node.js가 있으면 브리지의 무료 모델 필터·스트림·취소 통합 검사도 실행합니다. Node.js가 없으면 해당 통합 검사를 건너뜁니다.
+문서 빌드에만 Node.js가 필요합니다. 제품 배포는 Go 실행 파일·명세·라이선스만 포함합니다. 교차 컴파일은 다른 운영체제에서 실행됐다는 증거가 아닙니다.
 
-기본 실행은 기존 POC를 시작하거나 재사용하고 실제 무료 모델로 요청합니다. 화면만 확인할 때는 `go -C cli run ./cmd/freeway --preview`를 사용합니다. 임시 연결의 실행 조건과 경계는 [CLI 문서](cli/README.md)를 따릅니다.
+## 기여 범위
 
-## 테스트 경계
+단위 테스트는 Go 구현 옆의 `*_test.go`에 둡니다. 빌드된 제품 검사는 `tests/e2e/`, 문서 소스는 `docs/site/src/content/docs/`를 사용합니다. 백엔드 정책을 TUI나 공급처 어댑터에 중복 구현하지 않습니다.
 
-- Go 단위 테스트는 구현 파일 옆의 `*_test.go`에 둡니다.
-- 내부 Go 패키지를 조합하는 검사는 `backend/tests/integration/`에 둡니다.
-- 루트 `tests/e2e/`와 `tests/install/`은 빌드된 실행 파일과 설치 흐름을 검사합니다. 백엔드의 `go test ./...`에 자동 포함되지 않습니다.
-- 공급처 실계정 시험은 일반 검사와 분리합니다. 기본 검사에 개인 API 키나 실제 추론을 요구하지 않습니다.
+자신이 제공할 권리가 있는 코드와 문서만 제출합니다. 본인 기여분은 [MIT License](LICENSE)로 제공합니다. 외부 코드의 출처·버전·라이선스·수정 범위를 밝히고 원문 고지를 보존합니다. [제3자 고지](THIRD_PARTY_NOTICES.md)를 함께 갱신합니다.
 
-## 기여할 코드와 문서
-
-자신이 제공할 권리가 있는 코드와 문서만 제출합니다. 프로젝트에 포함하기 위해 제출하는 본인 기여분은 [MIT License](LICENSE) 조건으로 제공합니다. 저작권을 프로젝트에 양도하는 절차는 요구하지 않습니다.
-
-외부 코드를 가져오면 출처·버전·파일·라이선스·수정 내용을 밝히고 원래 고지를 보존합니다. 자세한 판단 기준은 [라이선스 문서](docs/development/licensing.md), 현재 제3자 범위는 [제3자 고지](THIRD_PARTY_NOTICES.md)를 참고하세요.
-
-키·토큰·대화 원문·사용자 DB·모델 가중치·클론한 경쟁 프로젝트·빌드 산출물은 커밋하지 않습니다. `POC/`를 수정할 때는 새 Go 구현과 구분해 변경 내용을 설명합니다.
+키·토큰·대화 원문·사용자 DB·모델 가중치·클론한 타 프로젝트·빌드 산출물은 커밋하지 않습니다. `POC/`는 보관용 기존 구현입니다.

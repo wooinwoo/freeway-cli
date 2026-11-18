@@ -2,16 +2,16 @@
 
 Freeway 자체 코드와 문서의 기본 라이선스는 [MIT](LICENSE)입니다. 제3자 자료의 원래 조건을 바꾸지 않습니다. 선택 근거와 재사용 기준은 [라이선스 문서](docs/development/licensing.md)에 있습니다.
 
-## 현재 개발 틀
+## 현재 구성과 배포
 
 | 항목 | 현재 저장소에 포함한 범위 | 처리 기준 |
 | --- | --- | --- |
-| Go | 표준 라이브러리를 사용하는 새 진입점. Go 도구나 바이너리를 포함하지 않음 | 실행 파일 배포 시 해당 Go 버전의 라이선스·저작권 고지 포함 |
+| Go | 네이티브 TUI·공급처 도구를 빌드. 컴파일러는 제품에 미포함 | 제품 아카이브의 licenses/go-LICENSE에 빌드 도구의 고지 포함 |
 | Node.js | 기존 POC의 실행 환경. 런타임 파일을 포함하지 않음 | 런타임을 묶는 배포에는 해당 버전의 LICENSE와 포함 구성요소 고지 보존 |
 | 외부 Go 모듈 | CLI의 Bubble Tea·Bubbles·Lip Gloss 및 전이 의존성 | 버전은 cli/go.mod·go.sum으로 고정하며 실행 파일 배포 시 해당 모듈의 원문 고지를 포함 |
-| 외부 npm 의존성 | POC/package.json에 선언된 항목 없음 | 의존성 추가 또는 배포 파일 포함 시 다시 확인 |
+| 문서 빌드 의존성 | Astro·Starlight·Expressive Code·Pagefind와 Plus Jakarta Sans·Geist Mono | 네이티브 제품에는 미포함. 정적 사이트 public/licenses에 배포 구성요소 원문 고지 포함 |
 | 조사 프로젝트 | 원본 URL·고정 커밋을 인용한 분석 문서 | 클론 저장소와 구현 소스는 배포에 포함하지 않음 |
-| OpenCode·Cline CLI | 사용자가 별도 설치한 공식 실행 파일을 임시 POC 어댑터에서 호출. 실행 파일·SDK 소스는 포함하지 않음 | OpenCode의 MIT, Cline의 Apache-2.0 등 실제 설치 버전의 고지를 따르며, 향후 실행 파일을 묶어 배포하면 해당 고지를 포함 |
+| OpenCode·Cline CLI | Go 어댑터가 사용자의 공식 네이티브 CLI를 호출. 제품 아카이브에는 실행 파일·SDK 소스 미포함 | 별도 설치 버전의 라이선스와 서비스 이용 조건을 각각 따름 |
 
 Go 라이선스 원문은 [Go 저장소](https://go.dev/LICENSE), Node.js 고지는 [Node.js 저장소](https://github.com/nodejs/node/blob/main/LICENSE)를 참고합니다. 실제 배포에서는 링크만 두지 않고 사용한 버전에 필요한 원문 고지를 포함합니다.
 
@@ -27,7 +27,7 @@ Go 라이선스 원문은 [Go 저장소](https://go.dev/LICENSE), Node.js 고지
 - `util/shared-colors.go`의 Groovebox 팔레트를 `cli/tui/styles.go`로 추렸습니다. 원본 패널 테두리·다중 테마·Markdown 렌더러는 포함하지 않습니다.
 - `cli/tui/model.go`는 이 UI를 연결하는 새 화면 상태입니다. 원본 DB·업체 클라이언트·세션 오케스트레이터·웹 검색·제목 생성 코드는 가져오지 않았습니다.
 
-직접 사용하는 UI 모듈은 `charm.land/bubbles/v2 v2.1.1`, `charm.land/bubbletea/v2 v2.0.8`, `charm.land/lipgloss/v2 v2.0.5`, `github.com/charmbracelet/x/ansi v0.11.7`이며 각각 MIT입니다. ANSI 모듈은 응답에 포함된 터미널 제어 시퀀스를 표시 전에 제거하는 데 사용합니다. 모듈 소스를 저장소에 vendor하지 않습니다. 실행 파일을 배포할 때에는 전이 의존성까지 포함한 라이선스 묶음이 필요하며, 현재 작업은 소스와 로컬 실행용 빌드만 제공합니다.
+직접 사용하는 UI 모듈은 `charm.land/bubbles/v2 v2.1.1`, `charm.land/bubbletea/v2 v2.0.8`, `charm.land/lipgloss/v2 v2.0.5`, `github.com/charmbracelet/x/ansi v0.11.7`이며 각각 MIT입니다. ANSI 모듈은 응답에 포함된 터미널 제어 시퀀스를 표시 전에 제거하는 데 사용합니다. 모듈 소스를 저장소에 vendor하지 않습니다. `cli/cmd/package`는 실제 빌드 의존성·Go·TUI의 라이선스를 제품의 `licenses/`에 함께 넣습니다. 외부 릴리스 공개는 별도 작업입니다.
 
 ## 외부 코드가 추가되면 남길 정보
 

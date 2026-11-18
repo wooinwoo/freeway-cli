@@ -1,0 +1,85 @@
+---
+title: 설치
+description: Node.js 없이 두 개의 네이티브 실행 파일로 설치합니다.
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Aside } from '@astrojs/starlight/components';
+
+패키지에는 `freeway`, `freeway-providers`, 파일 검증 명세와 라이선스가 들어 있습니다. 운영체제와 CPU에 맞는 파일을 선택하고 두 실행 파일을 함께 보관하세요.
+
+<Aside title="릴리스 공개 여부">
+이 체크아웃의 구현과 릴리스 공개는 별개입니다. 공개 릴리스가 없으면 직접 패키지를 빌드하세요. 출처가 다른 미러에서 파일을 내려받지 마세요.
+</Aside>
+
+## 소스에서 빌드
+
+Go 1.26 이상을 설치하고 저장소 루트에서 실행합니다.
+
+~~~sh
+go -C cli run ./cmd/package --root "$PWD"
+~~~
+
+`dist/native`에 Linux·macOS·Windows의 amd64·arm64 압축 파일과 `SHA256SUMS`, `release.json`이 생성됩니다. 한 대상만 빌드하려면 `--targets linux/amd64`를 추가하세요. 교차 빌드 성공은 해당 운영체제에서의 실행 검증과 다릅니다.
+
+## 검증 후 설치
+
+신뢰하는 릴리스의 `SHA256SUMS`에서 예상 SHA256을 확인하세요. 예상 해시의 출처도 신뢰할 수 있어야 변조 여부를 판단할 수 있습니다.
+
+<Tabs>
+<TabItem label="macOS / Linux">
+
+~~~sh
+# 파일명에 실제 버전과 아키텍처를 사용합니다.
+sha256sum freeway_VERSION_linux_amd64.tar.gz
+# macOS: shasum -a 256 freeway_VERSION_darwin_arm64.tar.gz
+mkdir freeway-package
+tar -xzf freeway_VERSION_linux_amd64.tar.gz -C freeway-package
+./freeway-package/freeway install \
+  --archive ./freeway_VERSION_linux_amd64.tar.gz \
+  --sha256 EXPECTED_SHA256
+~~~
+
+`$HOME/.freeway/app/bin`을 셸의 PATH에 추가하고 새 터미널을 여세요.
+
+</TabItem>
+<TabItem label="Windows">
+
+~~~powershell
+Get-FileHash .\freeway_VERSION_windows_amd64.zip -Algorithm SHA256
+Expand-Archive .\freeway_VERSION_windows_amd64.zip .\freeway-package
+.\freeway-package\freeway.exe install --archive .\freeway_VERSION_windows_amd64.zip --sha256 EXPECTED_SHA256
+~~~
+
+사용자 PATH에 `$HOME\.freeway\app\bin`을 추가하고 새 터미널을 여세요. 서명되지 않은 실행 파일에 대해 Windows가 확인을 요청할 수 있습니다. 관리자 설치는 필요하지 않습니다.
+
+</TabItem>
+</Tabs>
+
+`VERSION`과 `EXPECTED_SHA256`은 실제 파일명과 해시로 바꾸세요. 압축을 푼 실행 파일을 처음 실행하기 전에 해시부터 검증하세요. `--root PATH`로 전용 설치 폴더를 지정할 수 있습니다. 이때 해당 폴더의 `bin`을 PATH에 추가합니다.
+
+## 설치 확인
+
+~~~sh
+freeway --version
+freeway --preview
+freeway providers --help
+~~~
+
+미리보기는 오프라인으로 동작합니다. 실제 대화에는 별도의 인증된 로컬 게이트웨이가 필요합니다. Node.js와 기존 POC는 제품 패키지에 포함되지 않습니다.
+
+## 설치 구조
+
+~~~text
+~/.freeway/app/
+  bin/freeway                 고정 실행 진입점 (Windows는 freeway.exe)
+  install.json                활성 버전과 이전 버전
+  versions/VERSION/
+    freeway
+    freeway-providers
+    manifest.json
+    LICENSE
+    THIRD_PARTY_NOTICES.md
+    licenses/
+~~~
+
+공급처 계정과 게이트웨이 대화 데이터는 프로그램 폴더 밖에서 관리합니다. `versions` 안에 개인 파일을 보관하지 마세요.

@@ -1,0 +1,32 @@
+---
+title: 키보드 단축키
+description: 초안을 유지하며 터미널에서 작업합니다.
+---
+| 동작 | 단축키 |
+| --- | --- |
+| 전송 | Enter |
+| 줄바꿈 | Ctrl+J / Ctrl+O / Alt+Enter / Shift+Enter |
+| 모델 | F2 / Alt+P |
+| 저장 대화 | Alt+H |
+| 저장하고 새 대화 | Alt+N |
+| 입력 기록 검색 | Ctrl+R |
+| 재생성 | Alt+R |
+| 초안 보관·복원 | Ctrl+S |
+| 외부 편집기 | Ctrl+G |
+| 줄 앞·뒤·이전 단어 삭제 | Ctrl+U / Ctrl+K / Ctrl+W |
+| 삭제 복원 | Ctrl+Y |
+| 입력 실행 취소·다시 실행 | Ctrl+Z / Ctrl+Shift+Z |
+| 스크롤 | PgUp / PgDn / 마우스 휠 |
+| 처음·최신 응답 | Ctrl+Home / Ctrl+End |
+| 응답 중지 | Esc |
+| 도움말 | F1 / /help |
+
+## 명령
+
+`/model`, `/resume`, `/continue`, `/new`, `/fork`, `/rename`, `/attach`, `/detach`, `/queue`, `/save`, `/export`, `/copy`, `/code`, `/settings`, `/reconnect`를 사용합니다.
+
+`/`를 입력하면 명령을 제안합니다. 화살표로 고르고 Tab으로 완성합니다. 메뉴가 열려 있으면 Esc는 메뉴부터 닫습니다.
+
+## 안전하게 종료
+
+Ctrl+C는 생성 중에는 중지합니다. 입력이 있으면 복원 가능한 사본을 유지하며 입력창을 비웁니다. 빈 입력에서 두 번 누르면 종료합니다. `/exit`는 저장 후 종료를 요청합니다.

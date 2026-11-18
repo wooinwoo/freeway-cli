@@ -1,0 +1,43 @@
+---
+import DocIcon from './DocIcon.astro';
+const ko = Astro.url.pathname.startsWith('/ko/');
+---
+<starlight-theme-select>
+  <label class="docs-theme-control">
+    <span class="sr-only">{ko?'테마 선택':'Select theme'}</span>
+    <span class="theme-icon-dark"><DocIcon name="moon" size={18}/></span>
+    <span class="theme-icon-light"><DocIcon name="sun" size={18}/></span>
+    <select aria-label={ko?'테마 선택':'Select theme'}>
+      <option value="dark">{ko?'어두운 테마':'Dark'}</option>
+      <option value="light">{ko?'밝은 테마':'Light'}</option>
+      <option value="auto">{ko?'시스템 설정':'System'}</option>
+    </select>
+  </label>
+</starlight-theme-select>
+<script>
+  type Theme = 'light' | 'dark' | 'auto';
+  const readTheme = (): Theme => {
+    let raw: string | null = null;
+    try { raw = localStorage.getItem('starlight-theme'); } catch {}
+    return raw === 'light' || raw === 'auto' ? raw : 'dark';
+  };
+  const apply = (theme: Theme) => {
+    document.documentElement.dataset.theme = theme === 'auto'
+      ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : theme;
+    document.querySelectorAll<HTMLSelectElement>('starlight-theme-select select').forEach(select=>{select.value=theme});
+  };
+  class ThemeSelect extends HTMLElement {
+    constructor() {
+      super();
+      apply(readTheme());
+      this.querySelector('select')?.addEventListener('change', event=>{
+        const value=(event.target as HTMLSelectElement).value;
+        const theme: Theme = value === 'light' || value === 'auto' ? value : 'dark';
+        try { localStorage.setItem('starlight-theme',theme); } catch {}
+        apply(theme);
+      });
+    }
+  }
+  customElements.define('starlight-theme-select',ThemeSelect);
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{if(readTheme()==='auto')apply('auto')});
+</script>

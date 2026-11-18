@@ -1,0 +1,33 @@
+---
+title: Troubleshooting
+description: Separate local connection, account, and upstream problems.
+---
+## Cannot reach the gateway
+
+Check `FREEWAY_URL` and start the local Go gateway. Only loopback HTTP addresses are accepted. Connected mode requires API v1. Offline preview remains available with `freeway --preview`.
+
+## Login or key required
+
+`FREEWAY_API_KEY` authenticates the local connection. Provider keys authenticate their services. Use official CLI login for OpenCode/Cline. Never paste keys into issues.
+
+If `credential_conflict` appears, another command changed the same provider. Check the current account before confirming it again.
+
+## No free model is ready
+
+Inspect the current model list and `freeway providers quota all`. Setup, catalog presence, and live response success are distinct. A promotion may have ended or an account may have reached its allowance.
+
+## Response stopped or incomplete
+
+Partial answers stay incomplete and are excluded from future model context. Check availability and use Alt+R. A response never silently switches models after output begins.
+
+## Another window changed the conversation
+
+Export this window's work and reopen the saved session. Revision conflicts protect the newer stored version.
+
+## Cannot save
+
+Retry `/save`, or use `/export backup.md` for a plaintext copy including attachments and unfinished work. Check gateway storage permissions and disk space.
+
+## Report a problem
+
+Include the native version, OS, provider ID, command, and shortest reproduction. Remove keys, private prompts, and personal paths. Use the [GitHub issue tracker](https://github.com/wooinwoo/freeway-cli/issues).

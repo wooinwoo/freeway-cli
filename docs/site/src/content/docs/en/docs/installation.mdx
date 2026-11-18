@@ -1,0 +1,85 @@
+---
+title: Installation
+description: Two native executables. No Node.js runtime.
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Aside } from '@astrojs/starlight/components';
+
+Freeway packages contain `freeway`, `freeway-providers`, a file manifest, and license notices. Choose the archive matching your operating system and CPU. Keep both executables together.
+
+<Aside title="Release availability">
+Release publication is separate from this checkout. These instructions also work with archives produced locally. If no release is published, build the package from source; do not download an archive from an unrelated mirror.
+</Aside>
+
+## Build from source
+
+Install Go 1.26 or later. From the repository root:
+
+~~~sh
+go -C cli run ./cmd/package --root "$PWD"
+~~~
+
+This creates archives for Linux, macOS, and Windows on amd64 and arm64 in `dist/native`, plus `SHA256SUMS` and `release.json`. To build one target, append `--targets linux/amd64`. Cross compilation does not prove execution on another operating system.
+
+## Verify and install
+
+Get the expected SHA256 from the trusted release's `SHA256SUMS`. A matching hash detects a damaged or substituted archive when the expected hash comes from a trusted source.
+
+<Tabs>
+<TabItem label="macOS / Linux">
+
+~~~sh
+# Use the actual version and architecture in the filename.
+sha256sum freeway_VERSION_linux_amd64.tar.gz
+# On macOS: shasum -a 256 freeway_VERSION_darwin_arm64.tar.gz
+mkdir freeway-package
+tar -xzf freeway_VERSION_linux_amd64.tar.gz -C freeway-package
+./freeway-package/freeway install \
+  --archive ./freeway_VERSION_linux_amd64.tar.gz \
+  --sha256 EXPECTED_SHA256
+~~~
+
+Add `$HOME/.freeway/app/bin` to your shell's PATH, then open a new terminal.
+
+</TabItem>
+<TabItem label="Windows">
+
+~~~powershell
+Get-FileHash .\freeway_VERSION_windows_amd64.zip -Algorithm SHA256
+Expand-Archive .\freeway_VERSION_windows_amd64.zip .\freeway-package
+.\freeway-package\freeway.exe install --archive .\freeway_VERSION_windows_amd64.zip --sha256 EXPECTED_SHA256
+~~~
+
+Add `$HOME\.freeway\app\bin` to your user PATH, then open a new terminal. Windows may ask for permission to run an unsigned application. No administrator installation is required.
+
+</TabItem>
+</Tabs>
+
+Replace `VERSION` and `EXPECTED_SHA256` with the actual filename and checksum. Verify the archive before running the extracted executable. `--root PATH` selects a dedicated application directory; add its `bin` directory to PATH.
+
+## Check the installation
+
+~~~sh
+freeway --version
+freeway --preview
+freeway providers --help
+~~~
+
+Preview is offline. Connected chat needs the separate authenticated local gateway. Node.js and the historical POC are not part of these packages.
+
+## Installation layout
+
+~~~text
+~/.freeway/app/
+  bin/freeway                 stable launcher (freeway.exe on Windows)
+  install.json                active and previous versions
+  versions/VERSION/
+    freeway
+    freeway-providers
+    manifest.json
+    LICENSE
+    THIRD_PARTY_NOTICES.md
+    licenses/
+~~~
+
+Provider accounts and gateway conversations live outside the managed application directory. Do not store personal files inside `versions`.

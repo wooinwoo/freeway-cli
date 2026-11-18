@@ -1,0 +1,36 @@
+---
+title: Sessions and drafts
+description: Keep conversations and unfinished work together.
+---
+## Resume your project
+
+~~~sh
+freeway continue
+freeway resume
+freeway resume "Session title"
+freeway sessions --all
+~~~
+
+Title and ID-prefix searches respect project scope. Use `--all` to include other projects.
+
+## Drafts and stash
+
+Drafts, text attachments, queued follow-ups, and the **Ctrl+S** stash belong to saved conversation state. Ctrl+S stashes or restores; with two drafts it swaps them.
+
+Independent saves remain available during streaming. A save failure stays visible; retry with `/save`. Durable storage and crash recovery are responsibilities of the connected gateway.
+
+## Attach text files
+
+Use `@` or `/attach` for UTF-8 files inside the project: up to five files, each at most 128 KB. Submission waits for selected files to load. `/detach` removes them.
+
+File contents reach the selected model. Review confidential material before attaching it.
+
+## Fork and export
+
+`/fork` preserves the original and creates a branch. Editing an earlier question also creates a branch.
+
+`/export filename.md` creates a local Markdown copy without overwriting an existing file. It includes messages, draft attachments, stash, and queued follow-ups. Exports are plaintext.
+
+## Multiple windows
+
+A stale revision receives `chat_conflict`. Export the affected window's work, then reopen the saved conversation. Different edits are not silently merged.

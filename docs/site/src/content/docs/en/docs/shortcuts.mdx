@@ -1,0 +1,32 @@
+---
+title: Keyboard shortcuts
+description: Work in the terminal without losing your draft.
+---
+| Action | Shortcut |
+| --- | --- |
+| Send | Enter |
+| Newline | Ctrl+J / Ctrl+O / Alt+Enter / Shift+Enter |
+| Models | F2 / Alt+P |
+| Saved sessions | Alt+H |
+| Save and start fresh | Alt+N |
+| Search prompts | Ctrl+R |
+| Regenerate | Alt+R |
+| Stash / restore | Ctrl+S |
+| External editor | Ctrl+G |
+| Delete to start / end / previous word | Ctrl+U / Ctrl+K / Ctrl+W |
+| Restore deleted text | Ctrl+Y |
+| Undo / redo input | Ctrl+Z / Ctrl+Shift+Z |
+| Scroll | PgUp / PgDn / mouse wheel |
+| First / latest response | Ctrl+Home / Ctrl+End |
+| Stop response | Esc |
+| Help | F1 / /help |
+
+## Commands
+
+Use `/model`, `/resume`, `/continue`, `/new`, `/fork`, `/rename`, `/attach`, `/detach`, `/queue`, `/save`, `/export`, `/copy`, `/code`, `/settings`, and `/reconnect`.
+
+Type `/` for suggestions; choose with arrows and complete with Tab. Escape closes an open menu before it can interrupt a response.
+
+## Exit safely
+
+Ctrl+C stops generation. With input present it keeps a recoverable copy before clearing. On empty input, press it twice to exit. `/exit` requests a save before closing.

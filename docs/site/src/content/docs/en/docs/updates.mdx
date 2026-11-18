@@ -1,0 +1,48 @@
+---
+title: Updates and recovery
+description: Verify a new version before making it active.
+---
+## Check and update
+
+~~~sh
+freeway update check
+freeway update
+~~~
+
+The default source is the Freeway GitHub release manifest. An unpublished or unreachable release returns an error and leaves the installed version active. `update check` reads release metadata; it does not install anything.
+
+The updater checks the archive SHA256, safe file paths, platform, API version, required files, individual file hashes, and the version reported by both native executables. It stages the new version separately, then changes the active version in `install.json`. Running sessions continue using their original executable.
+
+## Install a verified local archive
+
+~~~sh
+freeway install --archive ./freeway_VERSION_linux_amd64.tar.gz --sha256 EXPECTED_SHA256
+~~~
+
+Use the matching ZIP archive on Windows. Version directories are immutable: another package with the same version and different contents is rejected. No Node.js runtime, provider credentials, or conversation database belongs in a release archive.
+
+## Roll back
+
+~~~sh
+freeway rollback
+~~~
+
+This validates and activates the previous installed version. It does not change account files or migrate the conversation database. The stable launcher can run recovery commands even if the active executable is damaged. Rollback requires a previous version that still passes validation.
+
+## Remove the program
+
+Close active conversations, then run:
+
+~~~sh
+freeway uninstall
+~~~
+
+Only the managed launcher, version directories, and installation state are removed. Provider credentials and gateway data are preserved. Remove PATH entries yourself if you no longer need them.
+
+On Windows, removal runs in a temporary helper after Freeway exits. Close other Freeway processes so their executable files can be removed. If removal cannot finish, the helper records the error in its temporary `freeway-uninstall-*` directory. A scheduled removal is not a confirmation that every file has already been removed.
+
+## Custom installations
+
+`--root PATH` selects a dedicated application directory. The installed launcher remembers its own root. `--release-url HTTPS_URL` selects a trusted manifest, for example when testing your own release. Anyone controlling that manifest and its hashes can distribute executable code, so only use a source you trust.
+
+Updates run only when explicitly requested. Provider CLI installation is separate; see Provider connections for official CLI versions and login.
