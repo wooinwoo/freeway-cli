@@ -11,7 +11,50 @@ import { Aside } from '@astrojs/starlight/components';
 이 체크아웃의 구현과 릴리스 공개는 별개입니다. 공개 릴리스가 없으면 직접 패키지를 빌드하세요. 출처가 다른 미러에서 파일을 내려받지 마세요.
 </Aside>
 
-## 소스에서 빌드
+## 설치 스크립트
+
+저장소 루트의 `install.sh`와 `install.ps1`을 사용합니다. 지금은 Go 1.26 이상으로 소스 설치할 수 있습니다.
+
+<Tabs>
+<TabItem label="Linux / macOS">
+
+~~~sh
+bash install.sh --source
+export PATH="$HOME/.freeway/app/bin:$PATH"
+~~~
+
+</TabItem>
+<TabItem label="Windows">
+
+~~~powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Source
+$env:Path = "$HOME\.freeway\app\bin;$env:Path"
+~~~
+
+</TabItem>
+</Tabs>
+
+소스 체크아웃에서 실행하세요. 현재 OS·CPU용 패키지를 빌드하고 검증한 뒤 네이티브 설치기에 활성화를 맡깁니다. Node.js는 사용하지 않습니다. `--root PATH` / `-Root PATH`로 전용 설치 폴더를 지정합니다. 위 PATH 설정은 현재 터미널에 적용됩니다. 이후 터미널에서도 사용하려면 셸 설정이나 Windows 사용자 PATH에 같은 폴더를 추가하세요.
+
+### 로컬 압축 파일 설치
+
+압축을 직접 풀 필요가 없습니다.
+
+~~~sh
+bash install.sh --archive ./freeway_VERSION_linux_amd64.tar.gz --sha256 EXPECTED_SHA256
+~~~
+
+~~~powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Archive .\freeway_VERSION_windows_amd64.zip -SHA256 EXPECTED_SHA256
+~~~
+
+신뢰하는 출처의 체크섬을 사용하세요. 압축 파일을 검증한 뒤에만 실행 파일을 사용합니다.
+
+### 네이티브 릴리스 다운로드
+
+새 네이티브 릴리스 파일을 공개한 뒤에는 소스·압축 파일 옵션 없이 `bash install.sh` 또는 `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`을 실행합니다. OS·CPU를 감지하고 `SHA256SUMS`와 해당 압축 파일을 받아 검증하므로 Go·Node.js가 필요하지 않습니다. 릴리스가 없으면 기존 설치를 바꾸지 않고 실패합니다. `--release-url HTTPS_BASE_URL` / `-ReleaseUrl HTTPS_BASE_URL`은 신뢰하는 릴리스 폴더를 지정합니다.
+
+## 배포 압축 파일 빌드
 
 Go 1.26 이상을 설치하고 저장소 루트에서 실행합니다.
 

@@ -11,7 +11,50 @@ Freeway packages contain `freeway`, `freeway-providers`, a file manifest, and li
 Release publication is separate from this checkout. These instructions also work with archives produced locally. If no release is published, build the package from source; do not download an archive from an unrelated mirror.
 </Aside>
 
-## Build from source
+## Installer scripts
+
+The repository root includes `install.sh` and `install.ps1`. Source installation is available now with Go 1.26+:
+
+<Tabs>
+<TabItem label="Linux / macOS">
+
+~~~sh
+bash install.sh --source
+export PATH="$HOME/.freeway/app/bin:$PATH"
+~~~
+
+</TabItem>
+<TabItem label="Windows">
+
+~~~powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Source
+$env:Path = "$HOME\.freeway\app\bin;$env:Path"
+~~~
+
+</TabItem>
+</Tabs>
+
+Run from a source checkout. The script builds the current OS/CPU package, verifies it, and delegates activation to the native installer. Node.js is not used. `--root PATH` or `-Root PATH` chooses a dedicated install directory. PATH changes above apply to the current terminal; add the same directory to your shell configuration or Windows user PATH for future terminals.
+
+### Install a local archive
+
+No manual extraction is needed:
+
+~~~sh
+bash install.sh --archive ./freeway_VERSION_linux_amd64.tar.gz --sha256 EXPECTED_SHA256
+~~~
+
+~~~powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Archive .\freeway_VERSION_windows_amd64.zip -SHA256 EXPECTED_SHA256
+~~~
+
+Use a checksum from a trusted source. The archive is checked before its executable runs.
+
+### Download a native release
+
+Once the new native release assets are published, run `bash install.sh` or `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` without source/archive flags. This detects the OS and CPU, fetches `SHA256SUMS` and the matching archive, verifies SHA256, and installs without Go or Node.js. A missing release fails without changing the installed version. `--release-url HTTPS_BASE_URL` / `-ReleaseUrl HTTPS_BASE_URL` selects a trusted release directory.
+
+## Build release archives
 
 Install Go 1.26 or later. From the repository root:
 

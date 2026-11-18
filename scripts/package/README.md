@@ -1,5 +1,7 @@
 # 네이티브 제품 패키징
 
+Freeway 전체 설치의 진입점은 루트의 [install.sh](../../install.sh)·[install.ps1](../../install.ps1)입니다. 소스 설치는 `bash install.sh --source` 또는 `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Source`로 실행합니다. 아래는 배포 아카이브를 직접 빌드하는 절차입니다.
+
 Go 1.26 이상으로 저장소 루트에서 실행합니다. 제품에 Node.js·POC·미구현 freewayd를 넣지 않습니다.
 
 ```sh

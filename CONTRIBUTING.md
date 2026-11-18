@@ -11,6 +11,7 @@ FREEWAY_LIVE=0 go -C cli test -race ./...
 FREEWAY_LIVE=0 go -C backend test -race ./...
 go -C cli run ./cmd/package --root "$PWD" --targets linux/amd64
 python3 tests/e2e/native_smoke.py dist/native/freeway_0.6.0-dev_linux_amd64.tar.gz
+python3 tests/install/bootstrap_smoke.py --go /absolute/path/to/go
 ```
 
 실행 파일 시험의 아카이브 버전은 `VERSION`과 맞춰 사용합니다. 로컬 HTTP fixture를 열 수 있는 환경이 필요합니다. 공급처 실계정 시험은 별도로 실행하며 실제 할당량을 소비합니다.

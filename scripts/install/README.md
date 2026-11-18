@@ -1,6 +1,6 @@
 # 공급처 도구·공식 CLI 설치
 
-Freeway TUI를 포함한 제품 설치·업데이트는 [네이티브 패키징 안내](../package/README.md)를 사용합니다. 이 문서는 공급처 도구만 별도로 준비하거나 공식 공급처 CLI를 설치하는 경로입니다.
+Freeway 전체 설치는 루트의 [install.sh](../../install.sh)·[install.ps1](../../install.ps1)을 사용합니다. 현재 소스 설치 명령은 `bash install.sh --source`, Windows는 `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Source`입니다. 배포 패키지는 [네이티브 패키징 안내](../package/README.md)를 참고하세요. 아래 내용은 공급처 도구만 별도로 준비하거나 공식 공급처 CLI를 설치하는 경로입니다.
 
 Go 기반 공급처 도구와 공식 OpenCode·Cline 네이티브 실행 파일을 준비합니다. 백엔드 서버·TUI 설치 작업은 포함하지 않습니다. Node·npm·POC 게이트웨이는 실행하지 않습니다.
 

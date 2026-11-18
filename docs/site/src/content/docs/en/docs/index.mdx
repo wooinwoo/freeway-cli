@@ -9,15 +9,15 @@ Freeway is a personal, native Go terminal client for model APIs and official CLI
 
 ## Install the native client
 
-Extract the native archive, then run this from the extracted package directory. Use the matching archive and its SHA256 from `SHA256SUMS`. See the [installation guide](./installation) for extraction and source builds. Public release publication is still pending.
+The repository now includes `install.sh` and `install.ps1`. The new native release assets are not published yet, so use **source installation with Go 1.26+** today. Node.js is not required.
 
 <Tabs>
 <TabItem label="Linux">
 
 ~~~sh
-./freeway install \
-  --archive ../freeway_VERSION_linux_amd64.tar.gz \
-  --sha256 EXPECTED_SHA256
+git clone https://github.com/wooinwoo/freeway-cli.git
+cd freeway-cli
+bash install.sh --source
 export PATH="$HOME/.freeway/app/bin:$PATH"
 freeway --preview
 ~~~
@@ -26,9 +26,9 @@ freeway --preview
 <TabItem label="macOS">
 
 ~~~sh
-./freeway install \
-  --archive ../freeway_VERSION_darwin_arm64.tar.gz \
-  --sha256 EXPECTED_SHA256
+git clone https://github.com/wooinwoo/freeway-cli.git
+cd freeway-cli
+bash install.sh --source
 export PATH="$HOME/.freeway/app/bin:$PATH"
 freeway --preview
 ~~~
@@ -37,9 +37,9 @@ freeway --preview
 <TabItem label="Windows">
 
 ~~~powershell
-.\freeway.exe install `
-  --archive ..\freeway_VERSION_windows_amd64.zip `
-  --sha256 EXPECTED_SHA256
+git clone https://github.com/wooinwoo/freeway-cli.git
+cd freeway-cli
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Source
 $env:Path = "$HOME\.freeway\app\bin;$env:Path"
 freeway --preview
 ~~~
@@ -47,7 +47,7 @@ freeway --preview
 </TabItem>
 </Tabs>
 
-Replace `VERSION` and `EXPECTED_SHA256` with your archive's version and trusted checksum. For Intel Macs or arm64 Linux/Windows, use the matching archive. Preview is offline and does not need credentials or make model requests.
+The script builds only your platform, verifies the archive, and activates both native executables. See [installation](./installation) for local archives, release downloads, and a custom directory. Preview is offline and needs no credentials.
 
 ## Explore Freeway
 

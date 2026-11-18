@@ -4,6 +4,14 @@
 
 현재 구성은 **네이티브 TUI·공급처 어댑터·Astro 문서 사이트·설치/업데이트**입니다. 제품 실행에 Node.js나 기존 POC가 필요하지 않습니다. **공통 Go 게이트웨이는 현재 미구현이며 마지막 단계에서 개발합니다.** 지금은 오프라인 미리보기와 공급처 도구를 사용할 수 있습니다. 연결 대화에는 API v1을 구현한 로컬 서버가 필요합니다.
 
+전체 설치 스크립트는 루트의 [install.sh](install.sh)와 [install.ps1](install.ps1)입니다. 지금은 Go 1.26 이상을 설치한 소스 체크아웃에서 실행합니다.
+
+```sh
+bash install.sh --source
+```
+
+Windows: `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Source`. 릴리스 다운로드·로컬 패키지·사용자 지정 폴더는 [설치 안내](docs/site/src/content/docs/ko/docs/installation.mdx)를 참고하세요.
+
 ```sh
 go -C cli run ./cmd/freeway --preview
 go -C cli run ./cmd/package --root "$PWD"
