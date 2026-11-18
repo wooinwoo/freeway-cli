@@ -20,6 +20,9 @@ import (
 )
 
 const marker = "FREEWAY_PROVIDER_OK"
+
+var version = "dev"
+
 const usage = `Usage: freeway-providers COMMAND [PROVIDER|all] [options]
 
   install|update|check [--root PATH] [--api-only|--only opencode|cline]
@@ -185,6 +188,10 @@ func main() {
 }
 
 func run(args []string) (int, error) {
+	if len(args) == 1 && (args[0] == "--version" || args[0] == "version") {
+		fmt.Println(version)
+		return 0, nil
+	}
 	o, err := parse(args)
 	if err != nil {
 		return 2, err

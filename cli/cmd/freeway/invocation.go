@@ -7,7 +7,7 @@ import (
 )
 
 type invocation struct {
-	mode, query, pocDir                       string
+	mode, query, url                          string
 	all, json, preview, noSave, noColor, help bool
 }
 
@@ -47,12 +47,12 @@ func parseInvocation(args []string) (invocation, error) {
 				return o, err
 			}
 			o.mode, o.query = "resume", text
-		case "--poc-dir":
+		case "--url":
 			text, err := value()
 			if err != nil {
 				return o, err
 			}
-			o.pocDir = text
+			o.url = text
 		case "--all":
 			o.all = true
 		case "--json":
@@ -66,8 +66,8 @@ func parseInvocation(args []string) (invocation, error) {
 		case "--help", "-h", "help":
 			o.help = true
 		default:
-			if strings.HasPrefix(arg, "--poc-dir=") {
-				o.pocDir = strings.TrimPrefix(arg, "--poc-dir=")
+			if strings.HasPrefix(arg, "--url=") {
+				o.url = strings.TrimPrefix(arg, "--url=")
 				continue
 			}
 			if strings.HasPrefix(arg, "--session=") {
@@ -111,5 +111,16 @@ const usage = `Freeway — a free AI workspace
   --preview       Offline UI preview
 
 In the UI: /resume, /fork, /rename TITLE, /new, /queue, /help
-Other commands: freeway models, freeway agent, freeway mcp, freeway opencode
+
+Native tools:
+  freeway providers COMMAND  Native provider authentication and diagnostics
+  freeway --version          Print the native client version
+  freeway install --archive PATH --sha256 SHA256 [--root PATH]
+  freeway update check       Check the trusted native release manifest
+  freeway update             Verify and activate a new native version
+  freeway rollback           Restore the previous program version
+  freeway uninstall          Remove the program while preserving user data
+  --url URL       Local Go gateway address (or FREEWAY_URL)
+
+Connected mode uses FREEWAY_API_KEY. No Node.js or POC runtime is required.
 `

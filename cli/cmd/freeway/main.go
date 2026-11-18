@@ -11,9 +11,18 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/wooinwoo/freeway-cli/cli/client"
 	"github.com/wooinwoo/freeway-cli/cli/tui"
+	"github.com/wooinwoo/freeway-cli/cli/update"
 )
 
+var version = "dev"
+
 func main() {
+	if handled, code, err := update.Forward(os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Freeway:", err)
+		}
+		os.Exit(code)
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "Freeway:", err)
 		os.Exit(1)
@@ -21,6 +30,13 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Println(version)
+		return nil
+	}
+	if handled, err := runNativeCommand(os.Args[1:]); handled {
+		return err
+	}
 	inv, err := parseInvocation(os.Args[1:])
 	if err != nil {
 		return err
@@ -33,7 +49,11 @@ func run() error {
 	defer cancel()
 	model := tui.New()
 	if !inv.preview {
-		gateway, err := client.NewPOC(inv.pocDir)
+		address := inv.url
+		if address == "" {
+			address = os.Getenv("FREEWAY_URL")
+		}
+		gateway, err := client.NewHTTP(client.Config{URL: address, APIKey: os.Getenv("FREEWAY_API_KEY")})
 		if err != nil {
 			return err
 		}

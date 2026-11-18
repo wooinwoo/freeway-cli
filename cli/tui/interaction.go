@@ -29,6 +29,7 @@ type interactionState struct {
 	yankStart, yankLength, yankIndex int
 	stash                            *draftState
 	files                            []client.Attachment
+	attachmentsPending               int
 	queue                            []client.PendingPrompt
 	queuePaused                      bool
 	lastEscape, lastInterrupt        time.Time
@@ -225,6 +226,10 @@ func (m Model) yank(cycle bool) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 func (m Model) stashDraft() (tea.Model, tea.Cmd) {
+	if m.attachmentsPending > 0 || m.loadingSession || m.loadingHistory {
+		m.notify("Wait for the current load before stashing your draft.")
+		return m, nil
+	}
 	current := m.captureDraft()
 	if current.Text == "" && len(current.Files) == 0 {
 		if m.stash == nil {
@@ -283,6 +288,10 @@ func (m Model) openPromptSearch() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) queuePrompt() (tea.Model, tea.Cmd) {
+	if m.attachmentsPending > 0 {
+		m.notify("Wait for the selected files to finish attaching before queueing.")
+		return m, nil
+	}
 	text := strings.TrimSpace(m.prompt.Value())
 	if text == "" {
 		m.notify("Write a follow-up, then press Tab to queue it.")
@@ -435,6 +444,10 @@ func (m *Model) loadPrompts() tea.Cmd {
 	}
 }
 func (m Model) openEditor() (tea.Model, tea.Cmd) {
+	if m.loadingSession || m.loadingHistory {
+		m.notify("Wait for the conversation to load before opening the editor.")
+		return m, nil
+	}
 	if m.editorOpen {
 		m.notify("The external editor is already open.")
 		return m, nil

@@ -30,9 +30,10 @@ type conversationLoaded struct {
 	draftAtLoad string
 }
 type conversationSaved struct {
-	chat  client.Conversation
-	epoch uint64
-	err   error
+	chat        client.Conversation
+	epoch       uint64
+	err         error
+	titleAtSave string
 }
 
 func (m Model) WithSession(id string, fresh, noSave bool) Model {
@@ -105,6 +106,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if msg.epoch != m.sessionEpoch {
 			return m, nil, true
 		}
+		m.attachmentsPending = max(0, m.attachmentsPending-1)
 		if msg.err != nil {
 			m.notify("Could not attach file: " + msg.err.Error())
 			return m, nil, true
@@ -149,7 +151,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.renderMessages()
 		}
 		var save tea.Cmd
-		if m.dirty && !m.busy && !m.loadingSession && time.Now().After(m.nextSave) && time.Since(m.lastEdit) > 700*time.Millisecond {
+		if m.dirty && !m.loadingSession && time.Now().After(m.nextSave) && time.Since(m.lastEdit) > 700*time.Millisecond {
 			save = m.persist()
 		}
 		if save == nil && !m.busy && !m.saving && !m.modelsFocused && len(m.queue) > 0 && !m.queuePaused {
@@ -185,7 +187,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if !msg.initial && m.historyQuery != "" {
 			query := m.historyQuery
 			m.historyQuery = ""
-			matches := client.FindConversations(msg.records, query)
+			matches := client.FindConversations(m.history, query)
 			if query == "--last" {
 				matches = nil
 				if latest, ok := client.LatestConversation(m.history, m.workdir, m.allSessions); ok {
@@ -207,7 +209,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 				return m, nil, true
 			}
 			if m.resumeID != "" {
-				matches := client.FindConversations(msg.records, m.resumeID)
+				matches := client.FindConversations(m.history, m.resumeID)
 				if len(matches) == 1 {
 					return m, m.loadConversation(matches[0].ID), true
 				}
@@ -260,6 +262,11 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		m.messages = append([]client.Message(nil), msg.chat.Messages...)
 		m.files = append([]client.Attachment(nil), msg.chat.DraftFiles...)
+		m.attachmentsPending = 0
+		m.stash = nil
+		if msg.chat.Stash != nil {
+			m.stash = &draftState{Text: msg.chat.Stash.Text, Files: append([]client.Attachment(nil), msg.chat.Stash.Files...)}
+		}
 		m.queue = append([]client.PendingPrompt(nil), msg.chat.Queued...)
 		m.queuePaused = true
 		m.editingAt = -1
@@ -299,6 +306,9 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if msg.epoch != m.sessionEpoch {
 			return m, nil, true
 		}
+		if msg.err == nil && m.session.ID != "" && msg.chat.ID != m.session.ID {
+			return m, nil, true
+		}
 		m.saving = false
 		action := m.afterSave
 		m.afterSave = ""
@@ -314,9 +324,15 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.notify("Could not save. Your work is still here. Use /save to retry or /export to keep a copy.")
 			return m, nil, true
 		}
-		m.session.ID, m.session.Revision, m.session.Title = msg.chat.ID, msg.chat.Revision, msg.chat.Title
+		m.session.ID, m.session.Revision = msg.chat.ID, msg.chat.Revision
+		if m.session.Title == "" || m.session.Title == msg.titleAtSave {
+			m.session.Title = msg.chat.Title
+		}
 		m.saveError = ""
 		m.nextSave = time.Time{}
+		if m.busy {
+			m.nextSave = time.Now().Add(time.Second)
+		}
 		if action != "" && action != "generate" && m.dirty {
 			m.afterSave = action
 			return m, m.persist(), true
@@ -354,6 +370,10 @@ func (m *Model) snapshot() client.Conversation {
 	chat.Draft = m.prompt.Value()
 	chat.DraftFiles = append([]client.Attachment(nil), m.files...)
 	chat.Queued = append([]client.PendingPrompt(nil), m.queue...)
+	chat.Stash = nil
+	if m.stash != nil {
+		chat.Stash = &client.PendingPrompt{Text: m.stash.Text, Files: append([]client.Attachment(nil), m.stash.Files...)}
+	}
 	if m.commandPending() {
 		chat.Draft = ""
 	}
@@ -388,6 +408,9 @@ func (m *Model) snapshot() client.Conversation {
 }
 
 func (m *Model) persist() tea.Cmd {
+	if m.loadingSession || m.loadingHistory {
+		return nil
+	}
 	backend, ok := m.gateway.(conversationGateway)
 	if !ok || !m.saveEnabled {
 		m.dirty = false
@@ -396,7 +419,7 @@ func (m *Model) persist() tea.Cmd {
 	if m.saving {
 		return nil
 	}
-	if len(m.messages) == 0 && m.prompt.Value() == "" && len(m.files) == 0 && len(m.queue) == 0 && m.session.ID == "" {
+	if len(m.messages) == 0 && m.prompt.Value() == "" && len(m.files) == 0 && len(m.queue) == 0 && m.stash == nil && m.session.ID == "" {
 		m.dirty = false
 		return nil
 	}
@@ -408,7 +431,7 @@ func (m *Model) persist() tea.Cmd {
 		ctx, cancel := context.WithTimeout(m.ctx, 12*time.Second)
 		defer cancel()
 		chat, err := backend.SaveConversation(ctx, snapshot)
-		return conversationSaved{chat: chat, epoch: epoch, err: err}
+		return conversationSaved{chat: chat, epoch: epoch, err: err, titleAtSave: snapshot.Title}
 	}
 }
 
@@ -441,6 +464,8 @@ func (m *Model) loadConversation(id string) tea.Cmd {
 	if !ok {
 		return nil
 	}
+	m.stopResponse()
+	m.generation++
 	m.loadingSession = true
 	epoch := m.sessionEpoch
 	draftAtLoad := m.prompt.Value()
@@ -500,6 +525,8 @@ func (m Model) performNavigation(action string) (tea.Model, tea.Cmd) {
 		m.inputIndex = -1
 		m.loadingHistory = false
 		m.files = nil
+		m.attachmentsPending = 0
+		m.stash = nil
 		m.queue = nil
 		m.queuePaused = false
 		m.editingAt = -1

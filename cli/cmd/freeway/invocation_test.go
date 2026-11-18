@@ -17,7 +17,7 @@ func TestSessionInvocationsAreCommandsNotPrompts(t *testing.T) {
 		{[]string{"--resume"}, "resume", "", false, false}, {[]string{"-r", "abc"}, "resume", "abc", false, false},
 		{[]string{"resume", "--last"}, "continue", "", false, false}, {[]string{"resume", "--all"}, "resume", "", true, false},
 		{[]string{"sessions", "--all", "--json"}, "sessions", "", true, true},
-		{[]string{"--poc-dir", "C:/Freeway/POC", "resume", "abc"}, "resume", "abc", false, false},
+		{[]string{"--url", "http://127.0.0.1:4141", "resume", "abc"}, "resume", "abc", false, false},
 	}
 	for _, test := range cases {
 		o, err := parseInvocation(test.args)

@@ -93,6 +93,10 @@ func indexProjectFiles(root string) ([]list.Item, error) {
 }
 
 func (m Model) openFiles(query fileQuery) (tea.Model, tea.Cmd) {
+	if m.loadingSession || m.loadingHistory {
+		m.notify("Wait for the conversation to load before browsing files.")
+		return m, nil
+	}
 	m.menu = "files"
 	m.models.list.SetItems(m.fileItems)
 	next, _ := m.changeFocus(true)
@@ -148,12 +152,17 @@ func readProjectAttachment(root, path string) (client.Attachment, error) {
 }
 
 func (m Model) attachPath(path string, query fileQuery) (tea.Model, tea.Cmd) {
+	if m.loadingSession || m.loadingHistory {
+		m.notify("Wait for the conversation to load before choosing files.")
+		return m, nil
+	}
 	if len(m.files) >= 5 {
 		m.notify("Attach up to five text files per prompt.")
 		return m, nil
 	}
 	epoch := m.sessionEpoch
 	root := m.workdir
+	m.attachmentsPending++
 	m.notify("Attaching " + path + "…")
 	return m, func() tea.Msg {
 		file, err := readProjectAttachment(root, path)

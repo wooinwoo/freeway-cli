@@ -232,6 +232,10 @@ func newMessage(role, text string) client.Message {
 }
 
 func (m Model) submit() (tea.Model, tea.Cmd) {
+	if m.attachmentsPending > 0 {
+		m.notify("Attaching files. Your question has not been sent yet.")
+		return m, nil
+	}
 	text := strings.TrimSpace(m.prompt.Value())
 	if text == "" {
 		return m, nil
@@ -298,6 +302,10 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
+	if (m.loadingSession || m.loadingHistory) && name != "/help" {
+		m.notify("Loading conversations. Your work is safe.")
+		return m, nil
+	}
 	switch name {
 	case "/model", "/models":
 		if arg != "" {
@@ -409,6 +417,10 @@ func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) retry() (tea.Model, tea.Cmd) {
+	if m.loadingSession || m.loadingHistory {
+		m.notify("Wait for the conversation to finish loading before retrying.")
+		return m, nil
+	}
 	if m.busy {
 		m.notify("Press Esc to stop the current response first.")
 		return m, nil
@@ -492,7 +504,7 @@ func lastCode(text string) string {
 }
 
 func (m Model) export(name string) (tea.Model, tea.Cmd) {
-	if len(m.messages) == 0 && m.prompt.Value() == "" {
+	if len(m.messages) == 0 && m.prompt.Value() == "" && len(m.files) == 0 && len(m.queue) == 0 && m.stash == nil {
 		m.notify("There is no conversation to export yet.")
 		return m, nil
 	}
@@ -507,6 +519,14 @@ func (m Model) export(name string) (tea.Model, tea.Cmd) {
 	chat := m.snapshot()
 	return m, func() tea.Msg {
 		var b strings.Builder
+		writeFiles := func(files []client.Attachment) {
+			for _, file := range files {
+				fmt.Fprintf(&b, "\n### Attachment: %s\n\n", file.Path)
+				for _, line := range strings.Split(file.Content, "\n") {
+					fmt.Fprintf(&b, "    %s\n", line)
+				}
+			}
+		}
 		fmt.Fprintf(&b, "# %s\n\n", chat.Title)
 		for _, message := range chat.Messages {
 			label := "You"
@@ -514,9 +534,19 @@ func (m Model) export(name string) (tea.Model, tea.Cmd) {
 				label = "Freeway"
 			}
 			fmt.Fprintf(&b, "## %s\n\n%s\n\n", label, message.Content)
+			writeFiles(message.Files)
 		}
 		if chat.Draft != "" {
 			fmt.Fprintf(&b, "## Draft\n\n%s\n", chat.Draft)
+		}
+		writeFiles(chat.DraftFiles)
+		if chat.Stash != nil {
+			fmt.Fprintf(&b, "\n## Stashed draft\n\n%s\n", chat.Stash.Text)
+			writeFiles(chat.Stash.Files)
+		}
+		for i, prompt := range chat.Queued {
+			fmt.Fprintf(&b, "\n## Queued follow-up %d\n\n%s\n", i+1, prompt.Text)
+			writeFiles(prompt.Files)
 		}
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 		if err != nil {

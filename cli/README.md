@@ -1,54 +1,60 @@
 # CLI·TUI
 
-Go와 Bubble Tea로 만든 영어 TUI입니다. **기존 Node.js POC에 임시 연결**해 무료 모델, 스트리밍 응답, 암호화된 대화 저장 API를 사용합니다. POC의 시작 화면·역할 표시·코드 박스·검색 목록 구성과 저장·재생성·복사 흐름을 재사용합니다. 입력은 터미널 기본 커서를 사용하며 Windows Terminal에서는 기본적으로 색상을 활성화합니다(`--no-color`로 끄기). 최종 Go 백엔드 구현이나 최종 API 계약이 아닙니다. Nekot에서 추린 코드의 출처와 라이선스는 [제3자 고지](../THIRD_PARTY_NOTICES.md)를 참고하세요.
+Go 1.26 이상의 Bubble Tea TUI입니다. 제품 실행에는 Node.js와 `POC/`가 필요하지 않습니다. 화면만 보려면 저장소 루트에서 실행합니다.
 
-```bash
+```sh
+go -C cli run ./cmd/freeway --preview
+```
+
+연결 모드는 API v1을 구현한 로컬 Go 게이트웨이와 발급받은 클라이언트 키가 필요합니다. 공통 게이트웨이는 현재 미구현이며 마지막 단계에서 개발합니다. TUI가 POC나 샘플 응답으로 대체하지 않습니다.
+
+```sh
+export FREEWAY_URL=http://127.0.0.1:4141
+export FREEWAY_API_KEY=your-local-gateway-client-key
 go -C cli run ./cmd/freeway
 ```
 
-Go 1.26 이상, Node.js 22 이상과 `POC/` 소스가 필요합니다. 저장소 루트나 `cli/`에서 실행하거나 저장소의 `build/freeway`를 사용하면 POC 위치를 자동으로 찾습니다. 다른 위치에서는 `--poc-dir /절대경로/freeway-cli/POC`를 지정합니다. `FREEWAY_URL`과 `FREEWAY_DATA_DIR`은 기존 POC의 설정을 그대로 따릅니다.
+PowerShell은 `$env:FREEWAY_URL`, `$env:FREEWAY_API_KEY`를 사용합니다. `--url`은 주소를 직접 지정합니다. loopback HTTP 주소만 허용하며 리디렉션을 따라 인증키를 보내지 않습니다.
 
-기존 POC 클라이언트가 필요할 때 로컬 서버를 시작합니다. `/model`에는 POC가 무료이고 사용 가능하다고 판정한 모델만 표시합니다. 기본 `free/auto`는 POC의 무료 경로 우선순위를 따릅니다. 결제 경로나 한도 초과 처리를 새로 구현하지 않으며, POC 서버의 기존 무료 필터와 라우팅을 사용합니다. 실제 무료 할당량과 가용성은 공급처에 따라 달라집니다.
+## 사용
 
-Kilo API 외에 OpenCode·Cline 공식 CLI를 공급처로 사용할 수 있습니다. 먼저 `node POC/cli.mjs connect opencode`, 또는 `cline auth cline` 뒤 `node POC/cli.mjs connect cline`을 실행하면 `/model` 목록에 반영합니다. 연결 상태와 할당량에 따라 사용 가능한 모델만 표시합니다. CLI 공급처는 텍스트 대화용이며 자체 출력 제한을 사용합니다. 자세한 인증·무료 판정·취소 경계는 [POC 문서](../POC/README.md#cli-providers)를 참고하세요.
+- Enter로 전송하고 Ctrl+J·Ctrl+O·Alt+Enter·Shift+Enter로 줄바꿈합니다.
+- F2·Alt+P·`/model`에서 모델을 선택합니다. 서버가 무료이며 준비됐다고 명시한 모델만 표시합니다.
+- Esc로 생성을 중지합니다. 다음 초안은 보존합니다. Ctrl+C는 생성 중지, 입력 보관 후 지우기, 빈 입력에서 두 번 누르면 종료 순서입니다.
+- Alt+H·`/resume`은 저장 대화, Alt+N·`/new`는 새 대화입니다. `freeway continue`, `freeway resume ID_OR_TITLE`, `freeway sessions [--all] [--json]`도 지원합니다.
+- Ctrl+S로 초안·첨부를 보관하거나 복원합니다. Ctrl+R은 프롬프트 검색, Alt+R은 재생성, Ctrl+G는 외부 편집기입니다.
+- `@`·`/attach`는 프로젝트 내부 UTF-8 파일을 첨부합니다. 질문당 5개, 파일당 128 KB입니다. 읽는 동안 전송을 막습니다.
+- 생성 중 Enter·Tab은 다음 질문을 대기열에 넣습니다. `/queue pause|resume|clear`로 관리합니다.
+- `/fork`는 원본을 보존해 분기합니다. `/rename TITLE`은 제목을 바꿉니다.
+- `/export filename.md`는 메시지·초안·첨부·보관함·대기열을 평문 Markdown으로 내보냅니다. 기존 파일은 덮어쓰지 않습니다.
+- `/copy`, `/code`, `/settings`, `/save`, `/reconnect`, `/help`를 제공합니다.
 
-입력창은 하단에 고정하며 1줄에서 최대 6줄까지 늘어납니다. 코드 블록·제목·인라인 코드를 구분해 표시합니다. 스트림 조각은 약 33ms 단위로 모으고 이전 메시지의 렌더링을 재사용합니다. 화면 갱신은 최대 30fps이며 이전 답변을 읽는 중에는 스크롤 위치를 유지합니다.
+초안과 부분 응답은 스트리밍 중에도 독립 요청으로 저장합니다. 대화 전환 후 늦게 도착한 응답·저장 결과는 현재 세션에 적용하지 않습니다. revision 충돌은 덮어쓰기 대신 오류로 남깁니다. 영속화·암호화·비정상 종료 복구는 게이트웨이 책임입니다.
 
-- `Enter`: 선택한 무료 모델에 전송. 응답은 실시간으로 표시합니다.
-- `↑/↓`: 이전 입력 탐색 / 원래 작성 중이던 초안으로 복귀. 새 여러 줄 입력에서는 커서를 이동합니다.
-- `Ctrl+O`, `Ctrl+J`, `Alt+Enter` 또는 `Shift+Enter`: 줄바꿈.
-- `/`: 명령 제안. `↑/↓`로 명령을 고르고 `Tab`으로 완성합니다.
-- `/model`: 모델 메뉴 열기. 기존 `/models`도 호환합니다.
-- `Alt+P` 또는 `F2`: 모델 메뉴 열기. `Ctrl+P/N`은 위·아래 화살표처럼 입력 커서와 기록을 탐색합니다.
-- 모델 메뉴의 `↑/↓`: 이동, `/`: 검색, `Enter`: 검색 확정 또는 모델 선택, `Esc`: 닫기.
-- `PgUp/PgDn` 또는 마우스 휠: 대화 스크롤.
-- `Ctrl+Home/End`: 대화 처음 / 최신 답변으로 이동.
-- `Alt+H`: 저장된 대화 검색·이어하기. 목록에서 `Ctrl+A`로 현재 프로젝트/전체 프로젝트를 전환합니다. `Alt+N`: 저장하고 새 대화.
-- `Ctrl+R`: 저장된 프롬프트 기록 검색. `Alt+R`: 마지막 질문 재생성.
-- `Ctrl+S`: 초안과 첨부 파일 보관/복원. `Ctrl+G`: `VISUAL`/`EDITOR` 또는 기본 편집기로 초안 편집.
-- `Ctrl+U/K/W`: 줄 앞/뒤/이전 단어 삭제. `Ctrl+Y`: 삭제한 텍스트 복원. `Alt+Y`: 이전 삭제 텍스트 순환.
-- `Ctrl+Z` / `Ctrl+Shift+Z`: 입력 실행 취소/다시 실행. `Ctrl+L`: 화면 다시 그리기.
-- `/copy`: 마지막 답변 복사. `/code`: 마지막 코드 블록 복사.
-- `@` 또는 `/attach`: 프로젝트의 UTF-8 텍스트 파일 선택. 프롬프트당 최대 5개, 파일당 128 KB. `/detach`로 제거합니다.
-- 응답 중 `Tab` 또는 `Enter`: 다음 질문을 대기열에 추가. `↑`로 최근 대기 질문을 꺼내 편집합니다. `/queue`로 목록, `pause`/`resume`/`clear`로 제어합니다.
-- `Esc` 두 번: 초안 지우기. 빈 입력에서는 이전 질문을 편집하고 `Enter`로 원본을 보존한 새 분기를 만듭니다.
-- `/export [파일명]`: Markdown으로 내보내기. 기존 파일을 덮어쓰지 않습니다.
-- `/settings`: 답변 길이. `/save`: 저장 재시도. `/reconnect`: 연결 재확인.
-- `F1` 또는 `/help`: 도움말. `F2`: 모델 목록.
-- 응답 중 `Esc`: 현재 요청 중지. 작성 중인 다음 초안은 유지합니다.
-- `Ctrl+C`: 생성 중에는 중지, 입력이 있으면 복원 가능한 상태로 지웁니다. 빈 입력에서 두 번 누르면 저장 후 종료합니다. `/exit`도 저장 후 종료합니다.
+실패·중지된 부분 답변은 이후 요청 문맥에서 제외합니다. 선택한 경로가 출력 전에 실패하면 Auto로 한 번 재시도하며 화면에 표시합니다. 출력이 시작된 뒤에는 응답을 다른 모델과 섞지 않습니다.
 
-모델 목록은 메뉴를 열 때만 표시합니다. 메뉴를 닫거나 모델을 선택해도 작성 중인 초안은 유지합니다. 최소 창 크기는 44×12입니다.
+## 설치와 공급처 도구
 
-대화·초안·첨부 파일·대기 질문은 기존 POC의 암호화된 대화 API에 자동 저장합니다. `freeway`는 새 대화를 시작합니다. `freeway continue` 또는 `freeway -c`로 현재 프로젝트의 최근 세션을 이어가고, `freeway resume`으로 저장 목록을 엽니다. `freeway resume ID_OR_TITLE`은 ID·유일한 ID 앞부분·제목으로 찾습니다. `--all`로 다른 프로젝트를 포함하고 `freeway sessions [--all] [--json]`으로 목록을 출력합니다. `--no-save`는 저장 없이 실행합니다. 복원된 대기열은 자동 전송하지 않고 일시 정지합니다. 다른 창이 수정한 대화를 덮어쓰지 않습니다.
+```sh
+go -C cli run ./cmd/package --root "$PWD"
+# 검증·설치한 패키지의 실행 진입점:
+freeway providers --help
+freeway providers auth kilo
+freeway providers models kilo
+freeway update check
+freeway update
+freeway rollback
+freeway uninstall
+```
 
-연결 확인은 일시 실패 시 두 번 자동 재시도합니다. 직접 선택한 모델의 연결이 응답 시작 전에 실패하면 무료 Auto로 한 번 다시 시도하고 화면에 알립니다. 출력이 시작된 뒤에는 모델을 바꾸지 않습니다. 중지·실패한 부분 답변은 이후 요청의 문맥에서 제외합니다. 첨부한 텍스트는 모델 문맥에 포함합니다. 웹 검색·자율적인 셸 실행·파일 수정은 이 TUI에 포함하지 않습니다.
+`freeway providers`는 같은 패키지의 `freeway-providers`를 호출합니다. TUI의 대화 요청은 공급처 도구 대신 게이트웨이 API를 사용합니다. [제품 패키징](../scripts/package/README.md)을 참고하세요.
 
-화면만 확인하려면 `go -C cli run ./cmd/freeway --preview`를 사용합니다. 이 모드에서는 `preview/*` 샘플을 표시하고 API 요청을 보내지 않습니다.
+## 구조와 검증
 
-- `cmd/freeway/`: Go 실행 진입점.
-- `commands/`: 연결·모델·우선순위·사용량·설정 명령과 백엔드 시작 흐름.
-- `client/`: 임시 POC 어댑터. 내장 Node 브리지가 기존 POC 클라이언트를 호출하고 모델 목록·응답 이벤트를 Go로 전달합니다.
-- `tui/`: 화면 상태·입력창·모델 목록·스타일과 원본 MIT 고지.
+`client/`는 HTTP·SSE와 대화 계약, `tui/`는 화면 상태, `update/`는 네이티브 버전 설치·복구입니다. `cmd/package/`는 제품 파일만 묶습니다. API 계약은 [openapi.yaml](../api/openapi.yaml)에 있습니다.
 
-`commands/`는 빈 개발 영역입니다. TUI는 모델·스트림·대화 저장 인터페이스를 사용하며, 임시 어댑터를 최종 API 클라이언트로 교체할 경계를 둡니다. Go 코드가 백엔드의 `internal/` 패키지나 POC 비밀 저장 파일을 직접 사용하지 않습니다. [`api/openapi.yaml`](../api/openapi.yaml)은 최종 Go 백엔드를 위한 빈 계약 틀이며 이번 POC 연결에 맞춰 고정하지 않습니다. 전체 책임은 [구조 문서](../docs/development/architecture.md)를 따릅니다.
+```sh
+FREEWAY_LIVE=0 go -C cli test -race ./...
+```
+
+테스트는 로컬 HTTP fixture를 사용합니다. 실제 공급처·운영체제 검증과 구분합니다. 화면에 사용한 제3자 코드의 [원문 라이선스](tui/LICENSE)와 [고지](../THIRD_PARTY_NOTICES.md)를 보존합니다.

@@ -26,7 +26,7 @@ type responseEvent struct {
 	generation uint64
 }
 
-// NewConnected uses the temporary POC adapter; it does not implement the planned Go gateway.
+// NewConnected uses the gateway interface without owning routing or persistent storage.
 func NewConnected(ctx context.Context, backend gateway) Model {
 	m := New()
 	m.gateway, m.ctx = backend, ctx
@@ -202,7 +202,12 @@ func (m Model) receiveResponse(msg responseEvent) (tea.Model, tea.Cmd) {
 	follow := m.chat.AtBottom()
 	switch msg.event.Type {
 	case "text":
+		if len(m.messages) == 0 || m.messages[len(m.messages)-1].Role != "assistant" {
+			m.stopResponse()
+			return m, nil
+		}
 		m.messages[len(m.messages)-1].Content += msg.event.Text
+		m.dirty = true
 		m.status = "Writing response"
 		m.renderPending = true
 	case "fallback":
