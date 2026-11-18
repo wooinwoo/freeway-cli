@@ -13,6 +13,21 @@ The authorized scope is the Go TUI, native provider integrations, the public doc
 
 `api/openapi.yaml` and `cli/client` define the versioned authenticated local HTTP boundary. The backend owns routing, quota accounting, persistent conversations and secrets, single-writer locking, schema changes, and crash recovery. The fixture gateway is test support, not a substitute implementation shipped as the backend.
 
+Use an isolated backend data directory and a deterministic provider adapter for integration. Verify these outcomes before enabling connected chat in the release Quickstart:
+
+| Boundary | Acceptance evidence |
+| --- | --- |
+| Loopback and Bearer key | The server listens on loopback. Missing or wrong keys receive 401 before model, stream, or conversation operations. Responses and logs omit the key. |
+| Catalog and routing | The catalog reports explicit `free` and `ready` flags. `free/auto` exists only with an eligible route. When eligibility or allowance is missing, the gateway rejects the request with a structured error. |
+| Streaming and cancellation | The installed TUI sees partial text before `[DONE]`, then records the actual model. A disconnect cancels the provider request. Saving a conversation remains possible during the stream. Once text has been sent, the gateway keeps the same route. |
+| Conversation revisions | Creating returns 201, an ID, and revision 1. Two writes from the same revision produce one success and one 409 `chat_conflict`, including writes from different client processes. After a failed persistence attempt the old data and revision still load. |
+| Resume and crash recovery | After reopening the TUI, the completed reply, stopped partial reply, model, and draft or stash load intact. After restarting the gateway, the same records remain available. Persisted interrupted replies reopen as stopped and their partial text stays out of the next model request. |
+| Quota and errors | Run the quota cases with a deterministic upstream that reports success, quota exhaustion, and failure. Verify reserve, settle, and release once per request, including cancellation. Failure responses use the OpenAPI error envelope. |
+
+`tests/e2e/native_smoke.py` exercises the client side in a real pseudo-terminal using `tests/e2e/gateway_scenario.py`. It proves model selection, partial text before completion, saving a draft during streaming, Escape disconnect, revision-checked save, and resume across two TUI processes. The test gateway keeps state in memory to verify the HTTP exchange. Restarting real gateway storage, enforcing server-side authentication and quotas, and reaching an actual upstream are integration gates for the backend phase.
+
+Run `python3 tests/install/release_smoke.py dist/native --go go` for the package lifecycle. It checks six release archives and their manifests, installs a previous fixture version, checks a loopback release, rejects a damaged download, upgrades, corrupts the active utility, rolls back, and verifies that uninstall preserves account data. The [preflight workflow](../../.github/workflows/preflight.yml) builds the shared candidate, runs native checks on three OS runners, and builds both documentation locales. A version tag must match `VERSION`; the workflow uploads an Actions artifact.
+
 ## Verification
 
 Run native CLI and provider tests with real vendor probes disabled, then run product archive/install failure tests and the documentation build. Inspect documentation at desktop and mobile widths, including search and keyboard navigation. Cross compilation is not evidence of execution on another OS. Preserve outstanding real-OS and real-account checks in the handoff rather than reporting them as passed.

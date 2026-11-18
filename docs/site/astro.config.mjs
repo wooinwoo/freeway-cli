@@ -24,6 +24,7 @@ export default defineConfig({
       { label: 'Get started', translations: { ko: '시작하기' }, items: [
         { slug: 'docs/installation', label: 'Installation', translations: { ko: '설치' } },
         { slug: 'docs/connections', label: 'Provider connections', translations: { ko: '공급처 연결' } },
+        { slug: 'docs/gateway', label: 'Local gateway', translations: { ko: '로컬 게이트웨이' } },
       ] },
       { label: 'Use Freeway', translations: { ko: 'Freeway 사용' }, items: [
         { slug: 'docs/models', label: 'Models and responses', translations: { ko: '모델과 응답' } },

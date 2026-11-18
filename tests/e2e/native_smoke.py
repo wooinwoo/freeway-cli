@@ -6,44 +6,17 @@ import http.server
 import json
 import os
 from pathlib import Path
-import pty
-import select
-import struct
+from gateway_scenario import Terminal, connected_smoke
 import subprocess
 import tarfile
 import tempfile
 import threading
-import time
-import fcntl
-import termios
 
 
 def preview(binary, environment, directory):
-    master, slave = pty.openpty()
-    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 36, 120, 0, 0))
-    child = subprocess.Popen([str(binary), "--preview"], cwd=directory, env=dict(environment, TERM="xterm-256color"), stdin=slave, stdout=slave, stderr=slave)
-    os.close(slave)
-    rendered = bytearray()
-    try:
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline and b"freeway" not in rendered.lower():
-            if select.select([master], [], [], .2)[0]:
-                rendered.extend(os.read(master, 65536))
-        assert b"freeway" in rendered.lower(), f"native preview did not render: {bytes(rendered[-4000:])!r}"
-        os.write(master, b"/exit\r")
-        deadline = time.monotonic() + 5
-        while child.poll() is None and time.monotonic() < deadline:
-            if select.select([master], [], [], .2)[0]:
-                try:
-                    rendered.extend(os.read(master, 65536))
-                except OSError:
-                    break
-        assert child.wait(timeout=2) == 0, "native preview did not exit cleanly"
-    finally:
-        if child.poll() is None:
-            child.kill()
-            child.wait()
-        os.close(master)
+    with Terminal(binary, ["--preview"], environment, directory) as terminal:
+        terminal.wait_text("freeway")
+        terminal.exit()
 
 
 def main():
@@ -53,7 +26,7 @@ def main():
     archive = args.archive.resolve()
     expected = hashlib.sha256(archive.read_bytes()).hexdigest()
     with tempfile.TemporaryDirectory(prefix="freeway-native-smoke-") as temporary:
-        base = Path(temporary)
+        base = Path(temporary).resolve()
         package = base / "package"
         with tarfile.open(archive, "r:gz") as source:
             names = source.getnames()
@@ -79,6 +52,7 @@ def main():
         assert "Node.js or POC runtime is required" in run(program, "--help").stdout
         run(program, "providers", "--help")
         preview(program, environment, base)
+        connected_smoke(program, environment, base)
         requests = []
 
         class Gateway(http.server.BaseHTTPRequestHandler):

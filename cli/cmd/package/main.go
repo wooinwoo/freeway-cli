@@ -168,8 +168,9 @@ func licenses(goBin, root string, files map[string][]byte, goos, arch string) er
 		Main               bool
 	}
 	for _, entry := range []struct{ name, command string }{{"cli", "./cmd/freeway"}, {"backend", "./cmd/providerctl"}} {
-		cmd = exec.Command(goBin, "-C", filepath.Join(root, entry.name), "list", "-deps", "-json", entry.command)
+		cmd = exec.Command(goBin, "-C", filepath.Join(root, entry.name), "list", "-buildvcs=false", "-deps", "-json", entry.command)
 		cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+goos, "GOARCH="+arch)
+		cmd.Stderr = os.Stderr
 		data, err = cmd.Output()
 		if err != nil {
 			return fmt.Errorf("list %s dependencies: %w", entry.name, err)

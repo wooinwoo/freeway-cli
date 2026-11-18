@@ -9,12 +9,15 @@ Go 1.26 이상에서 저장소 루트를 기준으로 실행합니다. 실제 �
 ```sh
 FREEWAY_LIVE=0 go -C cli test -race ./...
 FREEWAY_LIVE=0 go -C backend test -race ./...
-go -C cli run ./cmd/package --root "$PWD" --targets linux/amd64
+go -C cli run ./cmd/package --root "$PWD"
+python3 tests/install/release_smoke.py dist/native --go go
 python3 tests/e2e/native_smoke.py dist/native/freeway_0.6.0-dev_linux_amd64.tar.gz
 python3 tests/install/bootstrap_smoke.py --go /absolute/path/to/go
 ```
 
 실행 파일 시험의 아카이브 버전은 `VERSION`과 맞춰 사용합니다. 로컬 HTTP fixture를 열 수 있는 환경이 필요합니다. 공급처 실계정 시험은 별도로 실행하며 실제 할당량을 소비합니다.
+
+[사전 검증 워크플로](.github/workflows/preflight.yml)는 패키지 6종을 한 번 빌드하고 동일한 파일을 Linux amd64, macOS arm64, Windows amd64에서 검증합니다. Windows에서는 PowerShell 설치와 업데이트·복구를 검사합니다. Linux와 macOS에서는 설치된 TUI의 터미널 대화도 실행합니다. 워크플로에서 만든 패키지는 Actions 아티팩트로 확인할 수 있습니다.
 
 ```sh
 npm --prefix docs/site ci

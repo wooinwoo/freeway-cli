@@ -3,7 +3,6 @@ title: Quickstart
 description: Your model accounts. One terminal.
 ---
 import { Tabs, TabItem } from '@astrojs/starlight/components';
-import { Aside } from '@astrojs/starlight/components';
 
 Freeway is a personal, native Go terminal client for model APIs and official CLIs. Use your own accounts and keep conversations, drafts, and file context together.
 
@@ -59,39 +58,20 @@ Start with the part of Freeway you need. Everything runs on your own computer, u
 | [Provider tools](./connections) | Connect an account, browse models, and make direct model requests. |
 | [Native packages](./installation) | Install verified executables, update, and roll back without Node.js. |
 
-## Connect a provider
+## Get a direct provider response
+
+Use the bundled provider tool after installation. These calls go from your computer to Kilo and use the provider's allowance.
 
 ~~~sh
 freeway providers auth kilo
 freeway providers models kilo
+freeway providers probe kilo --model MODEL_ID
 ~~~
 
-Start with the current model list. [Provider connections](./connections) explains API keys, official login, free-account confirmation, and service conditions.
+Replace `MODEL_ID` with an ID returned by the model list. A successful probe returns `FREEWAY_PROVIDER_OK`. Check [provider connections](./connections/) for keys, CLI login, and free eligibility.
 
-## Open a conversation
+## Connect the terminal workspace
 
-<Aside title="A local gateway is required">
-Connected conversations use authenticated local Go gateway API v1. The common gateway is not implemented in this checkout; it is scheduled for the final backend phase. Today you can use the offline preview and direct provider commands. The client never silently starts the historical POC or substitutes sample responses.
-</Aside>
+The current checkout offers the offline TUI preview and direct provider commands. Connected chat and saved sessions require a running [local gateway](./gateway/) that implements API v1.
 
-Set the address and client key issued by your local gateway:
-
-~~~sh
-export FREEWAY_URL=http://127.0.0.1:4141
-export FREEWAY_API_KEY=your-local-gateway-client-key
-freeway
-~~~
-
-In PowerShell, use `$env:FREEWAY_URL` and `$env:FREEWAY_API_KEY`. This is the local gateway key, not a vendor API key. Keep it out of issues and screenshots.
-
-Choose `/model`, write a question, and press **Enter**. **Esc** stops the response while keeping your next draft.
-
-## Continue your work
-
-~~~sh
-freeway continue
-freeway resume
-freeway sessions
-~~~
-
-Saved sessions are scoped to the current project. See [sessions and drafts](./sessions) for attachments, forks, and recovery.
+See [sessions and drafts](./sessions/) for project scope, attachments, and recovery.

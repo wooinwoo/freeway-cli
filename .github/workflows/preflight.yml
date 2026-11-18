@@ -1,0 +1,114 @@
+name: Native client preflight
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FREEWAY_LIVE: '0'
+
+jobs:
+  package:
+    name: Build and verify six native packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: |
+            cli/go.sum
+            backend/go.sum
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify tag against VERSION
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: test "$GITHUB_REF_NAME" = "v$(<VERSION)"
+      - name: Build release candidate
+        run: go -C cli run ./cmd/package --root ..
+      - run: python tests/install/release_smoke.py dist/native
+      - uses: actions/upload-artifact@v6
+        with:
+          name: freeway-native
+          path: dist/native/
+          if-no-files-found: error
+          retention-days: 7
+
+  native:
+    name: Native checks (${{ matrix.target }})
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, target: linux_amd64 }
+          - { runner: macos-15, target: darwin_arm64 }
+          - { runner: windows-2025, target: windows_amd64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: |
+            cli/go.sum
+            backend/go.sum
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v7
+        with:
+          name: freeway-native
+          path: dist/native
+      - run: go -C cli test ./...
+      - run: go -C backend test ./...
+      - name: Bootstrap from source and loopback release
+        if: runner.os != 'Windows'
+        shell: bash
+        run: python tests/install/bootstrap_smoke.py --go "$(command -v go)"
+      - name: Bootstrap on Windows PowerShell
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./tests/install/bootstrap_windows.ps1
+      - name: Upgrade and recover the installed client
+        run: python tests/install/release_smoke.py dist/native --go go
+      - name: Exercise the installed TUI in a terminal
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          NATIVE_TARGET: ${{ matrix.target }}
+        run: python tests/e2e/native_smoke.py "dist/native/freeway_$(<VERSION)_$NATIVE_TARGET.tar.gz"
+
+  docs:
+    name: Build both documentation locales
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: docs/site
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: docs/site/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
