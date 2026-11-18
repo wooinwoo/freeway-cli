@@ -35,7 +35,7 @@ func Open(path string) (*Vault, error) {
 	if path == "" {
 		return nil, errors.New("gateway data directory is required")
 	}
-	if err := os.MkdirAll(path, 0700); err != nil {
+	if err := mkdirPrivate(path); err != nil {
 		return nil, err
 	}
 	root, err := os.OpenRoot(path)

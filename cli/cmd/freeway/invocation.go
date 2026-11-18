@@ -114,6 +114,8 @@ In the UI: /resume, /fork, /rename TITLE, /new, /queue, /help
 
 Native tools:
   freeway providers COMMAND  Native provider authentication and diagnostics
+  freeway gateway serve      Start the local Go gateway
+  freeway gateway key        Print the local gateway client key
   freeway --version          Print the native client version
   freeway install --archive PATH --sha256 SHA256 [--root PATH]
   freeway update check       Check the trusted native release manifest
@@ -122,5 +124,6 @@ Native tools:
   freeway uninstall          Remove the program while preserving user data
   --url URL       Local Go gateway address (or FREEWAY_URL)
 
-Connected mode uses FREEWAY_API_KEY. No Node.js or POC runtime is required.
+Freeway starts its local gateway automatically. Set FREEWAY_API_KEY when choosing your own gateway.
+No Node.js or POC runtime is required.
 `

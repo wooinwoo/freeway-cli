@@ -219,3 +219,20 @@ func TestIncompleteAndErrorStreamsNeverFinishSuccessfully(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamKeepsRetryDelayAfterPartialResponse(t *testing.T) {
+	c := fixtureHTTP(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"model":"fixture","choices":[{"delta":{"content":"partial"}}]}`)
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, `data: {"error":{"message":"quota","code":"quota_exhausted","status":429,"retryAfter":75}}`)
+		fmt.Fprintln(w)
+	})
+	var events []Event
+	err := c.Stream(t.Context(), "free/auto", nil, func(event Event) { events = append(events, event) })
+	var quota *GatewayError
+	if !errors.As(err, &quota) || quota.Status != 429 || quota.RetryAfter != 75 ||
+		len(events) != 1 || events[0].Type != "text" || events[0].Text != "partial" {
+		t.Fatalf("stream lost retry delay or partial text: events=%+v err=%v", events, err)
+	}
+}

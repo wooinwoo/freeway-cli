@@ -54,7 +54,7 @@ Start with the part of Freeway you need. Everything runs on your own computer, u
 
 | Start with | Use it for |
 | --- | --- |
-| [Terminal workspace](./sessions) | Conversations, drafts, and file context. Offline preview is available; connected chat needs the unfinished local gateway. |
+| [Terminal workspace](./sessions) | Use the local gateway for conversations, drafts, and file context. |
 | [Provider tools](./connections) | Connect an account, browse models, and make direct model requests. |
 | [Native packages](./installation) | Install verified executables, update, and roll back without Node.js. |
 
@@ -72,6 +72,6 @@ Replace `MODEL_ID` with an ID returned by the model list. A successful probe ret
 
 ## Connect the terminal workspace
 
-The current checkout offers the offline TUI preview and direct provider commands. Connected chat and saved sessions require a running [local gateway](./gateway/) that implements API v1.
+Run `freeway` for connected chat. It starts the included [local gateway](./gateway/) automatically. Run `freeway continue` to reopen the latest conversation in the project.
 
 See [sessions and drafts](./sessions/) for project scope, attachments, and recovery.

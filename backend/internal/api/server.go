@@ -23,19 +23,53 @@ import (
 
 type Inference interface {
 	Models(context.Context) ([]contracts.Model, error)
+	ProviderStatuses(context.Context) ([]contracts.ProviderStatus, error)
 	Stream(context.Context, contracts.CompletionRequest, func(contracts.TextDelta) error) (contracts.Completion, error)
 }
 
 type server struct {
-	chats     *session.Store
-	inference Inference
+	chats       *session.Store
+	inference   Inference
+	modelPrefix string
 }
 
-func New(key auth.ClientKey, chats *session.Store, inference Inference) http.Handler {
+type LocalClient struct {
+	Key      auth.ClientKey
+	OpenCode Inference
+}
+
+func New(key auth.ClientKey, chats *session.Store, inference Inference, local *LocalClient) http.Handler {
 	s := &server{chats: chats, inference: inference}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Freeway-API", "1")
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("GET /v1/lease", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Freeway-API", "1")
+		w.WriteHeader(http.StatusOK)
+		if http.NewResponseController(w).Flush() == nil {
+			<-r.Context().Done()
+		}
+	})
 	mux.HandleFunc("GET /v1/models", s.models)
+	mux.HandleFunc("GET /v1/providers", s.providerStatuses)
 	mux.HandleFunc("POST /v1/chat/completions", s.completions)
+	if local != nil && local.OpenCode != nil {
+		opencode := &server{inference: local.OpenCode, modelPrefix: "opencode/"}
+		for pattern, handler := range map[string]http.HandlerFunc{
+			"GET /v1/local/opencode/models":            opencode.models,
+			"POST /v1/local/opencode/chat/completions": opencode.completions,
+		} {
+			mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+				if !local.Key.Matches(r.Header.Get("Authorization")) {
+					writeProblem(w, problem(http.StatusForbidden, "local_client_required", "OpenCode requires the local Freeway client."))
+					return
+				}
+				handler(w, r)
+			})
+		}
+	}
 	mux.HandleFunc("GET /v1/conversations", s.listConversations)
 	mux.HandleFunc("POST /v1/conversations", s.createConversation)
 	mux.HandleFunc("GET /v1/conversations/{id}", s.getConversation)
@@ -51,7 +85,7 @@ func New(key auth.ClientKey, chats *session.Store, inference Inference) http.Han
 			return
 		}
 		credentials := r.Header.Values("Authorization")
-		if len(credentials) != 1 || !key.Matches(credentials[0]) {
+		if len(credentials) != 1 || (!key.Matches(credentials[0]) && (local == nil || !local.Key.Matches(credentials[0]))) {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			writeProblem(w, problem(http.StatusUnauthorized, "invalid_api_key", "Supply the gateway's local client key."))
 			return

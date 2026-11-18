@@ -354,6 +354,9 @@ func (m Model) startQueued() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleInterrupt() (tea.Model, tea.Cmd) {
+	if m.modelsFocused {
+		return m.dismissMenu()
+	}
 	if m.busy {
 		m.queuePaused = true
 		m.stopResponse()
@@ -362,9 +365,6 @@ func (m Model) handleInterrupt() (tea.Model, tea.Cmd) {
 		m.renderMessages()
 		m.notify("Stopped. Queued messages are paused; /queue to review.")
 		return m, m.persist()
-	}
-	if m.modelsFocused {
-		return m.changeFocus(false)
 	}
 	if m.prompt.Value() != "" || len(m.files) > 0 {
 		d := m.captureDraft()

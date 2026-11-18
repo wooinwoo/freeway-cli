@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -20,12 +21,31 @@ func (s *server) models(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, publicError(err, problem(http.StatusServiceUnavailable, "catalog_unavailable", "Unable to refresh the gateway model catalog.")))
 		return
 	}
+	if s.modelPrefix != "" {
+		models = slices.DeleteFunc(slices.Clone(models), func(model contracts.Model) bool {
+			return !strings.HasPrefix(model.ID, s.modelPrefix)
+		})
+	}
 	if models == nil {
 		models = []contracts.Model{}
 	}
 	writeJSON(w, http.StatusOK, struct {
 		Data []contracts.Model `json:"data"`
 	}{models})
+}
+
+func (s *server) providerStatuses(w http.ResponseWriter, r *http.Request) {
+	statuses, err := s.inference.ProviderStatuses(r.Context())
+	if err != nil {
+		writeProblem(w, problem(http.StatusServiceUnavailable, "provider_status_unavailable", "Unable to check provider connections. Try again."))
+		return
+	}
+	if statuses == nil {
+		statuses = []contracts.ProviderStatus{}
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Data []contracts.ProviderStatus `json:"data"`
+	}{statuses})
 }
 
 type deltaChoice struct {
@@ -49,6 +69,10 @@ func (s *server) completions(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validCompletion(input) {
 		writeProblem(w, problem(http.StatusBadRequest, "invalid_request", "Provide a model, bounded text messages and stream=true."))
+		return
+	}
+	if s.modelPrefix != "" && !strings.HasPrefix(input.Model, s.modelPrefix) {
+		writeProblem(w, problem(http.StatusBadRequest, "invalid_model", "Select a specific OpenCode model."))
 		return
 	}
 	ctx, cancel := context.WithCancel(r.Context())

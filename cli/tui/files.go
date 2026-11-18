@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -98,13 +99,13 @@ func (m Model) openFiles(query fileQuery) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.menu = "files"
+	m.fileSelection = query
 	m.models.list.SetItems(m.fileItems)
 	next, _ := m.changeFocus(true)
 	m = next.(Model)
 	m.menuQuery = query.Text
 	m.menuSearching = query.Text != ""
 	m.applyMenuFilter()
-	m.fileSelection = query
 	if m.filesLoading {
 		return m, nil
 	}
@@ -116,6 +117,26 @@ func (m Model) openFiles(query fileQuery) (tea.Model, tea.Cmd) {
 		items, err := indexProjectFiles(root)
 		return filesIndexed{items: items, epoch: epoch, err: err, query: query}
 	}
+}
+
+func (m Model) inlineFilePicker() bool {
+	return m.modelsFocused && m.menu == "files" && m.fileSelection.Inline && m.height >= 18
+}
+
+func (m Model) dismissMenu() (tea.Model, tea.Cmd) {
+	m.lastEscape = time.Time{}
+	if m.menu == "files" {
+		query := m.fileSelection
+		if query.Inline && m.menuQuery != query.Text && m.prompt.Value() == query.Original {
+			m.recordUndo(m.captureDraft())
+			runes := []rune(query.Original)
+			ref := "@" + m.menuQuery
+			m.prompt.SetValue(string(runes[:query.Start]) + ref + string(runes[query.End:]))
+			m.setCursorIndex(query.Start + len([]rune(ref)))
+			m.markDraftChanged()
+		}
+	}
+	return m.changeFocus(false)
 }
 
 func readProjectAttachment(root, path string) (client.Attachment, error) {

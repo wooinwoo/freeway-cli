@@ -28,6 +28,10 @@ func (f testInference) Models(context.Context) ([]contracts.Model, error) {
 	return []contracts.Model{{ID: "fixture/model", Name: "Fixture", Free: true, Ready: true}}, nil
 }
 
+func (f testInference) ProviderStatuses(context.Context) ([]contracts.ProviderStatus, error) {
+	return []contracts.ProviderStatus{{ID: "fixture", KeyConfigured: true, State: "ready", FreeModels: 1}}, nil
+}
+
 func (f testInference) Stream(ctx context.Context, req contracts.CompletionRequest, emit func(contracts.TextDelta) error) (contracts.Completion, error) {
 	return f.stream(ctx, req, emit)
 }
@@ -47,7 +51,7 @@ func testServer(t *testing.T, inference testInference) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(key, store, inference)
+	return New(key, store, inference, nil)
 }
 
 func request(t *testing.T, ctx context.Context, method, url, body string) *http.Request {
@@ -71,6 +75,8 @@ func TestLocalAuthenticationAndRequiredFields(t *testing.T) {
 		status                                int
 	}{
 		{name: "missing auth", path: "/v1/models", method: "GET", status: 401},
+		{name: "provider status requires auth", path: "/v1/providers", method: "GET", status: 401},
+		{name: "provider status", path: "/v1/providers", key: fixtureKey, method: "GET", status: 200},
 		{name: "wrong auth", path: "/v1/models", key: "wrong-generated-client-key", method: "GET", status: 401},
 		{name: "cross origin", path: "/v1/models", key: fixtureKey, origin: "https://external.example", method: "GET", status: 403},
 		{name: "models", path: "/v1/models", key: fixtureKey, method: "GET", status: 200},
@@ -95,6 +101,45 @@ func TestLocalAuthenticationAndRequiredFields(t *testing.T) {
 				t.Fatalf("got %d %s", recorder.Code, recorder.Body.String())
 			}
 		})
+	}
+}
+
+type openCodeInference struct{ testInference }
+
+func (openCodeInference) Models(context.Context) ([]contracts.Model, error) {
+	return []contracts.Model{{ID: "free/auto"}, {ID: "opencode/fixture", Free: true, Ready: true}}, nil
+}
+
+func TestOpenCodeRequiresLocalClientAndExplicitModel(t *testing.T) {
+	localKey := "fixture-key-for-local-opencode"
+	key, _ := auth.NewClientKey(fixtureKey)
+	localToken, _ := auth.NewClientKey(localKey)
+	inference := openCodeInference{testInference{stream: func(_ context.Context, req contracts.CompletionRequest, emit func(contracts.TextDelta) error) (contracts.Completion, error) {
+		if req.Model != "opencode/fixture" {
+			t.Fatalf("unexpected OpenCode request: %s", req.Model)
+		}
+		err := emit(contracts.TextDelta{Model: req.Model, Provider: "opencode", Text: "OpenCode reply"})
+		return contracts.Completion{Model: req.Model, Provider: "opencode"}, err
+	}}}
+	h := New(key, nil, testInference{}, &LocalClient{Key: localToken, OpenCode: inference})
+	for _, tc := range []struct {
+		method, endpoint, key, model, want string
+		status                             int
+	}{
+		{method: "GET", endpoint: "/models", key: fixtureKey, status: 403},
+		{method: "GET", endpoint: "/models", key: localKey, status: 200, want: "opencode/fixture"},
+		{method: "POST", endpoint: "/chat/completions", key: localKey, model: "free/auto", status: 400},
+		{method: "POST", endpoint: "/chat/completions", key: localKey, model: "opencode/fixture", status: 200, want: "OpenCode reply"},
+	} {
+		body := strings.Replace(`{"model":"MODEL","stream":true,"messages":[{"role":"user","content":"hello"}]}`, "MODEL", tc.model, 1)
+		req := request(t, t.Context(), tc.method, "http://127.0.0.1:4141/v1/local/opencode"+tc.endpoint, body)
+		req.Header.Set("Authorization", "Bearer "+tc.key)
+		recorder := httptest.NewRecorder()
+		h.ServeHTTP(recorder, req)
+		if recorder.Code != tc.status || !strings.Contains(recorder.Body.String(), tc.want) ||
+			tc.method == "GET" && strings.Contains(recorder.Body.String(), "free/auto") {
+			t.Fatalf("%s %s: got %d %s", tc.method, tc.endpoint, recorder.Code, recorder.Body.String())
+		}
 	}
 }
 

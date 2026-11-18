@@ -19,6 +19,8 @@ func lockExclusive(file *os.File) error {
 	return err
 }
 
+func mkdirPrivate(path string) error { return os.MkdirAll(path, 0700) }
+
 func requirePrivate(_ *os.Root, _ string, info os.FileInfo) error {
 	if info.Mode().Perm()&0077 != 0 {
 		return errors.New("gateway data must use owner-only permissions (0700 directories, 0600 files)")

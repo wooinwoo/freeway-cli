@@ -37,16 +37,16 @@ func failure(code string, status int) *Error { return &Error{Code: code, Status:
 
 // readSSE supports CRLF and multiline data fields and bounds each event to 2 MiB.
 func readSSE(reader io.Reader, consume func([]byte) error) error {
+	const maxEventSize = 2 * 1024 * 1024
 	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 4096), 2*1024*1024)
-	var data []string
-	size := 0
+	scanner.Buffer(make([]byte, 4096), maxEventSize)
+	var event strings.Builder
 	flush := func() error {
-		if len(data) == 0 {
+		if event.Len() == 0 {
 			return nil
 		}
-		err := consume([]byte(strings.Join(data, "\n")))
-		data, size = nil, 0
+		err := consume([]byte(strings.TrimSuffix(event.String(), "\n")))
+		event.Reset()
 		return err
 	}
 	for scanner.Scan() {
@@ -60,11 +60,11 @@ func readSSE(reader io.Reader, consume func([]byte) error) error {
 		if strings.HasPrefix(line, "data:") {
 			value := strings.TrimPrefix(line, "data:")
 			value = strings.TrimPrefix(value, " ")
-			size += len(value)
-			if size > 2*1024*1024 {
+			if event.Len()+len(value)+1 > maxEventSize {
 				return failure("invalid_stream", 502)
 			}
-			data = append(data, value)
+			event.WriteString(value)
+			event.WriteByte('\n')
 		}
 	}
 	if err := scanner.Err(); err != nil {

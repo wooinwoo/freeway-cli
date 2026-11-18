@@ -122,4 +122,4 @@ chmod 700 "$stage/freeway"
 "$stage/freeway" install --archive "$archive" --sha256 "$expected" --root "$root"
 printf '\nFreeway installed. Add its bin directory to PATH:\n'
 printf '  export PATH=%q:$PATH\n' "$root/bin"
-printf 'Then run: freeway --preview\n'
+printf 'Then run: freeway\n'

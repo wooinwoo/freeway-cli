@@ -356,7 +356,7 @@ func (c *Client) Quota(ctx context.Context, id string) (Quota, error) {
 	if err != nil {
 		return Quota{}, err
 	}
-	q := Quota{Provider: id, Source: "provider_adapter", ObservedAt: time.Now().UTC(), LastFailure: json.RawMessage("null")}
+	q := Quota{Provider: id, KeyConfigured: strings.TrimSpace(value.Key) != "", Source: "provider_adapter", ObservedAt: time.Now().UTC(), LastFailure: json.RawMessage("null")}
 	q.Reason = readiness(d, value)
 	c.mu.Lock()
 	defer c.mu.Unlock()

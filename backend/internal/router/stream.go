@@ -19,6 +19,8 @@ const (
 	defaultMaxTokens = 4096
 )
 
+var errFirstTextTimeout = errors.New("provider did not start its reply in time")
+
 func (r *Router) Stream(ctx context.Context, input contracts.CompletionRequest, emit func(contracts.TextDelta) error) (contracts.Completion, error) {
 	select {
 	case <-ctx.Done():
@@ -30,15 +32,20 @@ func (r *Router) Stream(ctx context.Context, input contracts.CompletionRequest, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	catalog, err := r.discover(ctx)
+	discovered, err := r.discover(ctx, false)
 	if err != nil {
 		return contracts.Completion{}, executionError(err)
+	}
+	catalog := discovered.routes
+	if input.Model == Auto {
+		catalog = prioritizeDistinctProviders(catalog)
 	}
 	request := providerRequest(input)
 	estimate := estimatedTokens(request)
 	var attempts int
-	var last error
-	for _, candidate := range catalog {
+	var lastAttempt error
+	var blockedRoute *contracts.Problem
+	for i, candidate := range catalog {
 		if input.Model != Auto && candidate.model.ID != input.Model {
 			continue
 		}
@@ -51,52 +58,106 @@ func (r *Router) Stream(ctx context.Context, input contracts.CompletionRequest, 
 			if !errors.As(err, &blocked) {
 				return contracts.Completion{}, accountingError()
 			}
-			last = budgetError(blocked)
+			limit := budgetError(blocked)
+			if blockedRoute == nil || limit.RetryAfter < blockedRoute.RetryAfter {
+				blockedRoute = limit
+			}
 			continue
 		}
 		attempts++
 		request.Provider, request.Model = candidate.source.ID, candidate.model.ID
-		completion, started, err := r.try(ctx, request, reservation, emit)
+		var firstTextWait time.Duration
+		if input.Model == Auto && attempts < maxAttempts && r.hasFallbackProvider(catalog[i+1:], candidate.source.ID, estimate) {
+			firstTextWait = r.firstTextWait
+		}
+		completion, started, err := r.try(ctx, request, reservation, firstTextWait, emit)
 		if err == nil || started || ctx.Err() != nil || input.Model != Auto || attempts >= maxAttempts || !retryable(err) {
 			return completion, err
 		}
-		last = err
+		lastAttempt = err
 	}
-	if last == nil {
-		last = &contracts.Problem{Code: "no_eligible_free_route", Message: "No eligible free route is ready for this model. Check the provider connection and free catalog.", Status: http.StatusServiceUnavailable}
+	if lastAttempt != nil {
+		return contracts.Completion{}, lastAttempt
 	}
-	return contracts.Completion{}, last
+	if blockedRoute != nil {
+		return contracts.Completion{}, blockedRoute
+	}
+	return contracts.Completion{}, &contracts.Problem{Code: "no_eligible_free_route", Message: "No eligible free route is ready for this model. Check the provider connection and free catalog.", Status: http.StatusServiceUnavailable}
 }
 
-func (r *Router) try(ctx context.Context, request providers.Request, reservation string, emit func(contracts.TextDelta) error) (contracts.Completion, bool, error) {
+func (r *Router) hasFallbackProvider(routes []route, provider string, estimate int) bool {
+	checked := map[string]bool{provider: true}
+	for _, candidate := range routes {
+		source := candidate.source
+		if checked[source.ID] {
+			continue
+		}
+		checked[source.ID] = true
+		if r.ledger.Available(source.ID, source.Limits, estimate) == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// A provider outage should consume one attempt before trying the other providers.
+func prioritizeDistinctProviders(catalog []route) []route {
+	ranked := make([]route, 0, len(catalog))
+	var alternates []route
+	seen := make(map[string]bool)
+	for _, candidate := range catalog {
+		if seen[candidate.source.ID] {
+			alternates = append(alternates, candidate)
+			continue
+		}
+		ranked = append(ranked, candidate)
+		seen[candidate.source.ID] = true
+	}
+	return append(ranked, alternates...)
+}
+
+func (r *Router) try(ctx context.Context, request providers.Request, reservation string, firstTextWait time.Duration, emit func(contracts.TextDelta) error) (contracts.Completion, bool, error) {
 	if err := ctx.Err(); err != nil {
 		if finishErr := r.ledger.Finish(reservation, quota.Outcome{Unsent: true}); finishErr != nil {
 			return contracts.Completion{}, false, accountingError()
 		}
 		return contracts.Completion{}, false, executionError(err)
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	var firstTextTimer *time.Timer
+	if firstTextWait > 0 {
+		firstTextTimer = time.AfterFunc(firstTextWait, func() { cancel(errFirstTextTimeout) })
+	}
 	started := false
 	var emitErr error
 	response, err := r.upstream.Stream(ctx, request, func(text string) {
 		if text == "" || emitErr != nil || ctx.Err() != nil {
 			return
 		}
+		if !started && firstTextTimer != nil && !firstTextTimer.Stop() {
+			return
+		}
 		started = true
 		if emit != nil {
 			emitErr = emit(contracts.TextDelta{Model: request.Model, Provider: request.Provider, Text: text})
 			if emitErr != nil {
-				cancel()
+				cancel(emitErr)
 			}
 		}
 	})
+	if !started && firstTextTimer != nil {
+		firstTextTimer.Stop()
+	}
 	usage, tokens := normalizeUsage(response.Usage)
 	if finishErr := r.ledger.Finish(reservation, quota.Outcome{Tokens: tokens, Cooldown: retryDelay(err)}); finishErr != nil {
 		return contracts.Completion{}, started, accountingError()
 	}
 	if emitErr != nil {
 		return contracts.Completion{}, started, emitErr
+	}
+	if errors.Is(context.Cause(ctx), errFirstTextTimeout) {
+		return contracts.Completion{}, false, &contracts.Problem{Code: "upstream_first_text_timeout", Message: "The provider did not start its reply in time.", Status: http.StatusGatewayTimeout}
 	}
 	if ctx.Err() != nil {
 		return contracts.Completion{}, started, executionError(ctx.Err())
@@ -187,7 +248,7 @@ func retryable(err error) bool {
 	if !errors.As(err, &p) {
 		return false
 	}
-	return p.Status == http.StatusServiceUnavailable || p.Status == http.StatusBadGateway || p.Status == http.StatusTooManyRequests
+	return p.Code == "upstream_first_text_timeout" || p.Status == http.StatusServiceUnavailable || p.Status == http.StatusBadGateway || p.Status == http.StatusTooManyRequests
 }
 
 func retryDelay(err error) time.Duration {

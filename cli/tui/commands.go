@@ -18,7 +18,10 @@ type command struct{ Name, Description string }
 
 var commands = []command{
 	{"/model", "Choose a model"}, {"/history", "Search and resume conversations"}, {"/new", "New conversation"},
+	{"/providers", "Check provider connections and free models"},
+	{"/opencode", "Choose an OpenCode model for this chat"},
 	{"/continue", "Continue the latest session in this project"},
+	{"/find", "Find text in this conversation"},
 	{"/retry", "Regenerate the last response"}, {"/copy", "Copy the last response"}, {"/code", "Copy the last code block"},
 	{"/export", "Export conversation to Markdown"}, {"/settings", "Response length"},
 	{"/auto", "Choose a free model automatically"}, {"/reconnect", "Reconnect"}, {"/save", "Save now"},
@@ -62,16 +65,31 @@ func (m Model) commandSuggestion() command {
 
 func (m Model) shortcut(key tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	keyName := key.String()
+	if keyName == "f4" && (!m.modelsFocused || m.menu == "models") ||
+		keyName == "ctrl+r" && m.modelsFocused && m.menu == "providers" {
+		next, cmd := m.showProviders()
+		return next, cmd, true
+	}
 	if keyName == "ctrl+shift+y" {
 		next, cmd := m.copyAnswer(false)
 		return next, cmd, true
 	}
 	if m.modelsFocused {
+		if keyName == "ctrl+r" && m.menu == openCodePicker {
+			next, cmd := m.showOpenCode()
+			return next, cmd, true
+		}
 		if keyName == "ctrl+a" && m.menu == "history" {
+			query := m.menuQuery
 			m.allSessions = !m.allSessions
 			m.history = client.ScopeConversations(m.allHistory, m.workdir, m.allSessions)
 			next, cmd := m.openMenu("history")
-			return next, cmd, true
+			model := next.(Model)
+			if query != "" {
+				model.menuQuery, model.menuSearching = query, true
+				cmd = tea.Batch(cmd, model.applyMenuFilter())
+			}
+			return model, cmd, true
 		}
 		if keyName == "ctrl+p" {
 			m.models.list.CursorUp()
@@ -87,6 +105,14 @@ func (m Model) shortcut(key tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 	switch keyName {
+	case "?":
+		if m.prompt.Value() == "" && len(m.files) == 0 {
+			next, cmd := m.openMenu("help")
+			return next, cmd, true
+		}
+	case "f3":
+		next, cmd := m.findTranscript("")
+		return next, cmd, true
 	case "ctrl+l":
 		return m, tea.ClearScreen, true
 	case "alt+h":
@@ -270,7 +296,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		m.notify("Loading conversations. Your draft is safe.")
 		return m, nil
 	}
-	if m.gateway != nil && !m.ready {
+	if m.gateway != nil && !m.ready && !isOpenCodeModel(m.selected) {
 		m.notify("Checking your connection again. Your draft is safe.")
 		if m.loadingModels {
 			return m, nil
@@ -327,8 +353,14 @@ func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 		m.notify("Auto will find an available free connection.")
 		m.renderMessages()
 		return m, m.persist()
+	case "/providers":
+		return m.showProviders()
+	case "/opencode":
+		return m.showOpenCode()
 	case "/history":
 		return m.showHistory(false)
+	case "/find":
+		return m.findTranscript(arg)
 	case "/open":
 		return m.navigate("open:" + arg)
 	case "/new":
@@ -578,6 +610,8 @@ func (m Model) openMenu(kind string) (tea.Model, tea.Cmd) {
 			{"Enter / Ctrl+J", "Send / newline · Shift+Enter and Alt+Enter also work"},
 			{"↑↓ / Ctrl+P·N", "Move within multiline input; recall history at edges"},
 			{"Ctrl+R", "Search saved prompt history"},
+			{"F3 / /find", "Find a prompt or reply in the current conversation"},
+			{"F4 / /providers", "Check provider keys, models and usage limits"},
 			{"Alt+H / Alt+N", "Resume a saved session / start a new one"},
 			{"Alt+P / Alt+R", "Choose a model / regenerate response"},
 			{"Ctrl+S / Ctrl+G", "Stash or restore draft / open external editor"},
@@ -621,13 +655,24 @@ func (m Model) openMenu(kind string) (tea.Model, tea.Cmd) {
 
 func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 	kind := m.menu
+	if kind == "models" && item.ID == openCodePicker {
+		return m.showOpenCode()
+	}
+	if kind == "providers" {
+		return m, nil
+	}
 	if kind == "files" {
 		query := m.fileSelection
 		next, _ := m.changeFocus(false)
 		return next.(Model).attachPath(item.ID, query)
 	}
 	if kind == "prompts" {
-		m.recordUndo(m.captureDraft())
+		draft := m.captureDraft()
+		m.recordUndo(draft)
+		if m.stash == nil && (draft.Text != "" || len(draft.Files) > 0) {
+			m.stash = &draft
+			m.notify("Prompt loaded. Ctrl+S restores your previous draft.")
+		}
 		m.prompt.SetValue(item.Detail)
 		m.prompt.MoveToEnd()
 		m.files = append([]client.Attachment(nil), m.inputFiles[item.Detail]...)
@@ -681,6 +726,9 @@ func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 	m.selected = item.ID
 	m.dirty = true
 	m.notice = ""
+	if kind == openCodePicker && !m.busy {
+		m.status = "Ready · OpenCode"
+	}
 	m.notify(item.Name + " selected")
 	m.renderMessages()
 	next, cmd := m.changeFocus(false)
@@ -693,6 +741,10 @@ func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 
 func (m Model) menuTitle() string {
 	switch m.menu {
+	case openCodePicker:
+		return "OpenCode models"
+	case "providers":
+		return "Gateway providers"
 	case "files":
 		return "Project files"
 	case "prompts":
@@ -709,6 +761,29 @@ func (m Model) menuTitle() string {
 	return "Models"
 }
 func (m Model) menuDetail() string {
+	if m.menu == openCodePicker {
+		if m.openCodeLoading {
+			return "Loading OpenCode models…"
+		}
+		if m.openCodeError != "" {
+			return m.openCodeError
+		}
+		if item, ok := m.models.list.SelectedItem().(modelItem); ok {
+			return item.ID
+		}
+	}
+	if m.menu == "providers" {
+		if m.providersLoading {
+			return "Checking provider connections…"
+		}
+		if m.providersError != "" {
+			return m.providersError
+		}
+		if item, ok := m.models.list.SelectedItem().(modelItem); ok {
+			return providerStatusHelp(m.providers[item.ID])
+		}
+		return ""
+	}
 	if m.menu == "history" {
 		if item, ok := m.models.list.SelectedItem().(modelItem); ok {
 			return item.ID + " · " + item.Detail

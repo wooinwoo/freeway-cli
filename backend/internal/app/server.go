@@ -5,6 +5,7 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,6 +32,7 @@ type Config struct {
 	Providers []string
 	Preferred []string
 	Allowed   []string
+	Managed   bool
 }
 
 func DataDir() (string, error) {
@@ -88,8 +90,30 @@ func Serve(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	slog.Info("gateway listening", "url", "http://"+listener.Addr().String())
-	return serveHTTP(ctx, listener, api.New(clientKey, chats, models))
+	defer listener.Close()
+	endpoint := "http://" + listener.Addr().String()
+	connectionKey := "fw_" + rand.Text()
+	managedKey, err := auth.NewClientKey(connectionKey)
+	if err != nil {
+		return err
+	}
+	if err := vault.PublishConnection(storage.Connection{URL: endpoint, APIKey: connectionKey}); err != nil {
+		return err
+	}
+	defer vault.ClearConnection()
+	local := &api.LocalClient{Key: managedKey}
+	if cfg.Managed {
+		local.OpenCode = router.New(upstream, ledger, []router.Source{{ID: "opencode", Name: "OpenCode"}}, nil, nil)
+	}
+	handler := api.New(clientKey, chats, models, local)
+	if cfg.Managed {
+		var stop func()
+		ctx, handler, stop = autoShutdown(ctx, handler)
+		defer stop()
+	} else {
+		slog.Info("gateway listening", "url", endpoint)
+	}
+	return serveHTTP(ctx, listener, handler)
 }
 
 func serveHTTP(ctx context.Context, listener net.Listener, handler http.Handler) error {

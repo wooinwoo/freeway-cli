@@ -347,6 +347,9 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 }
 
 func (m *Model) ensureSelected() {
+	if isOpenCodeModel(m.selected) {
+		return
+	}
 	if !m.ready {
 		return
 	}

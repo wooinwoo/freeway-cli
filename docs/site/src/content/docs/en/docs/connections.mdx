@@ -6,6 +6,8 @@ Each adapter calls one service and reports models, responses, usage, and errors.
 
 ## HTTP providers
 
+In the Freeway chat, press F4 or enter `/providers` to see key setup, eligible free models, and rate limits for the current gateway. Press Ctrl+R to check again after changing credentials.
+
 ~~~sh
 freeway providers auth kilo
 freeway providers auth groq --from-env --confirm-free
@@ -30,6 +32,8 @@ Keys are accepted through hidden input, provider environment variables, or `--st
 A new key clears the old free-account confirmation. Concurrent changes to the same credential return `credential_conflict` instead of restoring an old key. Check the account before retrying.
 
 ## Official CLI providers
+
+In a chat using the automatically started gateway, press F2 and select **OpenCode…**, or type `/opencode`, to browse models through your installed OpenCode CLI. Select a model to use it for the current conversation.
 
 ~~~sh
 freeway providers install --only opencode

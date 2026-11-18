@@ -1,13 +1,13 @@
 # 구조와 책임
 
-네이티브 제품은 Go TUI와 공급처 도구입니다. 문서 사이트는 Astro + Starlight로 빌드한 정적 파일입니다. 기존 Node.js POC는 보관하며 제품 런타임에 사용하지 않습니다. 공통 Go 게이트웨이는 마지막에 구현할 별도 영역입니다.
+네이티브 제품은 Go TUI, 로컬 게이트웨이, 공급처 도구로 구성됩니다. 문서 사이트는 Astro + Starlight로 빌드한 정적 파일입니다. 기존 Node.js POC는 별도로 보관합니다.
 
 ## 실행 경계
 
 ```text
 Go TUI
   cli/client (HTTP + SSE, Bearer 인증)
-    로컬 Go 게이트웨이 API v1 [구현 대상]
+    로컬 Go 게이트웨이 API v1
       라우팅·한도·대화 저장·로컬 인증
         backend/internal/providers (업체 HTTP·공식 CLI)
 ```
@@ -22,7 +22,8 @@ Go TUI
 | `cli/client` | loopback 인증 HTTP·SSE, 대화 저장·revision·프롬프트 기록 |
 | `cli/tui` | 입력·첨부·대화·보관함·내보내기·비동기 이벤트 경계 |
 | `cli/update` | 검증·불변 버전 설치·활성 전환·롤백·제거 |
-| `cli/cmd/package` | CLI·공급처 도구·라이선스·manifest·SHA256SUMS 패키징 |
+| `cli/cmd/package` | CLI·게이트웨이·공급처 도구·라이선스·manifest·SHA256SUMS 패키징 |
+| `backend/cmd/freewayd` | 로컬 게이트웨이 실행 및 클라이언트 키 조회 |
 | `backend/internal/providers` | 9개 HTTP API, OpenCode V1·Cline ACP, 인증·오류·한도 관측 |
 | `backend/cmd/providerctl` | 독립 네이티브 인증·모델·호출·공식 CLI 설치 도구 |
 | `api/openapi.yaml` | HTTP·SSE API v1 계약 (JSON 구문은 유효한 YAML) |
@@ -30,7 +31,7 @@ Go TUI
 | `tests/e2e/native_smoke.py` | 실제 배포 실행 파일의 격리된 설치·API·제거 검사 |
 | `POC` | 기존 Node.js 구현 보관 |
 
-## 백엔드가 맡을 일
+## 백엔드의 책임
 
 - `app/`: 단일 작성자 잠금, 설정·수명주기·종료, 구성 조립.
 - `contracts/`: 공급처와 코어의 내부 Go 계약.
@@ -41,7 +42,7 @@ Go TUI
 - `auth/`, `storage/`: 비밀·대화·사용량 영속화, 암호화·마이그레이션·복구.
 - 향후 `mcp/`: 인증된 공통 로컬 API 중계. 별도 원장이나 DB를 열지 않음.
 
-`backend/cmd/freewayd`는 개발 틀이며 서버를 시작하지 않습니다. 클라이언트 fixture는 테스트 전용이며 제품에 가짜 백엔드를 넣지 않습니다.
+`freeway`는 같은 데이터 디렉터리를 쓰는 로컬 게이트웨이가 있으면 연결하고, 없으면 설치 버전에 포함된 `freewayd`를 시작합니다. 자동 시작한 서버는 루프백의 가용 포트와 프로세스별 연결 키를 사용하며 마지막 클라이언트가 닫힌 뒤 종료합니다. 고정 주소가 필요하면 `freeway gateway serve`를 사용합니다. 대화와 사용량은 전용 디렉터리에 암호화해 저장합니다.
 
 ## 데이터와 배포
 

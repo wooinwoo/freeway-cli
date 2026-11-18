@@ -16,23 +16,34 @@ import (
 	"github.com/wooinwoo/freeway-cli/cli/update"
 )
 
+func nativeBinary(name string) (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	binary := filepath.Join(filepath.Dir(self), name)
+	if info, err := os.Stat(binary); err != nil || !info.Mode().IsRegular() {
+		return "", fmt.Errorf("%s is missing; install the complete Freeway package", name)
+	}
+	return binary, nil
+}
+
 func runNativeCommand(args []string) (bool, error) {
 	if len(args) == 0 {
 		return false, nil
 	}
 	command := args[0]
-	if command == "providers" {
-		self, err := os.Executable()
+	if command == "providers" || command == "gateway" {
+		name := "freeway-providers"
+		if command == "gateway" {
+			name = "freewayd"
+		}
+		binary, err := nativeBinary(name)
 		if err != nil {
 			return true, err
-		}
-		name := "freeway-providers"
-		if runtime.GOOS == "windows" {
-			name += ".exe"
-		}
-		binary := filepath.Join(filepath.Dir(self), name)
-		if _, err := os.Stat(binary); err != nil {
-			return true, errors.New("native provider utility is missing; install the complete Freeway client package")
 		}
 		child := exec.Command(binary, args[1:]...)
 		child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr

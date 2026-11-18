@@ -20,6 +20,7 @@ type Model struct {
 	interactionState
 	width, height                                                           int
 	chat                                                                    viewport.Model
+	find                                                                    *transcriptSearch
 	prompt                                                                  textarea.Model
 	models                                                                  modelsList
 	modelsFocused                                                           bool
@@ -41,6 +42,13 @@ type Model struct {
 	menuQuery                                                               string
 	menuAll                                                                 []list.Item
 	menuSearching                                                           bool
+	providers                                                               map[string]client.ProviderStatus
+	providersLoading                                                        bool
+	providersError                                                          string
+	providersRequest                                                        uint64
+	openCodeLoading                                                         bool
+	openCodeError                                                           string
+	openCodeRequest                                                         uint64
 	inputHistory                                                            []string
 	inputIndex                                                              int
 	inputDraft, lastRecalled                                                string
@@ -103,6 +111,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if next, cmd, handled := m.updateConvenience(msg); handled {
 		return next, cmd
 	}
+	if next, cmd, handled := m.updateTranscriptSearch(msg); handled {
+		return next, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.BackgroundColorMsg:
 		lightBackground.Store(!msg.IsDark())
@@ -112,12 +123,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case modelsLoaded:
 		return m.receiveModels(msg)
+	case providerStatusesLoaded:
+		return m.receiveProviderStatuses(msg)
+	case openCodeModelsLoaded:
+		return m.receiveOpenCodeModels(msg)
 	case responseEvent:
 		return m.receiveResponse(msg)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.resize()
-		if !m.modelsFocused && m.usable() {
+		if m.find == nil && !m.modelsFocused && m.usable() {
 			return m, m.prompt.Focus()
 		}
 		return m, nil
@@ -139,7 +154,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.usable() {
 				if m.modelsFocused {
-					return m.changeFocus(false)
+					if m.menu == "files" {
+						if item, ok := m.models.list.SelectedItem().(modelItem); ok {
+							return m.chooseItem(item)
+						}
+						return m, nil
+					}
+					return m.dismissMenu()
 				}
 				if token, ok := m.fileToken(); ok {
 					return m.openFiles(token)
@@ -153,7 +174,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "esc":
 			if m.modelsFocused {
-				return m.changeFocus(false)
+				return m.dismissMenu()
 			}
 			if m.busy {
 				m.queuePaused = true
@@ -208,6 +229,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.queuePrompt()
 			}
 			return m.submit()
+		}
+	case tea.PasteMsg:
+		if m.modelsFocused {
+			return m.appendMenuQuery(msg.Content)
+		}
+	case tea.MouseClickMsg:
+		if m.showLatestButton() && msg.Button == tea.MouseLeft {
+			x, y := m.latestButtonPosition()
+			if msg.Y == y && msg.X >= x && msg.X < m.width-4 {
+				m.chat.GotoBottom()
+				return m, nil
+			}
 		}
 	case tea.MouseWheelMsg:
 		if m.modelsFocused {
@@ -265,11 +298,7 @@ func (m Model) changeFocus(models bool) (tea.Model, tea.Cmd) {
 			m.menu = "models"
 		}
 		if m.menu == "models" {
-			items := make([]list.Item, 0, len(m.availableModels))
-			for _, model := range m.availableModels {
-				items = append(items, modelItem(model))
-			}
-			m.models.list.SetItems(items)
+			m.models.list.SetItems(m.modelPickerItems())
 		}
 		m.prompt.Blur()
 		m.menuAll = append([]list.Item(nil), m.models.list.Items()...)
@@ -299,8 +328,10 @@ func (m *Model) resize() {
 		return
 	}
 	m.chat.SetWidth(m.width - 4)
+	if m.find != nil {
+		m.find.input.SetWidth(max(1, m.width-10))
+	}
 	m.prompt.SetWidth(m.width - 8)
-	m.models.list.SetSize(m.width-4, max(1, m.height-8))
 	m.layout()
 	m.renderMessages()
 }
@@ -311,12 +342,41 @@ func (m *Model) layout() {
 	}
 	// The textarea keeps unlimited content; only its visible height is capped.
 	extra := len(m.composerExtraRows(max(1, m.width-4)))
-	m.prompt.SetHeight(min(6, max(1, m.height-9-extra), m.prompt.Height()))
-	bottomHeight := m.prompt.Height() + 4 + extra
-	if m.modelsFocused {
-		bottomHeight = m.models.list.Height() + 4
+	visibleLimit := min(8, max(1, m.height-11-extra))
+	minimum := 1
+	if m.height >= 22 {
+		minimum = 3
+	} else if m.height >= 16 {
+		minimum = 2
 	}
-	m.chat.SetHeight(max(1, m.height-3-bottomHeight))
+	m.prompt.MinHeight = min(minimum, visibleLimit)
+	promptHeight := min(visibleLimit, max(m.prompt.MinHeight, m.prompt.Height()))
+	if m.prompt.Height() != promptHeight {
+		m.prompt.SetHeight(promptHeight)
+	}
+	bottomHeight := m.prompt.Height() + 4 + extra
+	menuHeight := max(1, m.height-8)
+	if m.modelsFocused {
+		if m.inlineFilePicker() {
+			composerHeight := m.prompt.Height() + 3 + extra
+			menuHeight = max(1, min(5, m.height-6-composerHeight))
+			bottomHeight = composerHeight + menuHeight + 2
+		} else {
+			menuHeight -= m.promptPreviewHeight()
+			bottomHeight = menuHeight + 4
+		}
+	}
+	if m.models.list.Width() != m.width-4 || m.models.list.Height() != menuHeight {
+		m.models.list.SetSize(m.width-4, menuHeight)
+	}
+	height := max(1, m.height-3-bottomHeight)
+	if m.chat.Height() != height {
+		follow := m.find == nil && m.chat.AtBottom()
+		m.chat.SetHeight(height)
+		if follow {
+			m.chat.GotoBottom()
+		}
+	}
 }
 
 func (m *Model) renderMessages() {

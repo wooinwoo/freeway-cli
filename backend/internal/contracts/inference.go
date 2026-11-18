@@ -16,6 +16,15 @@ type Model struct {
 	Ready  bool   `json:"ready"`
 }
 
+type ProviderStatus struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	KeyConfigured bool   `json:"keyConfigured"`
+	State         string `json:"state"`
+	FreeModels    int    `json:"freeModels"`
+	RetryAfter    int    `json:"retryAfter,omitempty"`
+}
+
 type InputMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`

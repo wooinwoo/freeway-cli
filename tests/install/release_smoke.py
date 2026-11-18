@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Verify release artifacts and run a native install, update, and rollback."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import http.server
 import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import tarfile
@@ -14,6 +16,8 @@ import tempfile
 import threading
 import time
 from urllib.parse import urlsplit
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 import zipfile
 
 REPO = Path(__file__).resolve().parents[2]
@@ -64,7 +68,7 @@ def verify_bundle(directory):
         assert (manifest["version"], manifest["os"], manifest["arch"]) == (release["version"], system, arch)
         assert manifest["files"] == {item: sha256(content) for item, content in files.items()}, name
         suffix = ".exe" if system == "windows" else ""
-        required = {"freeway" + suffix, "freeway-providers" + suffix, "LICENSE", "THIRD_PARTY_NOTICES.md"}
+        required = {"freeway" + suffix, "freeway-providers" + suffix, "freewayd" + suffix, "LICENSE", "THIRD_PARTY_NOTICES.md"}
         assert required <= files.keys(), name
         for entry in files.keys() - required:
             parts = entry.split("/")
@@ -72,6 +76,97 @@ def verify_bundle(directory):
             assert all(part not in ("", ".", "..") and "\\" not in part for part in parts), entry
             assert not entry.endswith((".js", ".mjs", ".exe")), entry
     print("Verified all six targets against SHA256SUMS, release metadata, and internal manifests.", flush=True)
+
+
+def verify_gateway(launcher, binary, base, environment, run):
+    state = base / "gateway-state"
+    marker = "Freeway gateway persistence check"
+    original_key = None
+    chat = None
+    for attempt in range(2):
+        log = base / f"gateway-{attempt}.log"
+        with log.open("wb") as output:
+            server = subprocess.Popen(
+                [str(binary), "serve", "--listen", "127.0.0.1:0", "--data-dir", str(state), "--providers", "groq"],
+                env={**environment, "GROQ_API_KEY": ""}, cwd=base, stdout=output, stderr=output,
+            )
+        try:
+            deadline = time.monotonic() + 15
+            while True:
+                report = log.read_text(encoding="utf-8", errors="replace")
+                address = re.search(r"gateway listening.*url=(http://127\.0\.0\.1:\d+)", report)
+                if address:
+                    break
+                assert server.poll() is None and time.monotonic() < deadline, report
+                time.sleep(.1)
+            url = address[1]
+            key = run(launcher, "gateway", "key", "--data-dir", state).strip()
+            assert key.startswith("fw_")
+            connected = dict(environment, FREEWAY_URL=url, FREEWAY_API_KEY=key)
+
+            def api(path, body=None, authenticated=True):
+                headers = {"Authorization": "Bearer " + key} if authenticated else {}
+                data = None
+                if body is not None:
+                    headers["Content-Type"] = "application/json"
+                    data = json.dumps(body).encode("utf-8")
+                with urlopen(Request(url + path, data=data, headers=headers), timeout=8) as response:
+                    return json.load(response)
+
+            if attempt == 0:
+                original_key = key
+                try:
+                    api("/v1/conversations", authenticated=False)
+                except HTTPError as error:
+                    assert error.code == 401
+                    error.close()
+                else:
+                    raise AssertionError("The installed gateway accepted an unauthenticated request.")
+                assert api("/v1/models") == {"data": []}
+                chat = api("/v1/conversations", {
+                    "title": marker, "model": "free/auto", "workspace": str(base),
+                    "settings": {"maxTokens": 4096, "temperature": 0.6}, "messages": [],
+                    "draft": marker, "draftFiles": [], "queued": [], "stash": None,
+                })
+                assert chat["revision"] == 1
+                records = list(state.glob("*.enc"))
+                assert records and all(marker.encode() not in record.read_bytes() for record in records)
+            else:
+                assert key == original_key
+                reopened = api("/v1/conversations/" + chat["id"])
+                assert reopened["draft"] == marker and reopened["revision"] == 1
+                summaries = json.loads(run(launcher, "sessions", "--json", env=connected))
+                assert any(item["id"] == chat["id"] and item["hasDraft"] for item in summaries)
+        finally:
+            server.terminate()
+            server.wait(timeout=20)
+    print("Installed gateway rejected unauthenticated requests and restored an encrypted draft after restart.", flush=True)
+
+
+def verify_automatic_gateway(launcher, base, environment, run):
+    state = base / "managed-gateway"
+    connection_path = state / "connection.json"
+    managed = dict(environment, FREEWAY_GATEWAY_HOME=str(state), FREEWAY_GATEWAY_PROVIDERS="groq", GROQ_API_KEY="")
+
+    def list_sessions():
+        return json.loads(run(launcher, "sessions", "--json", env=managed))
+
+    # Concurrent first-run clients must both work with the same private data directory.
+    with ThreadPoolExecutor(max_workers=2) as clients:
+        assert list(clients.map(lambda _: list_sessions(), range(2))) == [[], []]
+    connection = json.loads(connection_path.read_text())
+    request = Request(connection["url"] + "/v1/lease", headers={"Authorization": "Bearer " + connection["apiKey"]})
+    with urlopen(request, timeout=5) as lease:
+        assert lease.status == 200
+        time.sleep(9)
+        assert list_sessions() == []
+        assert json.loads(connection_path.read_text()) == connection
+    deadline = time.monotonic() + 15
+    while connection_path.exists() and time.monotonic() < deadline:
+        time.sleep(.1)
+    assert not connection_path.exists(), "managed gateway stayed up after its last client closed"
+    assert (state / "state.key").is_file()
+    print("Concurrent default clients shared one gateway, which shut down after the last lease closed.", flush=True)
 
 
 def run_upgrade(directory, go):
@@ -127,6 +222,7 @@ def run_upgrade(directory, go):
             launcher = root / "bin/freeway"
         assert run(launcher, "--version").strip() == PREVIOUS_VERSION
         assert len(json.loads(run(launcher, "providers", "list"))["providers"]) == 11
+        assert run(launcher, "gateway", "--version").strip() == PREVIOUS_VERSION
 
         class ReleaseServer(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
@@ -167,6 +263,10 @@ def run_upgrade(directory, go):
                 thread.join(timeout=5)
 
         # The stable launcher must recover even if the active version is broken.
+        gateway = "freewayd.exe" if system == "windows" else "freewayd"
+        assert run(launcher, "gateway", "--version").strip() == release["version"]
+        verify_automatic_gateway(launcher, base, environment, run)
+        verify_gateway(launcher, root / "versions" / release["version"] / gateway, base, environment, run)
         utility = "freeway-providers.exe" if system == "windows" else "freeway-providers"
         (root / "versions" / release["version"] / utility).write_bytes(b"damaged")
         run(launcher, "--version", success=False)

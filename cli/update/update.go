@@ -247,7 +247,11 @@ func safeName(name string) bool {
 	if name == "" || strings.ContainsAny(name, "\\:") || path.IsAbs(name) || path.Clean(name) != name || strings.HasPrefix(name, "../") {
 		return false
 	}
-	return name == "manifest.json" || name == exe("freeway") || name == exe("freeway-providers") || name == "LICENSE" || name == "THIRD_PARTY_NOTICES.md" || strings.HasPrefix(name, "licenses/")
+	return name == "manifest.json" || programFile(name) || name == "LICENSE" || name == "THIRD_PARTY_NOTICES.md" || strings.HasPrefix(name, "licenses/")
+}
+
+func programFile(name string) bool {
+	return name == exe("freeway") || name == exe("freeway-providers") || name == exe("freewayd")
 }
 
 func extract(data []byte, directory string) error {
@@ -267,7 +271,7 @@ func extract(data []byte, directory string) error {
 			return err
 		}
 		permissions := os.FileMode(0600)
-		if name == exe("freeway") || name == exe("freeway-providers") {
+		if programFile(name) {
 			permissions = 0700
 		}
 		f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, permissions)
@@ -383,12 +387,17 @@ func validatePackage(directory, version string) (Package, error) {
 	return p, err
 }
 
-func probe(ctx context.Context, directory, version string) error {
-	for _, name := range []string{"freeway", "freeway-providers"} {
+func probe(ctx context.Context, directory string, p Package) error {
+	names := []string{"freeway", "freeway-providers"}
+	// Pre-gateway versions remain usable as rollback targets.
+	if p.Files[exe("freewayd")] != "" {
+		names = append(names, "freewayd")
+	}
+	for _, name := range names {
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		out, err := exec.CommandContext(ctx, filepath.Join(directory, exe(name)), "--version").Output()
 		cancel()
-		if err != nil || strings.TrimSpace(string(out)) != version {
+		if err != nil || strings.TrimSpace(string(out)) != p.Version {
 			return fmt.Errorf("%s did not pass native version verification", name)
 		}
 	}
@@ -437,10 +446,8 @@ func (m Manager) install(ctx context.Context, data []byte, want, version string)
 	if err != nil {
 		return State{}, err
 	}
-	if err = probe(ctx, stage, p.Version); err != nil {
-		return State{}, err
-	}
 	target := filepath.Join(versions, p.Version)
+	published := false
 	if info, statErr := os.Lstat(target); statErr == nil {
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return State{}, errors.New("unsafe existing version directory")
@@ -457,6 +464,16 @@ func (m Manager) install(ctx context.Context, data []byte, want, version string)
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return State{}, statErr
 	} else if err = os.Rename(stage, target); err != nil {
+		return State{}, err
+	} else {
+		published = true
+	}
+	// Windows can hold a directory open after an executable inside it has run.
+	// Start version probes only after the directory reaches its final path.
+	if err = probe(ctx, target, p); err != nil {
+		if published {
+			err = errors.Join(err, os.RemoveAll(target))
+		}
 		return State{}, err
 	}
 	bin := filepath.Join(root, "bin")
@@ -538,10 +555,11 @@ func (m Manager) Rollback(ctx context.Context) (State, error) {
 		return State{}, errors.New("no previous version is available")
 	}
 	directory := filepath.Join(root, "versions", s.Previous)
-	if _, err = validatePackage(directory, s.Previous); err != nil {
+	p, err := validatePackage(directory, s.Previous)
+	if err != nil {
 		return State{}, err
 	}
-	if err = probe(ctx, directory, s.Previous); err != nil {
+	if err = probe(ctx, directory, p); err != nil {
 		return State{}, err
 	}
 	s.Active, s.Previous = s.Previous, s.Active

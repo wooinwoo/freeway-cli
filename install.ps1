@@ -134,7 +134,7 @@ try {
   $escapedBin = $bin.Replace("'", "''")
   Write-Output "`nFreeway installed. Add its bin directory to PATH:"
   Write-Output ('$env:Path = ' + "'$escapedBin;'" + ' + $env:Path')
-  Write-Output 'Then run: freeway --preview'
+  Write-Output 'Then run: freeway'
 } finally {
   Remove-Item -LiteralPath $stage -Recurse -Force
 }

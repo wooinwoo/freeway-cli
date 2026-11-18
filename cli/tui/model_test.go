@@ -78,13 +78,13 @@ func TestResizeFitsAndPreservesDraft(t *testing.T) {
 
 func TestComposerGrowsAndKeepsLongPaste(t *testing.T) {
 	m := update(New(), tea.WindowSizeMsg{Width: 120, Height: 40})
-	if m.prompt.Height() != 1 || lipgloss.Height(m.View().Content) != 40 {
-		t.Fatal("composer did not start as one line at the bottom")
+	if m.prompt.Height() != 3 || lipgloss.Height(m.View().Content) != 40 {
+		t.Fatal("composer did not start with three rows at the bottom")
 	}
 	paste := strings.Repeat("긴 대화 🌏\n", 50)
 	m = update(m, tea.PasteMsg{Content: paste})
-	if m.prompt.Value() != paste || m.prompt.Height() != 6 {
-		t.Fatal("long paste was truncated or composer was not capped at six rows")
+	if m.prompt.Value() != paste || m.prompt.Height() != 8 {
+		t.Fatal("long paste was truncated or composer was not capped at eight rows")
 	}
 	if lipgloss.Height(m.View().Content) != 40 {
 		t.Fatal("growing input moved the footer out of the terminal")
@@ -93,7 +93,7 @@ func TestComposerGrowsAndKeepsLongPaste(t *testing.T) {
 	if m.messages[0].Content != strings.TrimSpace(paste) || m.chat.ScrollPercent() != 1 {
 		t.Fatal("long conversation did not preserve its content and scroll to the last line")
 	}
-	if m.prompt.Height() != 1 || lipgloss.Height(m.View().Content) != 40 {
+	if m.prompt.Height() != 3 || lipgloss.Height(m.View().Content) != 40 {
 		t.Fatal("composer did not shrink after submitting")
 	}
 }

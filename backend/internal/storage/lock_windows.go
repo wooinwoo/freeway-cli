@@ -5,11 +5,46 @@ package storage
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+func mkdirPrivate(path string) error {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return err
+	}
+	// Protect the DACL from the parent and pass it on to newly created state files.
+	sd, err := windows.SecurityDescriptorFromString("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;" + user.User.Sid.String() + ")")
+	if err != nil {
+		return err
+	}
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	attributes := windows.SecurityAttributes{SecurityDescriptor: sd}
+	attributes.Length = uint32(unsafe.Sizeof(attributes))
+	err = windows.CreateDirectory(name, &attributes)
+	if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+		// Open will check the existing directory before touching any state files.
+		return nil
+	}
+	return err
+}
 
 func lockExclusive(file *os.File) error {
 	var offset windows.Overlapped

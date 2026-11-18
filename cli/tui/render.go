@@ -95,8 +95,27 @@ func codeBlock(lines []string, language string, width int) string {
 	return strings.Join(rows, "\n")
 }
 
+func renderUserMessage(message client.Message, width int, colors schemeColors) string {
+	inset := min(16, max(2, width/8))
+	panelWidth := width - inset - 1
+	gutter := strings.Repeat(" ", inset)
+	edge := lipgloss.NewStyle().Foreground(colors.userAccent).Background(colors.userPanel).Render("▎")
+	panel := lipgloss.NewStyle().Background(colors.userPanel).Foreground(colors.text)
+	title := panel.Foreground(colors.userAccent).Bold(true)
+	rows := []string{gutter + edge + title.Render(padCells(" ● YOU", panelWidth))}
+	bodyWidth := panelWidth - 2
+	for _, line := range strings.Split(ansi.Hardwrap(terminalSafe(message.Content), bodyWidth, true), "\n") {
+		rows = append(rows, gutter+edge+panel.Render(padCells(" "+line, panelWidth)))
+	}
+	for _, file := range message.Files {
+		label := ansi.Truncate("[file] "+terminalSafe(file.Path), bodyWidth, "…")
+		rows = append(rows, gutter+edge+title.Bold(false).Render(padCells(" "+label, panelWidth)))
+	}
+	return strings.Join(rows, "\n")
+}
+
 func (m *Model) renderConversation() {
-	if m.chat.Width() < 1 {
+	if m.chat.Width() < minWidth-4 {
 		return
 	}
 	follow, offset := m.chat.AtBottom(), m.chat.YOffset()
@@ -114,11 +133,7 @@ func (m *Model) renderConversation() {
 		bodyWidth := max(1, width-4)
 		label := lipgloss.NewStyle().Foreground(colors.accent).Bold(true)
 		if message.Role == "user" {
-			body := lipgloss.NewStyle().Foreground(colors.text).Render(ansi.Hardwrap(terminalSafe(message.Content), bodyWidth, true))
-			rendered = label.Render("● YOU") + "\n\n    " + strings.ReplaceAll(body, "\n", "\n    ")
-			for _, file := range message.Files {
-				rendered += "\n    " + lipgloss.NewStyle().Foreground(colors.muted).Render(ansi.Truncate("[file] "+file.Path, width-4, "…"))
-			}
+			rendered = renderUserMessage(message, width, colors)
 		} else {
 			rendered = markdown(message.Content, bodyWidth)
 			if message.Content == "" && m.busy {
@@ -136,11 +151,13 @@ func (m *Model) renderConversation() {
 	if m.notice != "" {
 		rows = append(rows, lipgloss.NewStyle().Foreground(colors.accent).Width(width).Render(terminalSafe(m.notice)))
 	}
-	m.chat.SetContent(strings.Join(rows, "\n\n"))
-	if follow {
-		m.chat.GotoBottom()
-	} else {
-		m.chat.SetYOffset(offset)
+	m.findTranscriptContent(strings.Join(rows, "\n\n"), false)
+	if m.find == nil {
+		if follow {
+			m.chat.GotoBottom()
+		} else {
+			m.chat.SetYOffset(offset)
+		}
 	}
 	m.lastRender, m.renderPending = time.Now(), false
 }
@@ -169,9 +186,6 @@ func (m Model) statusLabel() string {
 		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		elapsed := max(0, time.Since(m.startedAt).Seconds())
 		status = fmt.Sprintf("%s %s · %.0fs · Esc to stop", frames[int(elapsed*8)%len(frames)], m.status, elapsed)
-	}
-	if !m.chat.AtBottom() && len(m.messages) > 0 {
-		status += " · Reading earlier messages · Ctrl+End for latest"
 	}
 	if m.saveError != "" {
 		status += " · Save failed — /save to retry"

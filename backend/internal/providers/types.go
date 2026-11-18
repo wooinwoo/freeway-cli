@@ -83,6 +83,7 @@ type Bucket struct {
 
 type Quota struct {
 	Provider            string            `json:"provider"`
+	KeyConfigured       bool              `json:"keyConfigured"`
 	Source              string            `json:"source"`
 	Authoritative       bool              `json:"authoritative"`
 	ObservedAt          time.Time         `json:"observedAt"`

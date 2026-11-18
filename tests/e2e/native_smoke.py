@@ -81,7 +81,7 @@ def main():
             records = json.loads(result.stdout)
             assert len(records) == 1 and records[0]["title"] == "실제 실행 파일 🌏"
             assert len(json.loads(run(program, "sessions", "--all", "--json", env=connected).stdout)) == 2
-            run(program, "sessions", "--json", success=False)
+            run(program, "sessions", "--json", success=False, env=dict(environment, FREEWAY_URL=connected["FREEWAY_URL"]))
             assert requests == [("/v1/conversations", "Bearer fixture-key")] * 2
             server.shutdown()
             thread.join()

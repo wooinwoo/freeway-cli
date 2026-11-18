@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/wooinwoo/freeway-cli/backend/internal/contracts"
 	"github.com/wooinwoo/freeway-cli/backend/internal/providers"
@@ -17,18 +18,32 @@ import (
 type fakeUpstream struct {
 	called  []string
 	partial bool
+	first   func(context.Context, providers.Request, func(string)) (providers.Completion, error)
+}
+
+func (f *fakeUpstream) Quota(context.Context, string) (providers.Quota, error) {
+	return providers.Quota{}, nil
 }
 
 func (f *fakeUpstream) Models(_ context.Context, id string) ([]providers.Model, error) {
-	return []providers.Model{
+	models := []providers.Model{
 		{ID: id + "/paid", Provider: id, UpstreamID: "paid", Free: false, Ready: true},
 		{ID: id + "/free", Provider: id, UpstreamID: "free", Free: true, Ready: true},
-	}, nil
+	}
+	if id == "first" {
+		for _, name := range []string{"free-alt1", "free-alt2", "free-alt3"} {
+			models = append(models, providers.Model{ID: id + "/" + name, Provider: id, UpstreamID: name, Free: true, Ready: true})
+		}
+	}
+	return models, nil
 }
 
-func (f *fakeUpstream) Stream(_ context.Context, req providers.Request, emit func(string)) (providers.Completion, error) {
+func (f *fakeUpstream) Stream(ctx context.Context, req providers.Request, emit func(string)) (providers.Completion, error) {
 	f.called = append(f.called, req.Model)
 	if req.Provider == "first" {
+		if f.first != nil {
+			return f.first(ctx, req, emit)
+		}
 		if f.partial {
 			emit("partial")
 		}
@@ -36,6 +51,54 @@ func (f *fakeUpstream) Stream(_ context.Context, req providers.Request, emit fun
 	}
 	emit("complete")
 	return providers.Completion{Provider: req.Provider, Model: req.Model, Usage: json.RawMessage(`{"total_tokens":42,"ignored":"private upstream field"}`)}, nil
+}
+
+func TestAutoOnlyRetriesAStalledProviderBeforeText(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		sendText bool
+		want     string
+	}{
+		{name: "silent provider", want: "second/free"},
+		{name: "long reply", sendText: true, want: "first/free"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vault, err := storage.Open(filepath.Join(t.TempDir(), "state"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer vault.Close()
+			ledger, err := quota.Open(vault, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upstream := &fakeUpstream{first: func(ctx context.Context, req providers.Request, emit func(string)) (providers.Completion, error) {
+				if !tc.sendText {
+					<-ctx.Done()
+					return providers.Completion{}, ctx.Err()
+				}
+				emit("first text")
+				select {
+				case <-time.After(150 * time.Millisecond):
+					return providers.Completion{Model: req.Model, Provider: req.Provider}, nil
+				case <-ctx.Done():
+					return providers.Completion{}, ctx.Err()
+				}
+			}}
+			r := New(upstream, ledger, []Source{{ID: "first", Priority: 1}, {ID: "second", Priority: 2}}, nil, nil)
+			r.firstTextWait = 50 * time.Millisecond
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			var deltas []string
+			result, err := r.Stream(ctx, contracts.CompletionRequest{Model: Auto}, func(delta contracts.TextDelta) error {
+				deltas = append(deltas, delta.Text)
+				return nil
+			})
+			if err != nil || result.Model != tc.want || len(deltas) != 1 || ledger.Today("first").Pending != 0 {
+				t.Fatalf("result=%+v deltas=%v attempts=%v err=%v", result, deltas, upstream.called, err)
+			}
+		})
+	}
 }
 
 func TestRouteSelectionAndAccounting(t *testing.T) {
@@ -63,7 +126,7 @@ func TestRouteSelectionAndAccounting(t *testing.T) {
 			upstream := &fakeUpstream{partial: tc.partial}
 			r := New(upstream, ledger, []Source{{ID: "second", Priority: 2}, {ID: "first", Priority: 1}}, nil, nil)
 			models, err := r.Models(t.Context())
-			if err != nil || len(models) != 3 || models[0].ID != Auto || models[1].ID != "first/free" {
+			if err != nil || len(models) != 6 || models[0].ID != Auto || models[1].ID != "first/free" {
 				t.Fatalf("catalog: %+v, %v", models, err)
 			}
 			var deltas []contracts.TextDelta

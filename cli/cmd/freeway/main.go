@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/charmbracelet/colorprofile"
 	"os"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/wooinwoo/freeway-cli/cli/client"
 	"github.com/wooinwoo/freeway-cli/cli/tui"
 	"github.com/wooinwoo/freeway-cli/cli/update"
@@ -53,13 +53,13 @@ func run() error {
 		if address == "" {
 			address = os.Getenv("FREEWAY_URL")
 		}
-		gateway, err := client.NewHTTP(client.Config{URL: address, APIKey: os.Getenv("FREEWAY_API_KEY")})
+		gateway, closeGateway, err := openGateway(ctx, address, os.Getenv("FREEWAY_API_KEY"))
 		if err != nil {
 			return err
 		}
 		defer func() {
 			cancel()
-			gateway.Close()
+			closeGateway()
 		}()
 		if inv.mode == "sessions" {
 			records, err := gateway.Conversations(ctx)

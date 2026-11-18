@@ -19,6 +19,7 @@ const Auto = "free/auto"
 
 type Upstream interface {
 	Models(context.Context, string) ([]providers.Model, error)
+	Quota(context.Context, string) (providers.Quota, error)
 	Stream(context.Context, providers.Request, func(string)) (providers.Completion, error)
 }
 
@@ -30,16 +31,28 @@ type Source struct {
 }
 
 type Router struct {
-	upstream Upstream
-	ledger   *quota.Ledger
-	sources  []Source
-	prefer   map[string]int
-	allowed  map[string]bool
-	active   chan struct{}
-	mu       sync.Mutex
-	reload   chan struct{}
-	fresh    time.Time
-	catalog  []route
+	upstream      Upstream
+	ledger        *quota.Ledger
+	sources       []Source
+	prefer        map[string]int
+	allowed       map[string]bool
+	active        chan struct{}
+	firstTextWait time.Duration
+	mu            sync.Mutex
+	reload        chan struct{}
+	fresh         time.Time
+	catalog       catalogSnapshot
+}
+
+type catalogSnapshot struct {
+	routes []route
+	errors map[string]error
+}
+
+type sourceDiscovery struct {
+	id     string
+	routes []route
+	err    error
 }
 
 type route struct {
@@ -48,7 +61,11 @@ type route struct {
 }
 
 func New(upstream Upstream, ledger *quota.Ledger, sources []Source, preferred, allowed []string) *Router {
-	r := &Router{upstream: upstream, ledger: ledger, sources: slices.Clone(sources), prefer: map[string]int{}, allowed: map[string]bool{}, active: make(chan struct{}, 4)}
+	r := &Router{
+		upstream: upstream, ledger: ledger, sources: slices.Clone(sources),
+		prefer: map[string]int{}, allowed: map[string]bool{},
+		active: make(chan struct{}, 4), firstTextWait: 35 * time.Second,
+	}
 	for i, id := range preferred {
 		if _, exists := r.prefer[id]; !exists {
 			r.prefer[id] = i
@@ -61,14 +78,14 @@ func New(upstream Upstream, ledger *quota.Ledger, sources []Source, preferred, a
 }
 
 func (r *Router) Models(ctx context.Context) ([]contracts.Model, error) {
-	routes, err := r.discover(ctx)
+	catalog, err := r.discover(ctx, false)
 	if err != nil {
 		return nil, err
 	}
-	models := make([]contracts.Model, 0, 1+len(routes))
+	models := make([]contracts.Model, 0, 1+len(catalog.routes))
 	readiness := make(map[string]bool, len(r.sources))
 	anyReady := false
-	for _, candidate := range routes {
+	for _, candidate := range catalog.routes {
 		ready, checked := readiness[candidate.source.ID]
 		if !checked {
 			ready = r.ledger.Available(candidate.source.ID, candidate.source.Limits, 1) == nil
@@ -83,10 +100,10 @@ func (r *Router) Models(ctx context.Context) ([]contracts.Model, error) {
 	return models, nil
 }
 
-func (r *Router) discover(ctx context.Context) ([]route, error) {
+func (r *Router) discover(ctx context.Context, refresh bool) (catalogSnapshot, error) {
 	for {
 		r.mu.Lock()
-		if time.Now().Before(r.fresh) {
+		if !refresh && time.Now().Before(r.fresh) {
 			catalog := r.catalog
 			r.mu.Unlock()
 			return catalog, nil
@@ -95,8 +112,9 @@ func (r *Router) discover(ctx context.Context) ([]route, error) {
 			r.mu.Unlock()
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return catalogSnapshot{}, ctx.Err()
 			case <-pending:
+				refresh = false
 				continue
 			}
 		}
@@ -105,7 +123,11 @@ func (r *Router) discover(ctx context.Context) ([]route, error) {
 		catalog := r.refresh(ctx)
 		r.mu.Lock()
 		if ctx.Err() == nil {
-			r.catalog, r.fresh = catalog, time.Now().Add(15*time.Second)
+			ttl := 15 * time.Second
+			if len(catalog.routes) == 0 {
+				ttl = 2 * time.Second
+			}
+			r.catalog, r.fresh = catalog, time.Now().Add(ttl)
 		}
 		close(r.reload)
 		r.reload = nil
@@ -114,10 +136,10 @@ func (r *Router) discover(ctx context.Context) ([]route, error) {
 	}
 }
 
-func (r *Router) refresh(ctx context.Context) []route {
+func (r *Router) refresh(ctx context.Context) catalogSnapshot {
 	ctx, cancel := context.WithTimeout(ctx, 7*time.Second)
 	defer cancel()
-	completed := make(chan []route, len(r.sources))
+	completed := make(chan sourceDiscovery, len(r.sources))
 	for _, source := range r.sources {
 		go func() {
 			models, err := r.upstream.Models(ctx, source.ID)
@@ -135,16 +157,20 @@ func (r *Router) refresh(ctx context.Context) []route {
 					found = append(found, route{source: source, model: model})
 				}
 			}
-			completed <- found
+			completed <- sourceDiscovery{id: source.ID, routes: found, err: err}
 		}()
 	}
-	var routes []route
+	catalog := catalogSnapshot{errors: make(map[string]error, len(r.sources))}
 	for range r.sources {
 		// Adapters honor cancellation. Waiting for each call also bounds concurrent discovery.
-		routes = append(routes, (<-completed)...)
+		result := <-completed
+		catalog.routes = append(catalog.routes, result.routes...)
+		if result.err != nil {
+			catalog.errors[result.id] = result.err
+		}
 	}
-	slices.SortFunc(routes, r.compare)
-	return routes
+	slices.SortFunc(catalog.routes, r.compare)
+	return catalog
 }
 
 func (r *Router) compare(a, b route) int {

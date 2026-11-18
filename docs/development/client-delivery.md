@@ -43,7 +43,7 @@ Run native CLI and provider tests with real vendor probes disabled, then run pro
 
 ## Remaining backend and release boundaries
 
-The common Go gateway is not implemented; connected conversations were verified against deterministic local fixtures. Actual API access for every vendor was not re-probed. macOS execution, Windows interactive TUI behavior, Windows removal after prolonged competing executable locks, Windows arm64 execution, and signing remain separate verification. Release publication, public hosting, and the production documentation domain were not performed. The static site's default sitemap integration skips generation until a public `site` URL is configured. Default Starlight translation/404 fallbacks are used.
+The original client handoff verified connected conversations against deterministic fixtures. The current package bundles the implemented Go gateway. The Windows amd64 package test now starts that gateway and checks authentication and encrypted draft recovery across a restart. See the [current architecture](architecture.md) for gateway responsibilities. Actual API access for every vendor was not re-probed. macOS execution, Windows interactive TUI behavior, Windows removal after prolonged competing executable locks, Windows arm64 execution, and signing remain separate verification. Release publication, public hosting, and the production documentation domain were not performed. The static site's default sitemap integration skips generation until a public `site` URL is configured. Default Starlight translation/404 fallbacks are used.
 
 ## Additional direct evidence — 2026-11-18
 

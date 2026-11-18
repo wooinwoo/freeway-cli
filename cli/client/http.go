@@ -26,6 +26,15 @@ type Model struct {
 	Ready  bool   `json:"ready"`
 }
 
+type ProviderStatus struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	KeyConfigured bool   `json:"keyConfigured"`
+	State         string `json:"state"`
+	FreeModels    int    `json:"freeModels"`
+	RetryAfter    int    `json:"retryAfter,omitempty"`
+}
+
 type Message struct {
 	ID      string       `json:"id,omitempty"`
 	Role    string       `json:"role"`
@@ -49,13 +58,15 @@ type Config struct {
 	URL        string
 	APIKey     string
 	HTTPClient *http.Client
+	Managed    bool
 }
 
 // HTTP connects only to an authenticated loopback gateway. It owns no user storage or routing policy.
 type HTTP struct {
-	base   string
-	key    string
-	client *http.Client
+	base    string
+	key     string
+	client  *http.Client
+	managed bool
 }
 
 func NewHTTP(config Config) (*HTTP, error) {
@@ -94,14 +105,35 @@ func NewHTTP(config Config) (*HTTP, error) {
 	}
 	copyClient := *c
 	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &HTTP{base: strings.TrimRight(u.String(), "/"), key: config.APIKey, client: &copyClient}, nil
+	return &HTTP{base: strings.TrimRight(u.String(), "/"), key: config.APIKey, client: &copyClient, managed: config.Managed}, nil
 }
 
 func (c *HTTP) Close() { c.client.CloseIdleConnections() }
 
+// Lease keeps an automatically started gateway alive until this client exits.
+func (c *HTTP) Lease(ctx context.Context) (func(), error) {
+	ctx, cancel := context.WithCancel(ctx)
+	startup := time.AfterFunc(5*time.Second, cancel)
+	response, err := c.request(ctx, http.MethodGet, "/v1/lease", nil)
+	timely := startup.Stop()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	if !timely || response.StatusCode != http.StatusOK || response.Header.Get("X-Freeway-API") != "1" {
+		cancel()
+		response.Body.Close()
+		return nil, errors.New("the local gateway did not acknowledge the connection")
+	}
+	return func() {
+		cancel()
+		_ = response.Body.Close()
+	}, nil
+}
+
 func (c *HTTP) request(ctx context.Context, method, path string, body any) (*http.Response, error) {
 	if c.key == "" {
-		return nil, &GatewayError{Message: "Set FREEWAY_API_KEY to the local gateway's client key. The Go backend is required for connected mode.", Code: "gateway_auth_required", Status: 401}
+		return nil, &GatewayError{Message: "Set FREEWAY_API_KEY to the selected gateway's client key.", Code: "gateway_auth_required", Status: 401}
 	}
 	var data []byte
 	var err error
@@ -125,7 +157,7 @@ func (c *HTTP) request(ctx context.Context, method, path string, body any) (*htt
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, &GatewayError{Message: "Cannot reach the local Go gateway. Start freewayd or check FREEWAY_URL.", Code: "gateway_unavailable", Status: 503}
+		return nil, &GatewayError{Message: "Cannot reach the local gateway. Check FREEWAY_URL or reopen Freeway.", Code: "gateway_unavailable", Status: 503}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer resp.Body.Close()
@@ -164,10 +196,27 @@ func (c *HTTP) json(ctx context.Context, method, path string, body, out any) err
 }
 
 func (c *HTTP) Models(ctx context.Context) ([]Model, error) {
+	models, err := c.readyModels(ctx, "/v1/models")
+	if err == nil && len(models) == 0 {
+		err = &GatewayError{Message: "No free models are ready. Press F4 to check providers.", Code: "no_free_models", Status: 503}
+	}
+	return models, err
+}
+
+func (c *HTTP) CanOpenCode() bool { return c.managed }
+
+func (c *HTTP) OpenCodeModels(ctx context.Context) ([]Model, error) {
+	if !c.managed {
+		return nil, openCodeRequiresLocal()
+	}
+	return c.readyModels(ctx, "/v1/local/opencode/models")
+}
+
+func (c *HTTP) readyModels(ctx context.Context, endpoint string) ([]Model, error) {
 	var result struct {
 		Data []Model `json:"data"`
 	}
-	if err := c.json(ctx, "GET", "/v1/models", nil, &result); err != nil {
+	if err := c.json(ctx, "GET", endpoint, nil, &result); err != nil {
 		return nil, err
 	}
 	models := []Model{}
@@ -176,10 +225,19 @@ func (c *HTTP) Models(ctx context.Context) ([]Model, error) {
 			models = append(models, model)
 		}
 	}
-	if len(models) == 0 {
-		return nil, &GatewayError{Message: "No free models are ready. Connect a provider in the gateway and retry.", Code: "no_free_models", Status: 503}
-	}
 	return models, nil
+}
+
+func openCodeRequiresLocal() error {
+	return &GatewayError{Message: "OpenCode is available through the automatically started Freeway gateway.", Code: "local_client_required", Status: 403}
+}
+
+func (c *HTTP) ProviderStatuses(ctx context.Context) ([]ProviderStatus, error) {
+	var result struct {
+		Data []ProviderStatus `json:"data"`
+	}
+	err := c.json(ctx, "GET", "/v1/providers", nil, &result)
+	return result.Data, err
 }
 
 func (c *HTTP) Conversations(ctx context.Context) ([]ConversationSummary, error) {
@@ -284,7 +342,14 @@ func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []
 		MaxTokens   int      `json:"max_tokens"`
 		Temperature float64  `json:"temperature"`
 	}{model, prompts, true, settings.MaxTokens, settings.Temperature}
-	resp, err := c.request(ctx, "POST", "/v1/chat/completions", body)
+	endpoint := "/v1/chat/completions"
+	if strings.HasPrefix(model, "opencode/") {
+		if !c.managed {
+			return openCodeRequiresLocal()
+		}
+		endpoint = "/v1/local/opencode/chat/completions"
+	}
+	resp, err := c.request(ctx, "POST", endpoint, body)
 	if err != nil {
 		return err
 	}
@@ -306,9 +371,10 @@ func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []
 			Provider string `json:"provider"`
 			Usage    *Usage `json:"usage"`
 			Error    *struct {
-				Message string `json:"message"`
-				Code    string `json:"code"`
-				Status  int    `json:"status"`
+				Message    string `json:"message"`
+				Code       string `json:"code"`
+				Status     int    `json:"status"`
+				RetryAfter int    `json:"retryAfter"`
 			} `json:"error"`
 			Choices []struct {
 				Delta struct {
@@ -320,7 +386,7 @@ func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []
 			return errors.New("invalid gateway stream event")
 		}
 		if chunk.Error != nil {
-			return &GatewayError{Message: chunk.Error.Message, Code: chunk.Error.Code, Status: chunk.Error.Status}
+			return &GatewayError{Message: chunk.Error.Message, Code: chunk.Error.Code, Status: chunk.Error.Status, RetryAfter: chunk.Error.RetryAfter}
 		}
 		if chunk.Model != "" {
 			final.Model = chunk.Model
@@ -346,28 +412,33 @@ func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []
 	}
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 4096), MaxBody)
-	var lines []string
+	var event strings.Builder
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
-			if len(lines) > 0 {
-				if err := consume(strings.Join(lines, "\n")); err != nil {
+			if event.Len() > 0 {
+				if err := consume(strings.TrimSuffix(event.String(), "\n")); err != nil {
 					return err
 				}
-				lines = nil
+				event.Reset()
 				if finished {
 					break
 				}
 			}
 		} else if strings.HasPrefix(line, "data:") {
-			lines = append(lines, strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
+			value := strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " ")
+			if event.Len()+len(value)+1 > MaxBody {
+				return errors.New("gateway stream event exceeds 8 MB")
+			}
+			event.WriteString(value)
+			event.WriteByte('\n')
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return err
 	}
-	if !finished && len(lines) > 0 {
-		if err := consume(strings.Join(lines, "\n")); err != nil {
+	if !finished && event.Len() > 0 {
+		if err := consume(strings.TrimSuffix(event.String(), "\n")); err != nil {
 			return err
 		}
 	}

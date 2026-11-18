@@ -3,10 +3,10 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"github.com/wooinwoo/freeway-cli/cli/client"
 )
@@ -58,6 +58,10 @@ func (m Model) receiveModels(msg modelsLoaded) (tea.Model, tea.Cmd) {
 	m.loadingModels = false
 	var cmd tea.Cmd
 	if msg.err != nil {
+		if isOpenCodeModel(m.selected) {
+			m.ready = false
+			return m, nil
+		}
 		m.status, m.notice = "Connection needs attention", friendlyError(msg.err)
 		m.ready = false
 		if m.reconnectAttempts < 2 {
@@ -67,17 +71,14 @@ func (m Model) receiveModels(msg modelsLoaded) (tea.Model, tea.Cmd) {
 		}
 	} else {
 		m.availableModels = append([]client.Model(nil), msg.models...)
-		items := make([]list.Item, 0, len(msg.models))
-		for _, model := range msg.models {
-			items = append(items, modelItem(model))
-		}
+		items := m.modelPickerItems()
 		if m.modelsFocused && m.menu == "models" {
 			m.menuAll = items
 			cmd = m.applyMenuFilter()
 		} else if !m.modelsFocused {
 			cmd = m.models.list.SetItems(items)
 		}
-		m.ready = len(items) > 0
+		m.ready = len(msg.models) > 0
 		m.status, m.notice = "Ready", ""
 		m.reconnectAttempts = 0
 		m.ensureSelected()
@@ -166,7 +167,7 @@ func (m Model) beginGeneration() (tea.Model, tea.Cmd) {
 			return backend.Stream(ctx, selected, request, callback)
 		}
 		err := stream(model)
-		if err != nil && ctx.Err() == nil && !hasOutput && !complete && model != "free/auto" && canRecover(err) {
+		if err != nil && ctx.Err() == nil && !hasOutput && !complete && model != "free/auto" && !isOpenCodeModel(model) && canRecover(err) {
 			emit(client.Event{Type: "fallback"})
 			err = stream("free/auto")
 		}
@@ -199,7 +200,7 @@ func (m Model) receiveResponse(msg responseEvent) (tea.Model, tea.Cmd) {
 	if !m.busy || msg.generation != m.generation {
 		return m, nil
 	}
-	follow := m.chat.AtBottom()
+	follow := m.find == nil && m.chat.AtBottom()
 	switch msg.event.Type {
 	case "text":
 		if len(m.messages) == 0 || m.messages[len(m.messages)-1].Role != "assistant" {
@@ -274,6 +275,11 @@ func (m *Model) stopResponse() {
 func canRecover(err error) bool {
 	var gateway *client.GatewayError
 	if errors.As(err, &gateway) {
+		switch gateway.Code {
+		case "gateway_busy", "gateway_unavailable", "gateway_auth_required", "invalid_api_key", "local_only",
+			"usage_storage_failed", "response_too_large", "upstream_timeout":
+			return false
+		}
 		return gateway.Status == 401 || gateway.Status == 403 || gateway.Status == 404 || gateway.Status == 429 || gateway.Status >= 500
 	}
 	return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
@@ -285,14 +291,33 @@ func friendlyError(err error) string {
 		switch {
 		case gateway.Code == "chat_conflict":
 			return "This conversation changed in another window. Export your work, then reopen it with Alt+H."
+		case gateway.Code == "chat_storage_failed" || gateway.Code == "usage_storage_failed":
+			return terminalSafe(gateway.Message)
+		case gateway.Code == "gateway_busy":
+			return "All gateway response slots are in use. Press Alt+R when another response finishes."
+		case gateway.Code == "provider_connection_required":
+			return "This provider needs a valid free-account connection. Press F4 to check providers, or use /auto."
+		case gateway.Code == "model_unavailable":
+			return "This model is no longer available. Press F2 to pick another, or use /auto."
+		case gateway.Code == "upstream_timeout" || gateway.Code == "upstream_first_text_timeout":
+			return "The provider timed out. Press Alt+R to retry, or use /auto."
+		case gateway.Code == "response_too_large":
+			return "The reply exceeded the gateway's size limit. Ask for a shorter reply or lower the /settings response limit."
+		case gateway.Status == 429 && gateway.RetryAfter > 0:
+			wait := time.Duration(min(gateway.RetryAfter, 86400)) * time.Second
+			return fmt.Sprintf("Free usage is temporarily limited. Try again in %s with Alt+R.", wait)
 		case gateway.Status == 429 || strings.Contains(gateway.Code, "limit"):
 			return "Free usage is temporarily limited. Try again later with Alt+R."
-		case gateway.Code == "provider_not_ready" || gateway.Code == "no_free_models":
-			return "No models are available right now. Your draft is safe. Use /reconnect to try again."
+		case gateway.Code == "provider_not_ready" || gateway.Code == "no_free_models" || gateway.Code == "no_eligible_free_route":
+			return "No free models are ready. Press F4 to check providers, or use /reconnect."
+		case gateway.Code == "gateway_unavailable" || gateway.Code == "gateway_auth_required" || gateway.Code == "invalid_api_key" || gateway.Code == "local_only" || gateway.Code == "local_client_required":
+			return terminalSafe(gateway.Message)
 		case gateway.Status == 401 || gateway.Status == 403:
 			return "This connection needs a login. Use /auto to try another free connection."
 		case gateway.Status >= 500:
 			return "The model connection is unstable. Press Alt+R to retry, or choose /auto."
+		case gateway.Status == 413:
+			return "The conversation and attachments exceed the provider's input limit. Start a new conversation with Alt+N or detach files."
 		case gateway.Status == 400:
 			return "Check your message length or start a new conversation with Alt+N. Your work is still here."
 		}

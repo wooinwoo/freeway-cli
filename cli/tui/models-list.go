@@ -40,7 +40,7 @@ func (d modelItemDelegate) Render(w io.Writer, m list.Model, index int, item lis
 	}
 	nameWidth := menuNameWidth(m.Width())
 	prefix := fmt.Sprintf("%s%2d. ", marker, index+1)
-	row := prefix + padCells(terminalSafe(i.Name), nameWidth) + "  " + terminalSafe(i.Detail)
+	row := prefix + padCells(oneLine(i.Name), nameWidth) + "  " + oneLine(i.Detail)
 	fmt.Fprint(w, style.MaxWidth(m.Width()).Render(padCells(ansi.Truncate(row, m.Width(), "…"), m.Width())))
 }
 

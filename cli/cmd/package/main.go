@@ -23,6 +23,12 @@ import (
 	"github.com/wooinwoo/freeway-cli/cli/update"
 )
 
+var programs = []struct{ module, command, name string }{
+	{"cli", "./cmd/freeway", "freeway"},
+	{"backend", "./cmd/providerctl", "freeway-providers"},
+	{"backend", "./cmd/freewayd", "freewayd"},
+}
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -99,13 +105,13 @@ func run() error {
 		for name, data := range common {
 			files[name] = data
 		}
-		for _, binary := range []struct{ module, path, name string }{{"cli", "./cmd/freeway", "freeway"}, {"backend", "./cmd/providerctl", "freeway-providers"}} {
+		for _, binary := range programs {
 			name := binary.name
 			if goos == "windows" {
 				name += ".exe"
 			}
 			output := filepath.Join(build, name)
-			cmd := exec.Command(*goBin, "-C", filepath.Join(root, binary.module), "build", "-trimpath", "-buildvcs=false", "-ldflags", "-s -w -X main.version="+version, "-o", output, binary.path)
+			cmd := exec.Command(*goBin, "-C", filepath.Join(root, binary.module), "build", "-trimpath", "-buildvcs=false", "-ldflags", "-s -w -X main.version="+version, "-o", output, binary.command)
 			cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+goos, "GOARCH="+arch)
 			cmd.Stderr = os.Stderr
 			if err = cmd.Run(); err != nil {
@@ -167,8 +173,8 @@ func licenses(goBin, root string, files map[string][]byte, goos, arch string) er
 		Path, Version, Dir string
 		Main               bool
 	}
-	for _, entry := range []struct{ name, command string }{{"cli", "./cmd/freeway"}, {"backend", "./cmd/providerctl"}} {
-		cmd = exec.Command(goBin, "-C", filepath.Join(root, entry.name), "list", "-buildvcs=false", "-deps", "-json", entry.command)
+	for _, entry := range programs {
+		cmd = exec.Command(goBin, "-C", filepath.Join(root, entry.module), "list", "-buildvcs=false", "-deps", "-json", entry.command)
 		cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+goos, "GOARCH="+arch)
 		cmd.Stderr = os.Stderr
 		data, err = cmd.Output()
@@ -255,7 +261,7 @@ func archive(files map[string][]byte, windows bool) ([]byte, error) {
 		w := tar.NewWriter(g)
 		for _, name := range names {
 			mode := int64(0644)
-			if name == "freeway" || name == "freeway-providers" {
+			if name == "freeway" || name == "freeway-providers" || name == "freewayd" {
 				mode = 0755
 			}
 			if err := w.WriteHeader(&tar.Header{Name: name, Mode: mode, Size: int64(len(files[name])), Typeflag: tar.TypeReg, ModTime: time.Unix(0, 0)}); err != nil {
