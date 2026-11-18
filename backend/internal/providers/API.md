@@ -43,6 +43,8 @@ type CredentialStore interface {
 
 Load의 미등록 업체는 영값과 nil입니다. 저장된 Key가 없으면 업체의 환경변수를 읽습니다. Save의 원자성·암호화·접근 제어는 저장소 구현이 담당합니다. Key는 JSON 직렬화에서 제외하므로 Credential 전체를 단순 JSON 저장하는 방식으로 구현하지 않습니다.
 
+저장소가 `CompareAndSwap(context.Context, string, Credential, Credential) error`도 구현하면 Authenticate는 읽은 원본과 현재 저장 값을 비교한 뒤 변경합니다. 두 Credential 인수는 각각 원본과 새 값입니다. 값이 달라졌으면 `credential_conflict`·HTTP 409를 반환하며 오래된 키나 무료 확인을 복원하지 않습니다. 비교와 저장은 하나의 잠금·트랜잭션 안에서 처리해야 합니다. 기본 메모리·파일 저장소는 이 메서드를 제공합니다. Load·Save만 구현한 외부 저장소는 기존 호환 경로를 사용하므로 백엔드가 동시 인증 변경을 직렬화해야 합니다.
+
 NewFileCredentials(dir)는 독립 CLI·예제용 선택형 구현입니다. 전용 디렉터리의 AES-256-GCM 암호문과 별도 개인 키를 사용하고 다른 업체 값을 보존하며 원자적으로 저장합니다. 기존 Node 저장소는 읽거나 변경하지 않습니다. 실제 백엔드는 공통 비밀 저장소를 위 인터페이스로 연결할 수 있습니다.
 
 ## 메서드

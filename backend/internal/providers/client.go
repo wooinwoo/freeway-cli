@@ -197,9 +197,17 @@ func (c *Client) Authenticate(ctx context.Context, id string, options AuthOption
 	if d.RequiresCLI && options.Key != "" {
 		return result, failure("cli_login_required", 409)
 	}
-	value, err := c.credential(ctx, d)
+	previous, err := c.config.Credentials.Load(ctx, d.ID)
 	if err != nil {
-		return result, err
+		if ctx.Err() != nil {
+			return result, ctx.Err()
+		}
+		return result, failure("credential_store_failed", 500)
+	}
+	value := previous
+	if value.Key == "" {
+		value.Key = os.Getenv(d.Env)
+		value.FreeConfirmed = false
 	}
 	if options.Key != "" {
 		if len(options.Key) > 4096 || !utf8.ValidString(options.Key) || strings.TrimSpace(options.Key) == "" || strings.IndexFunc(options.Key, unicode.IsControl) >= 0 {
@@ -212,9 +220,20 @@ func (c *Client) Authenticate(ctx context.Context, id string, options AuthOption
 		value.FreeConfirmed = true
 	}
 	if options.Key != "" || options.ConfirmFree {
-		if err = c.config.Credentials.Save(ctx, id, value); err != nil {
+		if store, ok := c.config.Credentials.(interface {
+			CompareAndSwap(context.Context, string, Credential, Credential) error
+		}); ok {
+			err = store.CompareAndSwap(ctx, id, previous, value)
+		} else {
+			err = c.config.Credentials.Save(ctx, id, value)
+		}
+		if err != nil {
 			if ctx.Err() != nil {
 				return result, ctx.Err()
+			}
+			var typed *Error
+			if errors.As(err, &typed) && typed.Code == "credential_conflict" {
+				return result, failure("credential_conflict", 409)
 			}
 			return result, failure("credential_store_failed", 500)
 		}
@@ -471,6 +490,19 @@ func (m *memoryCredentials) Save(ctx context.Context, id string, value Credentia
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.values[id] = value
+	return nil
+}
+
+func (m *memoryCredentials) CompareAndSwap(ctx context.Context, id string, previous, value Credential) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.values[id] != previous {
+		return failure("credential_conflict", 409)
+	}
 	m.values[id] = value
 	return nil
 }

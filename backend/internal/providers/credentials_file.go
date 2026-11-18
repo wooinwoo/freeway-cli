@@ -88,6 +88,15 @@ func (s *fileCredentials) Load(ctx context.Context, id string) (Credential, erro
 }
 
 func (s *fileCredentials) Save(ctx context.Context, id string, value Credential) error {
+	return s.save(ctx, id, value, nil)
+}
+
+// CompareAndSwap rejects stale authentication updates while holding the cross-process writer lock.
+func (s *fileCredentials) CompareAndSwap(ctx context.Context, id string, previous, value Credential) error {
+	return s.save(ctx, id, value, &previous)
+}
+
+func (s *fileCredentials) save(ctx context.Context, id string, value Credential, previous *Credential) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -121,6 +130,12 @@ func (s *fileCredentials) Save(ctx context.Context, id string, value Credential)
 	vault, key, err := s.read()
 	if err != nil {
 		return err
+	}
+	if previous != nil {
+		current := vault.Providers[id]
+		if current.Key != previous.Key || current.FreeConfirmed != previous.FreeConfirmed {
+			return failure("credential_conflict", 409)
+		}
 	}
 	if key == nil {
 		key = make([]byte, 32)
