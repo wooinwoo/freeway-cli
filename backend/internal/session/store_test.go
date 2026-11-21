@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -31,7 +32,7 @@ func openStore(t *testing.T, path string) (*Store, *storage.Vault) {
 func TestOversizedWireResponseDoesNotAdvanceRevision(t *testing.T) {
 	s, vault := openStore(t, filepath.Join(t.TempDir(), "state"))
 	defer vault.Close()
-	chat, err := s.Create(testChat())
+	chat, err := s.Create(testChat(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +42,7 @@ func TestOversizedWireResponseDoesNotAdvanceRevision(t *testing.T) {
 	for i := range candidate.Messages {
 		candidate.Messages[i] = contracts.Message{ID: "large", Role: "user", Content: content, Status: "done"}
 	}
-	if _, err := s.Update(chat.ID, candidate); !errors.Is(err, ErrInvalid) {
+	if _, err := s.Update(chat.ID, candidate, ""); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("oversized response was not refused: %v", err)
 	}
 	got, err := s.Get(chat.ID)
@@ -66,7 +67,7 @@ func testChat() contracts.Conversation {
 func TestConversationRestartAndRevision(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state")
 	s, vault := openStore(t, path)
-	chat, err := s.Create(testChat())
+	chat, err := s.Create(testChat(), "")
 	if err != nil || chat.Revision != 1 || chat.ID == "" {
 		t.Fatalf("create: %+v, %v", chat, err)
 	}
@@ -94,7 +95,7 @@ func TestConversationRestartAndRevision(t *testing.T) {
 		wg.Go(func() {
 			candidate := restored
 			candidate.Title = title
-			_, err := s.Update(candidate.ID, candidate)
+			_, err := s.Update(candidate.ID, candidate, "")
 			results <- err
 		})
 	}
@@ -124,7 +125,7 @@ func TestRejectedWritePreservesConversation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state")
 	s, vault := openStore(t, path)
 	t.Cleanup(func() { _ = vault.Close() })
-	chat, err := s.Create(testChat())
+	chat, err := s.Create(testChat(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +135,7 @@ func TestRejectedWritePreservesConversation(t *testing.T) {
 	}
 	candidate := chat
 	candidate.Title = "unsaved replacement"
-	if _, err := s.Update(chat.ID, candidate); err == nil {
+	if _, err := s.Update(chat.ID, candidate, ""); err == nil {
 		t.Fatal("unsafe file permitted update")
 	}
 	if err := os.Chmod(file, 0600); err != nil {
@@ -144,7 +145,110 @@ func TestRejectedWritePreservesConversation(t *testing.T) {
 	if err != nil || after.Title != chat.Title || after.Revision != 1 {
 		t.Fatalf("digest changed on failure: %+v, %v", after, err)
 	}
-	if _, err := s.Update(chat.ID, candidate); err != nil {
+	if _, err := s.Update(chat.ID, candidate, ""); err != nil {
 		t.Fatalf("retry from original revision failed: %v", err)
+	}
+}
+
+func TestSaveReplaySurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state")
+	s, vault := openStore(t, path)
+	original := testChat()
+	created, err := s.Create(original, "fixture-create-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := created
+	edited.Draft = "updated draft"
+	updated, err := s.Update(created.ID, edited, "fixture-update-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := vault.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, vault = openStore(t, path)
+	defer vault.Close()
+	replayedCreate, err := s.Create(original, "fixture-create-key")
+	if err != nil || replayedCreate.ID != created.ID || replayedCreate.Revision != 1 || len(s.List()) != 1 {
+		t.Fatalf("create replay: %+v %v", replayedCreate, err)
+	}
+	replayedUpdate, err := s.Update(created.ID, edited, "fixture-update-key")
+	if err != nil || replayedUpdate.Revision != updated.Revision || replayedUpdate.Draft != edited.Draft {
+		t.Fatalf("update replay: %+v %v", replayedUpdate, err)
+	}
+	edited.Draft = "different payload"
+	if _, err := s.Update(created.ID, edited, "fixture-update-key"); !errors.Is(err, ErrKeyReuse) {
+		t.Fatalf("reused key accepted new data: %v", err)
+	}
+	if _, err := s.Update(created.ID, edited, "another-update-key"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale update was accepted: %v", err)
+	}
+}
+
+func TestUnreadableConversationDoesNotBlockOthers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state")
+	s, vault := openStore(t, path)
+	broken, err := s.Create(testChat(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := s.Create(testChat(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := vault.Close(); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(path, filename(broken.ID))
+	if err := os.Truncate(file, 12); err != nil {
+		t.Fatal(err)
+	}
+	s, vault = openStore(t, path)
+	defer vault.Close()
+	if got, err := s.Get(valid.ID); err != nil || got.ID != valid.ID {
+		t.Fatalf("could not read healthy chat: %+v %v", got, err)
+	}
+	if _, err := s.Get(broken.ID); !errors.Is(err, ErrUnreadable) {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	if rows := s.List(); len(rows) != 2 || !rows[1].Damaged || rows[1].ID != broken.ID {
+		t.Fatalf("damaged chat missing from the recovery list: %+v", rows)
+	}
+	if _, err := s.Update(broken.ID, broken, ""); !errors.Is(err, ErrUnreadable) {
+		t.Fatalf("unexpected write to damaged record: %v", err)
+	}
+	if info, err := os.Stat(file); err != nil || info.Size() != 12 {
+		t.Fatalf("damaged record was changed: %v %v", info, err)
+	}
+}
+
+func TestExplicitContextSurvivesReopeningAndRejectsAnOmittingWriter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state")
+	s, vault := openStore(t, path)
+	original := testChat()
+	original.Context = &contracts.ContextSelection{RecentTurns: 3, IncludePriorAttachments: true,
+		ExcludedPriorFiles: []string{"notes/private.txt", "file with spaces.md"}}
+	created, err := s.Create(original, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := vault.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, vault = openStore(t, path)
+	defer vault.Close()
+	got, err := s.Get(created.ID)
+	if err != nil || got.Context == nil || got.Context.RecentTurns != original.Context.RecentTurns ||
+		!got.Context.IncludePriorAttachments || !slices.Equal(got.Context.ExcludedPriorFiles, original.Context.ExcludedPriorFiles) {
+		t.Fatalf("context did not round-trip: %+v %v", got.Context, err)
+	}
+	got.Context = nil
+	if _, err := s.Update(created.ID, got, ""); !errors.Is(err, ErrContextRequired) {
+		t.Fatalf("omitting writer removed context settings: %v", err)
+	}
+	got.Context = &contracts.ContextSelection{RecentTurns: -1, IncludePriorAttachments: true}
+	if reset, err := s.Update(created.ID, got, ""); err != nil || len(reset.Context.ExcludedPriorFiles) > 0 {
+		t.Fatalf("explicit reset failed: %v", err)
 	}
 }

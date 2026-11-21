@@ -16,7 +16,17 @@ During generation, write a follow-up and press **Tab** or **Enter** to queue it.
 
 ## Stop and retry
 
+The composer shows an estimated reply length when the current prompt and conversation approach the local token allowance. Press **F5** to retry once when the gateway offers a shorter reply. Use `/settings` to change the default length.
+
 **Esc** stops the response while keeping your next draft. **Alt+R** regenerates the last question. Regeneration is disabled during session loading.
+
+## Review what will be sent
+
+Press **F8** or run `/context` to review the earlier questions and attachments included with the next draft. Press Enter on the earlier-turns row to cycle through all turns, the last eight, the last three, and the current question only. Use a command such as `/context last 2` for a custom count.
+
+Select a file in **F8** and press Enter to exclude or include earlier copies of that path. **Clear file exclusions** restores all individual choices. Use the earlier-attachments row or `/context attachments off` to turn off all earlier files while keeping those choices.
+
+Files attached to the current question stay in the request. Alt+R and F5 include the attachments of the question being retried. Freeway saves the settings per conversation and keeps the original messages and attachments in history.
 
 If a selected route fails before output, the client may retry through Auto and shows a notice. Once output starts, it preserves the partial response and reports the error. Failed and stopped assistant messages are excluded from later model context.
 

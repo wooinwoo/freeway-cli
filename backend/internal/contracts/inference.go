@@ -9,20 +9,22 @@ import (
 )
 
 type Model struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Detail string `json:"detail,omitempty"`
-	Free   bool   `json:"free"`
-	Ready  bool   `json:"ready"`
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	Detail               string `json:"detail,omitempty"`
+	Free                 bool   `json:"free"`
+	Ready                bool   `json:"ready"`
+	LocalTokensRemaining *int   `json:"localTokensRemaining,omitempty"`
 }
 
 type ProviderStatus struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	KeyConfigured bool   `json:"keyConfigured"`
-	State         string `json:"state"`
-	FreeModels    int    `json:"freeModels"`
-	RetryAfter    int    `json:"retryAfter,omitempty"`
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	KeyConfigured        bool   `json:"keyConfigured"`
+	State                string `json:"state"`
+	FreeModels           int    `json:"freeModels"`
+	RetryAfter           int    `json:"retryAfter,omitempty"`
+	LocalTokensRemaining *int   `json:"localTokensRemaining,omitempty"`
 }
 
 type InputMessage struct {
@@ -69,10 +71,11 @@ type TextDelta struct {
 
 // Problem is safe to send to clients. Upstream diagnostics must be translated to this type.
 type Problem struct {
-	Code       string `json:"code"`
-	Message    string `json:"message"`
-	Status     int    `json:"status"`
-	RetryAfter int    `json:"retryAfter,omitempty"`
+	Code            string `json:"code"`
+	Message         string `json:"message"`
+	Status          int    `json:"status"`
+	RetryAfter      int    `json:"retryAfter,omitempty"`
+	MaxOutputTokens *int   `json:"maxOutputTokens,omitempty"`
 }
 
 func (p *Problem) Error() string { return p.Message }

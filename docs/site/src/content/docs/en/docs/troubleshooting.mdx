@@ -4,7 +4,7 @@ description: Separate local connection, account, and upstream problems.
 ---
 ## Cannot reach the gateway
 
-Reopen Freeway to reconnect to its bundled gateway. If you set `FREEWAY_URL` for a custom connection, check its loopback address and `FREEWAY_API_KEY`. Use `freeway --preview` to open the interface offline.
+Use `/reconnect` to rediscover the bundled gateway from an open conversation. If you set `FREEWAY_URL` for a custom connection, check its loopback address and `FREEWAY_API_KEY`. Use `freeway --preview` to open the interface offline.
 
 ## Login or key required
 
@@ -18,15 +18,15 @@ Inspect the current model list and `freeway providers quota all`. Setup, catalog
 
 ## Response stopped or incomplete
 
-Partial answers stay incomplete and are excluded from future model context. Check availability and use Alt+R. A response never silently switches models after output begins.
+Partial answers stay incomplete and are excluded from future model context. Press **Alt+R** to retry the selected model. To send the request to Auto, use `/auto` and then press **Alt+R**.
 
 ## Another window changed the conversation
 
-Export this window's work and reopen the saved session. Revision conflicts protect the newer stored version.
+Choose the saved session again and press **F6** to preserve this window's work in a recovery file. Revision conflicts protect the newer stored version.
 
 ## Cannot save
 
-Retry `/save`, or use `/export backup.md` for a plaintext copy including attachments and unfinished work. Check gateway storage permissions and disk space.
+Use `/save` to retry a temporary error. If the conversation exceeds the save limit, press **F6** to keep a plaintext recovery file with attachments and drafts. If history marks a conversation as `Conversation needs recovery`, keep its original file and restore it from a backup.
 
 ## Report a problem
 

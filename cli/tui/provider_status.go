@@ -68,7 +68,15 @@ func providerStatusText(provider client.ProviderStatus) string {
 	}
 	switch provider.State {
 	case "ready":
+		if provider.LocalTokensRemaining != nil {
+			return fmt.Sprintf("%s · %d free models · %d local tokens", auth, provider.FreeModels, *provider.LocalTokensRemaining)
+		}
 		return fmt.Sprintf("%s · %d free models", auth, provider.FreeModels)
+	case "short_replies":
+		if provider.LocalTokensRemaining != nil {
+			return fmt.Sprintf("%s · Short replies · %d local tokens", auth, *provider.LocalTokensRemaining)
+		}
+		return auth + " · Short replies"
 	case "needs_key":
 		return "Key required"
 	case "confirm_free_account":
@@ -99,4 +107,24 @@ func providerStatusHelp(provider client.ProviderStatus) string {
 	default:
 		return "freeway providers status " + provider.ID
 	}
+}
+
+func (m Model) replyBudgetHint() string {
+	if m.busy || m.commandPending() {
+		return ""
+	}
+	for _, model := range m.availableModels {
+		if model.ID != m.selected || model.LocalTokensRemaining == nil {
+			continue
+		}
+		fit := *model.LocalTokensRemaining - m.nextRequestContext().inputEstimate()
+		if fit <= 0 {
+			return "Local budget estimate · shorten the context or open a new chat"
+		}
+		if fit < m.settings.MaxTokens {
+			return fmt.Sprintf("Local estimate fits up to %d output tokens · /settings %d", fit, fit)
+		}
+		break
+	}
+	return ""
 }

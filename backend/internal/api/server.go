@@ -71,6 +71,7 @@ func New(key auth.ClientKey, chats *session.Store, inference Inference, local *L
 		}
 	}
 	mux.HandleFunc("GET /v1/conversations", s.listConversations)
+	mux.HandleFunc("GET /v1/prompts", s.promptHistory)
 	mux.HandleFunc("POST /v1/conversations", s.createConversation)
 	mux.HandleFunc("GET /v1/conversations/{id}", s.getConversation)
 	mux.HandleFunc("PUT /v1/conversations/{id}", s.updateConversation)
@@ -90,6 +91,11 @@ func New(key auth.ClientKey, chats *session.Store, inference Inference, local *L
 			writeProblem(w, problem(http.StatusUnauthorized, "invalid_api_key", "Supply the gateway's local client key."))
 			return
 		}
+		features := "idempotent-saves, prompt-history, context-selection, history-pages, context-file-selection"
+		if local != nil && local.OpenCode != nil && local.Key.Matches(credentials[0]) {
+			features += ", opencode"
+		}
+		w.Header().Set("X-Freeway-Features", features)
 		mux.ServeHTTP(w, r)
 	})
 }

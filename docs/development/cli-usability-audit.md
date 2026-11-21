@@ -50,6 +50,32 @@ A live installed-gateway check wrote and reopened only its own QA session. A sep
 
 ## Remaining differences
 
-This is an audit of the common chat workflow, not a claim that all 154 Codex actions were reproduced. The reference applications also expose transcript search, richer session archive/delete workflows, customizable keymaps, image input, permissions, tool execution, file edits/diffs and agent controls. Those require further product work in the Go TUI. Freeway currently supports text attachments and the existing separate OpenCode/MCP integrations; it does not acquire the references' coding-agent capabilities merely by copying their shortcuts.
+This audit covers the common chat workflow. Freeway has transcript search, text attachments, and separate OpenCode and MCP integrations. The reference applications also include session archiving and deletion, customizable keymaps, image input, permissions, tool execution, file edits and diffs, and agent controls.
 
 External-editor launch was inspected in the implementation and its asynchronous result behavior was tested; an interactive edit in an external GUI editor was not exercised in this comparison. The captures also do not establish native-window frame timing or IME behavior.
+
+## Follow-up regression queue
+
+The Windows regression checks for the Freeway `0.6.0-rc.7` development build use synthetic prompts and temporary installs.
+
+| Observed failure | Regression check |
+| --- | --- |
+| Installing the same version could leave a damaged installation unusable. | A checked release and a verified local archive each repair a damaged executable. A healthy installation skips an equal-version download. |
+| Opening another conversation after a recovery save cleared the current draft if the target failed to load. | Failed navigation retains the draft, attachments, and recovery path. Edits made during loading stay in the source conversation. |
+| A route marked ready rejected a default reply under its local token allowance. | F2 and F4 disclose the local allowance. The gateway reports a fitting reply length before sending upstream. F5 uses that length for one retry. |
+| A failed conversation read discarded prompt matches from healthy conversations. | The current gateway returns prompt history with an incomplete flag in a single response. Older gateways retain successful results on partial failure. |
+| Recovery files required copying text by hand. | F7 and `/restore` return a draft and attachments to the composer. Undo preserves the previous draft. |
+| Follow-up requests could silently include the entire earlier transcript and resend old attachments. | F8 lists the included questions and file names, offers turn and attachment controls, and keeps them for the conversation. An 80×24 terminal scenario checks that the current attachment reaches both the request and its retry, while later requests exclude it after the user changes the setting. |
+| A completed attachment could insert a file reference into a newly edited draft. | The attachment list updates independently of the prompt. Inline completion replaces the original token when the draft still matches. |
+| Startup and history browsing fetched every conversation summary. | `freeway continue` asks for one usable conversation. A fresh session skips history reads. The picker loads 50 summaries at a time and searches across the current scope, including records outside the loaded pages. Tests cover equal timestamps, cursor validation, older records, and late responses after a scope change. |
+| Prompt search opened with prompts from other projects and read saved conversations during startup. | Ctrl+R loads recent saved prompts on demand for the current workspace. Ctrl+A can switch scope from an empty project. A late project-scoped response cannot replace results for all projects. |
+| Excluding one earlier attachment required dropping every earlier file. | F8 excludes earlier copies of a stored path independently. The terminal scenario checks that the other file reaches the next request and the exclusion survives reopening. Unit tests check the same path on the current question and a retry. |
+
+On Windows, a synthetic library of 20,000 indexed conversations took 27.46 ms per operation to copy and JSON-encode the complete list (5,427,790 bytes). A 50-record project page took 0.083 ms (13,736 bytes), and a search that scanned the project for a single old record took 8.27 ms (275 bytes). This benchmark starts with a warm in-memory summary index and measures gateway list construction and JSON encoding.
+
+### Open items
+
+1. Add model-specific input limits to the context inspector and reply estimate.
+2. Exercise Korean IME composition, multiline paste, and focus changes on Windows Terminal and other supported terminals. The 80×24 native test uses synthetic keyboard input.
+3. Measure keyboard-to-render latency during history search and cold gateway startup with large encrypted libraries. The gateway still loads encrypted records to build the initial index.
+4. Make shortcut discovery searchable by action and evaluate remapping conflict handling. Compare against the same tasks used in the reference captures.

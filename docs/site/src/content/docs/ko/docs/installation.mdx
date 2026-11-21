@@ -1,11 +1,11 @@
 ---
 title: 설치
-description: Node.js 없이 두 개의 네이티브 실행 파일로 설치합니다.
+description: 세 개의 네이티브 실행 파일로 Freeway를 설치합니다.
 ---
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 import { Aside } from '@astrojs/starlight/components';
 
-패키지에는 `freeway`, `freeway-providers`, 파일 검증 명세와 라이선스가 들어 있습니다. 운영체제와 CPU에 맞는 파일을 선택하고 두 실행 파일을 함께 보관하세요.
+패키지에는 `freeway`, `freewayd`, `freeway-providers`, 파일 검증 명세와 라이선스가 들어 있습니다. 운영체제와 CPU에 맞는 패키지를 선택하고 세 실행 파일을 함께 보관하세요. `freewayd`가 로컬 게이트웨이를 실행합니다.
 
 <Aside title="릴리스 공개 여부">
 이 체크아웃의 구현과 릴리스 공개는 별개입니다. 공개 릴리스가 없으면 직접 패키지를 빌드하세요. 출처가 다른 미러에서 파일을 내려받지 마세요.
@@ -117,6 +117,7 @@ Freeway가 내장 게이트웨이를 시작하고 대화 화면을 엽니다. �
   install.json                활성 버전과 이전 버전
   versions/VERSION/
     freeway
+    freewayd
     freeway-providers
     manifest.json
     LICENSE

@@ -1,21 +1,33 @@
 #!/usr/bin/env python3
-"""Exercise a built Linux/macOS client archive with isolated data and a local gateway fixture."""
+"""Exercise an installed native client with isolated data and a local gateway fixture."""
 import argparse
 import hashlib
 import http.server
 import json
 import os
 from pathlib import Path
-from gateway_scenario import Terminal, connected_smoke
+from gateway_scenario import Terminal, WindowsTerminal, connected_smoke
 import subprocess
 import tarfile
 import tempfile
 import threading
+import zipfile
 
 
 def preview(binary, environment, directory):
-    with Terminal(binary, ["--preview"], environment, directory) as terminal:
+    terminal_type = WindowsTerminal if os.name == "nt" else Terminal
+    recovery = Path(environment["HOME"]) / ".freeway" / "recovery"
+    recovery.mkdir(parents=True)
+    (recovery / "conversation-fixture.json").write_text(json.dumps({
+        "draft": "Recovered fixture draft",
+        "draftFiles": [{"path": "recovered.md", "content": "fixture attachment"}],
+    }), encoding="utf-8")
+    with terminal_type(binary, ["--preview"], environment, directory) as terminal:
         terminal.wait_text("freeway")
+        terminal.send(b"\x1b[18~")  # F7 restores the latest recovery draft.
+        terminal.wait_text("Recovered fixture draft")
+        terminal.wait_text("recovered.md")
+        terminal.send(b"\x1a")  # Ctrl+Z restores the previous empty composer.
         terminal.exit()
 
 
@@ -28,35 +40,48 @@ def main():
     with tempfile.TemporaryDirectory(prefix="freeway-native-smoke-") as temporary:
         base = Path(temporary).resolve()
         package = base / "package"
-        with tarfile.open(archive, "r:gz") as source:
-            names = source.getnames()
-            assert not any(name.endswith((".js", ".mjs")) or "node_modules" in name or "POC" in name for name in names)
-            source.extractall(package, filter="data")
+        windows = os.name == "nt"
+        executable = "freeway.exe" if windows else "freeway"
+        if windows:
+            with zipfile.ZipFile(archive) as source:
+                source.extract(executable, package)
+                source.extract("manifest.json", package)
+        else:
+            with tarfile.open(archive, "r:gz") as source:
+                names = source.getnames()
+                assert not any(name.endswith((".js", ".mjs")) or "node_modules" in name or "POC" in name for name in names)
+                source.extractall(package, filter="data")
         version = json.loads((package / "manifest.json").read_text())["version"]
-        program = base / "app" / "bin" / "freeway"
-        environment = dict(os.environ, HOME=str(base / "home"), PATH="/nonexistent")
+        program = base / "app" / "bin" / executable
+        environment = dict(os.environ, HOME=str(base / "home"), USERPROFILE=str(base / "home"), PATH="/nonexistent")
         for key in list(environment):
             if key.startswith("FREEWAY_"):
                 del environment[key]
 
         def run(binary, *arguments, success=True, env=None):
-            result = subprocess.run([str(binary), *arguments], cwd=base, env=env or environment, text=True, capture_output=True, timeout=20)
+            result = subprocess.run([str(binary), *arguments], cwd=base, env=env or environment, encoding="utf-8", capture_output=True, timeout=20)
             if success:
                 assert result.returncode == 0, (arguments, result.stdout, result.stderr)
             else:
                 assert result.returncode != 0, arguments
             return result
 
-        run(package / "freeway", "install", "--archive", str(archive), "--sha256", expected, "--root", str(base / "app"))
+        run(package / executable, "install", "--archive", str(archive), "--sha256", expected, "--root", str(base / "app"))
         assert run(program, "--version").stdout.strip() == version
         assert "Node.js or POC runtime is required" in run(program, "--help").stdout
         run(program, "providers", "--help")
         preview(program, environment, base)
         connected_smoke(program, environment, base)
+        if windows:
+            return  # Windows installer and launcher lifecycles are covered by release_smoke.py.
         requests = []
 
         class Gateway(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
+                if self.path == "/v1/status":
+                    self.send_response(404)
+                    self.end_headers()
+                    return
                 requests.append((self.path, self.headers.get("Authorization")))
                 if self.headers.get("Authorization") != "Bearer fixture-key":
                     self.send_response(401)

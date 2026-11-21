@@ -13,26 +13,29 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 const MaxBody = 8 * 1024 * 1024
 
 type Model struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Detail string `json:"detail,omitempty"`
-	Free   bool   `json:"free"`
-	Ready  bool   `json:"ready"`
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	Detail               string `json:"detail,omitempty"`
+	Free                 bool   `json:"free"`
+	Ready                bool   `json:"ready"`
+	LocalTokensRemaining *int   `json:"localTokensRemaining,omitempty"`
 }
 
 type ProviderStatus struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	KeyConfigured bool   `json:"keyConfigured"`
-	State         string `json:"state"`
-	FreeModels    int    `json:"freeModels"`
-	RetryAfter    int    `json:"retryAfter,omitempty"`
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	KeyConfigured        bool   `json:"keyConfigured"`
+	State                string `json:"state"`
+	FreeModels           int    `json:"freeModels"`
+	RetryAfter           int    `json:"retryAfter,omitempty"`
+	LocalTokensRemaining *int   `json:"localTokensRemaining,omitempty"`
 }
 
 type Message struct {
@@ -46,12 +49,13 @@ type Message struct {
 }
 
 type Event struct {
-	Type     string `json:"type"`
-	Text     string `json:"text"`
-	Model    string `json:"model"`
-	Provider string `json:"provider"`
-	Error    string `json:"error"`
-	Usage    *Usage `json:"usage,omitempty"`
+	Type            string `json:"type"`
+	Text            string `json:"text"`
+	Model           string `json:"model"`
+	Provider        string `json:"provider"`
+	Error           string `json:"error"`
+	Usage           *Usage `json:"usage,omitempty"`
+	MaxOutputTokens *int   `json:"maxOutputTokens,omitempty"`
 }
 
 type Config struct {
@@ -63,10 +67,13 @@ type Config struct {
 
 // HTTP connects only to an authenticated loopback gateway. It owns no user storage or routing policy.
 type HTTP struct {
-	base    string
-	key     string
-	client  *http.Client
-	managed bool
+	base         string
+	key          string
+	client       *http.Client
+	managed      bool
+	features     atomic.Uint32
+	featuresSeen atomic.Bool
+	supervisor   *gatewaySupervisor
 }
 
 func NewHTTP(config Config) (*HTTP, error) {
@@ -108,13 +115,19 @@ func NewHTTP(config Config) (*HTTP, error) {
 	return &HTTP{base: strings.TrimRight(u.String(), "/"), key: config.APIKey, client: &copyClient, managed: config.Managed}, nil
 }
 
-func (c *HTTP) Close() { c.client.CloseIdleConnections() }
+func (c *HTTP) Close() {
+	if c.supervisor != nil {
+		c.supervisor.close()
+		return
+	}
+	c.client.CloseIdleConnections()
+}
 
 // Lease keeps an automatically started gateway alive until this client exits.
 func (c *HTTP) Lease(ctx context.Context) (func(), error) {
 	ctx, cancel := context.WithCancel(ctx)
 	startup := time.AfterFunc(5*time.Second, cancel)
-	response, err := c.request(ctx, http.MethodGet, "/v1/lease", nil)
+	response, err := c.request(ctx, http.MethodGet, "/v1/lease", nil, "")
 	timely := startup.Stop()
 	if err != nil {
 		cancel()
@@ -131,9 +144,20 @@ func (c *HTTP) Lease(ctx context.Context) (func(), error) {
 	}, nil
 }
 
-func (c *HTTP) request(ctx context.Context, method, path string, body any) (*http.Response, error) {
+func (c *HTTP) request(ctx context.Context, method, path string, body any, saveKey string) (*http.Response, error) {
+	if c.supervisor != nil {
+		return c.supervisor.request(ctx, method, path, body, saveKey)
+	}
 	if c.key == "" {
 		return nil, &GatewayError{Message: "Set FREEWAY_API_KEY to the selected gateway's client key.", Code: "gateway_auth_required", Status: 401}
+	}
+	if chat, ok := body.(Conversation); ok && chat.Context != nil {
+		if !c.SupportsContextSelection() {
+			return nil, &GatewayError{Code: "context_settings_unavailable", Status: 409, Message: "This gateway cannot save the conversation's context settings. Reconnect with an updated gateway."}
+		}
+		if len(chat.Context.ExcludedPriorFiles) > 0 && !c.SupportsContextFileSelection() {
+			return nil, &GatewayError{Code: "context_settings_unavailable", Status: 409, Message: "Reconnect with an updated gateway to save individual attachment exclusions."}
+		}
 	}
 	var data []byte
 	var err error
@@ -152,6 +176,9 @@ func (c *HTTP) request(ctx context.Context, method, path string, body any) (*htt
 	}
 	req.Header.Set("Authorization", "Bearer "+c.key)
 	req.Header.Set("Content-Type", "application/json")
+	if saveKey != "" && c.supportsSaveKeys() {
+		req.Header.Set("Idempotency-Key", saveKey)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -159,28 +186,33 @@ func (c *HTTP) request(ctx context.Context, method, path string, body any) (*htt
 		}
 		return nil, &GatewayError{Message: "Cannot reach the local gateway. Check FREEWAY_URL or reopen Freeway.", Code: "gateway_unavailable", Status: 503}
 	}
+	if resp.Header.Get("X-Freeway-Features") != "" || path == "/v1/lease" || path == "/v1/status" {
+		c.features.Store(gatewayFeatures(resp.Header.Get("X-Freeway-Features")))
+		c.featuresSeen.Store(true)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer resp.Body.Close()
 		var payload struct {
 			Error struct {
-				Message    string `json:"message"`
-				Code       string `json:"code"`
-				RetryAfter int    `json:"retryAfter"`
+				Message         string `json:"message"`
+				Code            string `json:"code"`
+				RetryAfter      int    `json:"retryAfter"`
+				MaxOutputTokens *int   `json:"maxOutputTokens"`
 			} `json:"error"`
 		}
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&payload)
 		if payload.Error.Message == "" {
 			payload.Error.Message = fmt.Sprintf("Gateway request failed (HTTP %d).", resp.StatusCode)
 		}
-		return nil, &GatewayError{Message: payload.Error.Message, Code: payload.Error.Code, Status: resp.StatusCode, RetryAfter: payload.Error.RetryAfter}
+		return nil, &GatewayError{Message: payload.Error.Message, Code: payload.Error.Code, Status: resp.StatusCode, RetryAfter: payload.Error.RetryAfter, MaxOutputTokens: payload.Error.MaxOutputTokens}
 	}
 	return resp, nil
 }
 
-func (c *HTTP) json(ctx context.Context, method, path string, body, out any) error {
+func (c *HTTP) json(ctx context.Context, method, path string, body, out any, saveKey string) error {
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
-	resp, err := c.request(ctx, method, path, body)
+	resp, err := c.request(ctx, method, path, body, saveKey)
 	if err != nil {
 		return err
 	}
@@ -203,10 +235,13 @@ func (c *HTTP) Models(ctx context.Context) ([]Model, error) {
 	return models, err
 }
 
-func (c *HTTP) CanOpenCode() bool { return c.managed }
+func (c *HTTP) CanOpenCode() bool {
+	active := c.endpoint()
+	return active != nil && active.managed && active.features.Load()&featureOpenCode != 0
+}
 
 func (c *HTTP) OpenCodeModels(ctx context.Context) ([]Model, error) {
-	if !c.managed {
+	if !c.CanOpenCode() {
 		return nil, openCodeRequiresLocal()
 	}
 	return c.readyModels(ctx, "/v1/local/opencode/models")
@@ -216,7 +251,7 @@ func (c *HTTP) readyModels(ctx context.Context, endpoint string) ([]Model, error
 	var result struct {
 		Data []Model `json:"data"`
 	}
-	if err := c.json(ctx, "GET", endpoint, nil, &result); err != nil {
+	if err := c.json(ctx, "GET", endpoint, nil, &result, ""); err != nil {
 		return nil, err
 	}
 	models := []Model{}
@@ -236,7 +271,7 @@ func (c *HTTP) ProviderStatuses(ctx context.Context) ([]ProviderStatus, error) {
 	var result struct {
 		Data []ProviderStatus `json:"data"`
 	}
-	err := c.json(ctx, "GET", "/v1/providers", nil, &result)
+	err := c.json(ctx, "GET", "/v1/providers", nil, &result, "")
 	return result.Data, err
 }
 
@@ -244,7 +279,7 @@ func (c *HTTP) Conversations(ctx context.Context) ([]ConversationSummary, error)
 	var result struct {
 		Data []ConversationSummary `json:"data"`
 	}
-	err := c.json(ctx, "GET", "/v1/conversations", nil, &result)
+	err := c.json(ctx, "GET", "/v1/conversations", nil, &result, "")
 	sort.SliceStable(result.Data, func(i, j int) bool { return result.Data[i].UpdatedAt > result.Data[j].UpdatedAt })
 	return result.Data, err
 }
@@ -254,7 +289,7 @@ func (c *HTTP) Conversation(ctx context.Context, id string) (Conversation, error
 	if id == "" || strings.ContainsAny(id, "/\\?#") {
 		return result, errors.New("invalid conversation ID")
 	}
-	err := c.json(ctx, "GET", "/v1/conversations/"+url.PathEscape(id), nil, &result)
+	err := c.json(ctx, "GET", "/v1/conversations/"+url.PathEscape(id), nil, &result, "")
 	return result, err
 }
 
@@ -267,38 +302,89 @@ func (c *HTTP) SaveConversation(ctx context.Context, chat Conversation) (Convers
 		path += "/" + url.PathEscape(chat.ID)
 		method = "PUT"
 	}
-	if chat.Messages == nil {
-		chat.Messages = []Message{}
+	if chat.SaveKey != "" || chat.Context != nil {
+		c.probeGatewayFeatures(ctx)
 	}
-	if chat.DraftFiles == nil {
-		chat.DraftFiles = []Attachment{}
-	}
-	if chat.Queued == nil {
-		chat.Queued = []PendingPrompt{}
-	}
+	keySupported := c.supportsSaveKeys()
 	var result Conversation
-	err := c.json(ctx, method, path, chat, &result)
+	err := c.json(ctx, method, path, chat.wire(), &result, chat.SaveKey)
 	if err == nil && (result.ID == "" || result.Revision < 1 || (chat.ID != "" && result.ID != chat.ID)) {
 		err = errors.New("gateway returned an invalid conversation identity")
+	}
+	if err != nil && chat.SaveKey != "" && (!keySupported || !c.supportsSaveKeys()) {
+		var gateway *GatewayError
+		if !errors.As(err, &gateway) || gateway.Code == "gateway_unavailable" {
+			err = &GatewayError{Code: "save_uncertain", Message: "The gateway did not confirm this save. Use /recover to keep a copy before switching conversations."}
+		}
 	}
 	return result, err
 }
 
 func (c *HTTP) PromptHistory(ctx context.Context) ([]string, error) {
+	return c.ScopedPromptHistory(ctx, "")
+}
+
+func (c *HTTP) probeGatewayFeatures(ctx context.Context) {
+	if active := c.endpoint(); active != nil && !active.featuresSeen.Load() {
+		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		if response, err := c.request(probeCtx, http.MethodGet, "/v1/status", nil, ""); err == nil {
+			response.Body.Close()
+		}
+	}
+}
+
+func (c *HTTP) ScopedPromptHistory(ctx context.Context, workspace string) ([]string, error) {
+	if workspace != "" {
+		c.probeGatewayFeatures(ctx)
+	}
+	if c.hasFeature(featurePromptHistory) && (workspace == "" || c.hasFeature(featureHistoryPages)) {
+		var result struct {
+			Data       []string `json:"data"`
+			Incomplete bool     `json:"incomplete"`
+		}
+		path := "/v1/prompts"
+		if workspace != "" {
+			path += "?" + url.Values{"workspace": {workspace}}.Encode()
+		}
+		err := c.json(ctx, http.MethodGet, path, nil, &result, "")
+		var gateway *GatewayError
+		if (workspace == "" || c.hasFeature(featureHistoryPages)) &&
+			(!errors.As(err, &gateway) || gateway.Status != http.StatusNotFound) {
+			if err == nil && result.Incomplete {
+				err = errIncompletePrompts
+			}
+			return result.Data, err
+		}
+	}
 	records, err := c.Conversations(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var prompts []string
+	var partial error
 	size := 0
+	scanned := 0
 collect:
-	for i, record := range records {
-		if i >= 30 {
+	for _, record := range records {
+		if workspace != "" && (record.Workspace == "" || !SameWorkspace(record.Workspace, workspace)) {
+			continue
+		}
+		if scanned >= 30 {
 			break
+		}
+		scanned++
+		if record.Damaged {
+			partial = errIncompletePrompts
+			continue
 		}
 		chat, err := c.Conversation(ctx, record.ID)
 		if err != nil {
-			return nil, err
+			partial = err
+			if ctx.Err() != nil {
+				break
+			}
+			continue
 		}
 		for j := len(chat.Messages) - 1; j >= 0; j-- {
 			message := chat.Messages[j]
@@ -315,11 +401,26 @@ collect:
 	for i, j := 0, len(prompts)-1; i < j; i, j = i+1, j-1 {
 		prompts[i], prompts[j] = prompts[j], prompts[i]
 	}
-	return prompts, nil
+	return prompts, partial
 }
+
+var errIncompletePrompts = errors.New("some saved conversations could not be searched")
 
 func (c *HTTP) Stream(ctx context.Context, model string, messages []Message, emit func(Event)) error {
 	return c.StreamWithSettings(ctx, model, messages, Settings{MaxTokens: 4096, Temperature: 0.6}, emit)
+}
+
+const attachmentPrefix = "\n\nAttached file (reference data):\n--- "
+const attachmentDivider = " ---\n"
+const attachmentEnd = "\n--- end file ---"
+
+// InputTokenEstimate mirrors the gateway's conservative local byte budget.
+func InputTokenEstimate(message Message) int {
+	total := len(message.Content) + 16
+	for _, file := range message.Files {
+		total += len(attachmentPrefix) + len(file.Path) + len(attachmentDivider) + len(file.Content) + len(attachmentEnd)
+	}
+	return total
 }
 
 func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []Message, settings Settings, emit func(Event)) error {
@@ -331,7 +432,7 @@ func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []
 	for _, message := range messages {
 		content := message.Content
 		for _, file := range message.Files {
-			content += "\n\nAttached file (reference data):\n--- " + file.Path + " ---\n" + file.Content + "\n--- end file ---"
+			content += attachmentPrefix + file.Path + attachmentDivider + file.Content + attachmentEnd
 		}
 		prompts = append(prompts, prompt{message.Role, content})
 	}
@@ -344,12 +445,12 @@ func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []
 	}{model, prompts, true, settings.MaxTokens, settings.Temperature}
 	endpoint := "/v1/chat/completions"
 	if strings.HasPrefix(model, "opencode/") {
-		if !c.managed {
+		if !c.CanOpenCode() {
 			return openCodeRequiresLocal()
 		}
 		endpoint = "/v1/local/opencode/chat/completions"
 	}
-	resp, err := c.request(ctx, "POST", endpoint, body)
+	resp, err := c.request(ctx, "POST", endpoint, body, "")
 	if err != nil {
 		return err
 	}
@@ -371,10 +472,11 @@ func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []
 			Provider string `json:"provider"`
 			Usage    *Usage `json:"usage"`
 			Error    *struct {
-				Message    string `json:"message"`
-				Code       string `json:"code"`
-				Status     int    `json:"status"`
-				RetryAfter int    `json:"retryAfter"`
+				Message         string `json:"message"`
+				Code            string `json:"code"`
+				Status          int    `json:"status"`
+				RetryAfter      int    `json:"retryAfter"`
+				MaxOutputTokens *int   `json:"maxOutputTokens"`
 			} `json:"error"`
 			Choices []struct {
 				Delta struct {
@@ -386,7 +488,7 @@ func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []
 			return errors.New("invalid gateway stream event")
 		}
 		if chunk.Error != nil {
-			return &GatewayError{Message: chunk.Error.Message, Code: chunk.Error.Code, Status: chunk.Error.Status, RetryAfter: chunk.Error.RetryAfter}
+			return &GatewayError{Message: chunk.Error.Message, Code: chunk.Error.Code, Status: chunk.Error.Status, RetryAfter: chunk.Error.RetryAfter, MaxOutputTokens: chunk.Error.MaxOutputTokens}
 		}
 		if chunk.Model != "" {
 			final.Model = chunk.Model
@@ -404,7 +506,7 @@ func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []
 					return errors.New("response exceeds 8 MB")
 				}
 				if emit != nil {
-					emit(Event{Type: "text", Text: choice.Delta.Content})
+					emit(Event{Type: "text", Text: choice.Delta.Content, Model: final.Model, Provider: final.Provider})
 				}
 			}
 		}

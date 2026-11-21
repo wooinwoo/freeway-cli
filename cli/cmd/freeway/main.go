@@ -9,7 +9,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
-	"github.com/wooinwoo/freeway-cli/cli/client"
 	"github.com/wooinwoo/freeway-cli/cli/tui"
 	"github.com/wooinwoo/freeway-cli/cli/update"
 )
@@ -62,15 +61,17 @@ func run() error {
 			closeGateway()
 		}()
 		if inv.mode == "sessions" {
-			records, err := gateway.Conversations(ctx)
-			if err != nil {
-				return err
-			}
 			cwd, err := os.Getwd()
 			if err != nil {
 				return err
 			}
-			records = client.ScopeConversations(records, cwd, inv.all)
+			if inv.all {
+				cwd = ""
+			}
+			records, err := gateway.ScopedConversations(ctx, cwd)
+			if err != nil {
+				return err
+			}
 			if inv.json {
 				encoder := json.NewEncoder(os.Stdout)
 				encoder.SetIndent("", "  ")

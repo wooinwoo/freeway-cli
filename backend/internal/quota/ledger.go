@@ -28,9 +28,10 @@ type Limits struct {
 }
 
 type Blocked struct {
-	Until      time.Time
-	RetryAfter time.Duration
-	Cooldown   bool
+	Until           time.Time
+	RetryAfter      time.Duration
+	Cooldown        bool
+	TokensRemaining *int
 }
 
 func (b *Blocked) Error() string { return "route is outside its local allowance" }
@@ -114,6 +115,21 @@ func (l *Ledger) Available(provider string, limits Limits, tokens int) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.state.check(l.now(), provider, limits, tokens)
+}
+
+// TokensRemaining is a local daily estimate. Nil means no local token cap is configured.
+func (l *Ledger) TokensRemaining(provider string, limits Limits) *int {
+	if limits.DayTokens <= 0 {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	remaining := tokenHeadroom(limits.DayTokens, l.state.usage(provider, l.now().Truncate(24*time.Hour)))
+	return &remaining
+}
+
+func tokenHeadroom(limit int, used Usage) int {
+	return int(max(0, int64(limit)-int64(used.Tokens)-int64(used.EstimatedTokens)))
 }
 
 func (l *Ledger) Reserve(provider string, limits Limits, tokens int) (string, error) {
@@ -215,6 +231,8 @@ func (s state) check(now time.Time, provider string, limits Limits, tokens int) 
 		limits.Day = defaultDayLimit
 	}
 	var retryAt time.Time
+	var remaining *int
+	requestBlocked := false
 	for _, window := range []struct {
 		duration time.Duration
 		requests int
@@ -225,13 +243,23 @@ func (s state) check(now time.Time, provider string, limits Limits, tokens int) 
 		}
 		start := now.Truncate(window.duration)
 		used := s.usage(provider, start)
-		if (window.requests > 0 && used.Requests >= window.requests) ||
-			(window.tokens > 0 && int64(used.Tokens)+int64(used.EstimatedTokens)+int64(tokens) > int64(window.tokens)) {
+		if window.requests > 0 && used.Requests >= window.requests {
+			requestBlocked = true
 			retryAt = start.Add(window.duration)
+		}
+		if window.tokens > 0 {
+			headroom := tokenHeadroom(window.tokens, used)
+			if int64(used.Tokens)+int64(used.EstimatedTokens)+int64(tokens) > int64(window.tokens) {
+				remaining = &headroom
+				retryAt = start.Add(window.duration)
+			}
 		}
 	}
 	if !retryAt.IsZero() {
-		return &Blocked{Until: retryAt, RetryAfter: retryAt.Sub(now)}
+		if requestBlocked {
+			remaining = nil
+		}
+		return &Blocked{Until: retryAt, RetryAfter: retryAt.Sub(now), TokensRemaining: remaining}
 	}
 	return nil
 }

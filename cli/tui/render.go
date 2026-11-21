@@ -35,8 +35,8 @@ func terminalSafe(s string) string {
 	}, s)
 }
 
-var inlineCode = regexp.MustCompile("`([^`\\n]+)`")
-var boldText = regexp.MustCompile(`\*\*([^*\n]+)\*\*`)
+var inlineMarkup = regexp.MustCompile("`([^`\\n]+)`|\\*\\*([^*\\n]+)\\*\\*")
+var listMarker = regexp.MustCompile(`^( *)([-+*]|[0-9]{1,9}[.)]) +(.+)$`)
 
 func markdown(text string, width int) string {
 	width = max(1, width)
@@ -66,13 +66,33 @@ func markdown(text string, width int) string {
 		if strings.HasPrefix(trimmed, "#") {
 			content := strings.TrimLeft(trimmed, "#")
 			if strings.HasPrefix(content, " ") {
-				output = append(output, heading.Render(ansi.Hardwrap(strings.TrimSpace(content), width, true)))
+				output = append(output, heading.Render(ansi.Wrap(strings.TrimSpace(content), width, "")))
 				continue
 			}
 		}
-		line = inlineCode.ReplaceAllStringFunc(line, func(s string) string { return codeStyle.Render(strings.Trim(s, "`")) })
-		line = boldText.ReplaceAllStringFunc(line, func(s string) string { return lipgloss.NewStyle().Bold(true).Render(strings.Trim(s, "*")) })
-		output = append(output, ansi.Hardwrap(line, width, true))
+		prefix, continuation := "", ""
+		if text, ok := strings.CutPrefix(trimmed, "> "); ok && width >= 4 {
+			line = text
+			prefix = lipgloss.NewStyle().Foreground(colors.muted).Render("│ ")
+			continuation = prefix
+		} else if match := listMarker.FindStringSubmatch(line); len(match) != 0 {
+			marker := match[2]
+			if len(marker) == 1 {
+				marker = "•"
+			}
+			if indent := len(match[1]) + ansi.StringWidth(marker) + 1; indent <= width-2 {
+				prefix, line = match[1]+marker+" ", match[3]
+				continuation = strings.Repeat(" ", indent)
+			}
+		}
+		line = inlineMarkup.ReplaceAllStringFunc(line, func(s string) string {
+			if s[0] == '`' {
+				return codeStyle.Render(s[1 : len(s)-1])
+			}
+			return lipgloss.NewStyle().Bold(true).Render(s[2 : len(s)-2])
+		})
+		wrapped := ansi.Wrap(line, width-ansi.StringWidth(prefix), "")
+		output = append(output, prefix+strings.ReplaceAll(wrapped, "\n", "\n"+continuation))
 	}
 	return strings.Join(output, "\n")
 }
@@ -142,7 +162,12 @@ func (m *Model) renderConversation() {
 			if message.Status == "stopped" {
 				rendered += "\n" + lipgloss.NewStyle().Foreground(colors.border).Render("Stopped · Alt+R to regenerate")
 			}
-			rendered = label.Render("✦ FREEWAY") + "\n\n    " + strings.ReplaceAll(rendered, "\n", "\n    ")
+			identity := label.Render("✦ FREEWAY")
+			if message.Model != "" {
+				route := " · " + routeLabel(message.Model)
+				identity += lipgloss.NewStyle().Foreground(colors.muted).Render(ansi.Truncate(route, width-ansi.StringWidth(identity), "…"))
+			}
+			rendered = identity + "\n\n    " + strings.ReplaceAll(rendered, "\n", "\n    ")
 		}
 		cache[i] = renderedMessage{message: message, width: width, text: rendered}
 		rows = append(rows, rendered)
@@ -168,10 +193,36 @@ func (m Model) modelLabel() string {
 	}
 	for _, model := range m.availableModels {
 		if model.ID == m.selected {
-			return model.Name
+			return oneLine(model.Name)
 		}
 	}
-	return m.selected
+	for _, model := range m.openCodeModels {
+		if model.ID == m.selected {
+			return "OpenCode · " + oneLine(model.Name)
+		}
+	}
+	return routeLabel(m.selected)
+}
+
+func routeLabel(model string) string {
+	model = oneLine(model)
+	provider, name, ok := strings.Cut(model, "/")
+	if !ok || provider == "preview" || provider == "free" {
+		return model
+	}
+	switch provider {
+	case "opencode":
+		provider = "OpenCode"
+	case "kilo":
+		provider = "Kilo"
+	case "openrouter":
+		provider = "OpenRouter"
+	case "groq":
+		provider = "Groq"
+	case "gemini_api":
+		provider = "Gemini"
+	}
+	return provider + " · " + name
 }
 
 func (m Model) statusLabel() string {
@@ -188,11 +239,14 @@ func (m Model) statusLabel() string {
 		status = fmt.Sprintf("%s %s · %.0fs · Esc to stop", frames[int(elapsed*8)%len(frames)], m.status, elapsed)
 	}
 	if m.saveError != "" {
-		status += " · Save failed — /save to retry"
+		status += " · Save failed · F6 recovery"
 	} else if m.saving {
 		status += " · Saving…"
-	} else if m.saveEnabled && m.session.ID != "" {
+	} else if m.saveEnabled && m.session.ID != "" && !m.dirty && m.pendingSave == nil {
 		status += " · Saved locally"
+	}
+	if m.nearSaveLimit {
+		status += " · Near 8 MiB save limit"
 	}
 	return status
 }

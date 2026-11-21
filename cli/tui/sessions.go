@@ -2,8 +2,11 @@ package tui
 
 import (
 	"context"
+	"crypto/rand"
+	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,6 +24,9 @@ type historyLoaded struct {
 	records []client.ConversationSummary
 	initial bool
 	epoch   uint64
+	cursor  string
+	paged   bool
+	lookup  string
 	err     error
 }
 type conversationLoaded struct {
@@ -28,12 +34,14 @@ type conversationLoaded struct {
 	epoch       uint64
 	err         error
 	draftAtLoad string
+	filesAtLoad []client.Attachment
 }
 type conversationSaved struct {
 	chat        client.Conversation
 	epoch       uint64
 	err         error
 	titleAtSave string
+	size        int
 }
 
 func (m Model) WithSession(id string, fresh, noSave bool) Model {
@@ -55,19 +63,15 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	case promptsLoaded:
-		m.promptsLoading = false
-		current := append([]string(nil), m.inputHistory...)
-		m.inputHistory = nil
-		for _, text := range append(msg.prompts, current...) {
-			m.remember(text)
+		if msg.request != m.promptRequest {
+			return m, nil, true
 		}
-		if m.promptSearchWanted {
-			m.promptSearchWanted = false
-			if len(m.inputHistory) > 0 {
-				next, cmd := m.openPromptSearch()
-				return next, cmd, true
-			}
-			m.notify("No prompt history yet.")
+		m.promptsLoading = false
+		m.promptsIncomplete = msg.err != nil
+		m.savedPrompts = msg.prompts
+		if m.modelsFocused && m.menu == "prompts" {
+			cmd := m.refreshMenuItems(m.promptItems())
+			return m, cmd, true
 		}
 		return m, nil, true
 	case editorFinished:
@@ -127,16 +131,14 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			}
 			m.files = append(m.files, msg.file)
 		}
-		ref := "@" + msg.file.Path
-		if strings.ContainsAny(msg.file.Path, " \t") {
-			ref = "@\"" + msg.file.Path + "\""
-		}
 		if msg.query.Inline && m.prompt.Value() == msg.query.Original {
+			ref := "@" + msg.file.Path
+			if strings.ContainsAny(msg.file.Path, " \t") {
+				ref = "@\"" + msg.file.Path + "\""
+			}
 			runes := []rune(m.prompt.Value())
 			m.prompt.SetValue(string(runes[:msg.query.Start]) + ref + " " + string(runes[msg.query.End:]))
 			m.setCursorIndex(msg.query.Start + len([]rune(ref)) + 1)
-		} else {
-			m.prompt.InsertString(ref + " ")
 		}
 		m.markDraftChanged()
 		m.layout()
@@ -145,16 +147,16 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case tickMsg:
 		if m.gateway != nil && !m.modelsStarted && m.startupDone && !m.loadingHistory && !m.loadingSession && !m.modelsFocused {
 			m.modelsStarted = true
-			return m, tea.Batch(tick(), m.loadModels(), m.loadPrompts()), true
+			return m, tea.Batch(tick(), m.loadModels()), true
 		}
 		if m.renderPending {
 			m.renderMessages()
 		}
 		var save tea.Cmd
-		if m.dirty && !m.loadingSession && time.Now().After(m.nextSave) && time.Since(m.lastEdit) > 700*time.Millisecond {
+		if (m.dirty || m.pendingSave != nil) && !m.loadingSession && time.Now().After(m.nextSave) && time.Since(m.lastEdit) > 700*time.Millisecond {
 			save = m.persist()
 		}
-		if save == nil && !m.busy && !m.saving && !m.modelsFocused && len(m.queue) > 0 && !m.queuePaused {
+		if save == nil && !m.busy && !m.saving && !m.recovering && m.saveBlocked == "" && !m.modelsFocused && len(m.queue) > 0 && !m.queuePaused {
 			next, cmd := m.startQueued()
 			return next, tea.Batch(tick(), cmd), true
 		}
@@ -172,6 +174,26 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.notify(msg.text)
 		}
 		return m, nil, true
+	case recoverySaved:
+		return m.receiveRecovery(msg)
+	case recoveryDraftLoaded:
+		if msg.err != nil {
+			m.notify("Could not restore a draft: " + terminalSafe(msg.err.Error()))
+			return m, nil, true
+		}
+		current := m.captureDraft()
+		if msg.epoch != m.sessionEpoch || current.Text != msg.before.Text || !slices.Equal(current.Files, msg.before.Files) {
+			m.notify("The draft changed while loading. Press F7 to restore again.")
+			return m, nil, true
+		}
+		m.recordUndo(current)
+		m.prompt.SetValue(msg.draft.Text)
+		m.prompt.CursorEnd()
+		m.files = append([]client.Attachment(nil), msg.draft.Files...)
+		m.markDraftChanged()
+		m.layout()
+		m.notify("Draft restored from recovery. Ctrl+Z to undo.")
+		return m, nil, true
 	case historyLoaded:
 		if msg.epoch != m.sessionEpoch {
 			return m, nil, true
@@ -182,17 +204,25 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.notify("Could not load conversations. Press Alt+H to try again.")
 			return m, nil, true
 		}
-		m.allHistory = msg.records
-		m.history = client.ScopeConversations(msg.records, m.workdir, m.allSessions)
+		m.historyPage = historyPager{paged: msg.paged, ready: msg.paged, cursor: msg.cursor, lookup: msg.lookup, sequence: m.historyPage.sequence + 1}
+		if msg.paged {
+			m.allHistory = nil
+			m.history = msg.records
+		} else {
+			m.allHistory = msg.records
+			m.history = client.ScopeConversations(msg.records, m.workdir, m.allSessions)
+		}
 		if !msg.initial && m.historyQuery != "" {
 			query := m.historyQuery
 			m.historyQuery = ""
-			matches := client.FindConversations(m.history, query)
-			if query == "--last" {
+			matches := m.history
+			if !msg.paged && query == "--last" {
 				matches = nil
 				if latest, ok := client.LatestConversation(m.history, m.workdir, m.allSessions); ok {
 					matches = []client.ConversationSummary{latest}
 				}
+			} else if !msg.paged {
+				matches = client.FindConversations(m.history, query)
 			}
 			if len(matches) == 1 {
 				next, cmd := m.navigate("open:" + matches[0].ID)
@@ -209,7 +239,10 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 				return m, nil, true
 			}
 			if m.resumeID != "" {
-				matches := client.FindConversations(m.history, m.resumeID)
+				matches := m.history
+				if !msg.paged {
+					matches = client.FindConversations(m.history, m.resumeID)
+				}
 				if len(matches) == 1 {
 					return m, m.loadConversation(matches[0].ID), true
 				}
@@ -222,7 +255,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 				return next, cmd, true
 			}
 			if m.startMode == "resume" {
-				if len(m.history) == 0 {
+				if len(m.history) == 0 && !msg.paged {
 					m.notify("No saved sessions here. Start a conversation, or use freeway resume --all.")
 					return m, nil, true
 				}
@@ -235,30 +268,56 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.notify("No previous session in this project. Starting a new conversation.")
 			return m, nil, true
 		}
-		if len(msg.records) == 0 {
+		if len(msg.records) == 0 && !msg.paged {
 			m.notify("No saved conversations yet. Conversations and drafts are saved automatically.")
 			return m, nil, true
 		}
 		next, cmd := m.openMenu("history")
 		return next, cmd, true
+	case historySearch:
+		if m.modelsFocused && m.menu == "history" && msg.sequence == m.historyPage.sequence && msg.epoch == m.sessionEpoch {
+			next, cmd := m.fetchHistoryPage(false)
+			return next, cmd, true
+		}
+		return m, nil, true
+	case historyPageFetched:
+		return m.receiveHistoryPage(msg)
 	case conversationLoaded:
 		if msg.epoch != m.sessionEpoch {
 			return m, nil, true
 		}
 		m.loadingSession = false
 		if msg.err != nil {
-			m.notify("Could not open conversation: " + friendlyError(msg.err))
+			message := "Could not open conversation: " + friendlyError(msg.err)
+			if m.recoveryPath != "" && m.recoveryAction != "" {
+				m.notice = "Recovery copy: " + terminalSafe(m.recoveryPath)
+				m.renderMessages()
+			}
+			m.notify(message)
 			return m, nil, true
 		}
+		if m.attachmentsPending > 0 || m.prompt.Value() != msg.draftAtLoad || !slices.Equal(m.files, msg.filesAtLoad) {
+			m.notify("Kept the current draft. Reopen the saved conversation when you finish editing.")
+			return m, nil, true
+		}
+		m.sessionEpoch++
 		m.session = msg.chat
+		m.shorterMax = 0
 		m.fileEpoch++
 		m.fileItems = nil
 		m.filesLoading = false
 		m.undoDrafts, m.redoDrafts = nil, nil
+		oldWorkspace := m.workdir
 		if msg.chat.Workspace != "" {
 			if info, err := os.Stat(msg.chat.Workspace); err == nil && info.IsDir() {
 				m.workdir = msg.chat.Workspace
 			}
+		}
+		if !client.SameWorkspace(oldWorkspace, m.workdir) {
+			m.promptRequest++
+			m.allPrompts, m.promptsLoading, m.promptsIncomplete = false, false, false
+			m.savedPrompts, m.inputHistory, m.inputFiles = nil, nil, nil
+			m.inputIndex, m.inputDraft, m.lastRecalled, m.inputDraftFiles = -1, "", "", nil
 		}
 		m.messages = append([]client.Message(nil), msg.chat.Messages...)
 		m.files = append([]client.Attachment(nil), msg.chat.DraftFiles...)
@@ -284,15 +343,10 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			}
 		}
 		m.ensureSelected()
-		draft := msg.chat.Draft
-		edited := m.prompt.Value() != msg.draftAtLoad
-		if edited {
-			draft = m.prompt.Value()
-		}
-		m.prompt.SetValue(draft)
+		m.prompt.SetValue(msg.chat.Draft)
 		m.prompt.CursorEnd()
-		m.dirty = edited
-		m.saveError = ""
+		m.dirty = false
+		m.clearSaveState()
 		m.notice = ""
 		m.layout()
 		m.renderMessages()
@@ -315,20 +369,30 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if msg.err != nil {
 			m.saveError = friendlyError(msg.err)
 			m.nextSave = time.Now().Add(10 * time.Second)
-			m.dirty = true
+			m.saveBlocked = blockedSave(msg.err)
+			if m.saveBlocked != "" {
+				m.pendingSave = nil
+				m.dirty = true
+				m.queuePaused = true
+			}
 			if action == "generate" {
 				next, cmd := m.beginGeneration()
 				return next, cmd, true
 			}
-			m.quitting = false
-			m.notify("Could not save. Your work is still here. Use /save to retry or /export to keep a copy.")
+			if action != "" {
+				m.recoveryAction = action
+			}
+			m.notify(m.saveError + " F6 saves a plain-text recovery file before moving on.")
 			return m, nil, true
 		}
+		m.pendingSave = nil
 		m.session.ID, m.session.Revision = msg.chat.ID, msg.chat.Revision
 		if m.session.Title == "" || m.session.Title == msg.titleAtSave {
 			m.session.Title = msg.chat.Title
 		}
 		m.saveError = ""
+		m.saveBlocked, m.recoveryAction = "", ""
+		m.nearSaveLimit = msg.size >= client.MaxBody-1024*1024
 		m.nextSave = time.Time{}
 		if m.busy {
 			m.nextSave = time.Now().Add(time.Second)
@@ -361,8 +425,7 @@ func (m *Model) ensureSelected() {
 			return
 		}
 	}
-	m.selected = "free/auto"
-	m.notify("Your previous model is unavailable. Switched to Auto.")
+	m.notify("Your previous model is unavailable. Pick one with F2 or choose /auto.")
 }
 
 func (m *Model) snapshot() client.Conversation {
@@ -411,7 +474,7 @@ func (m *Model) snapshot() client.Conversation {
 }
 
 func (m *Model) persist() tea.Cmd {
-	if m.loadingSession || m.loadingHistory {
+	if m.loadingSession || m.loadingHistory || m.recovering || m.saveBlocked != "" {
 		return nil
 	}
 	backend, ok := m.gateway.(conversationGateway)
@@ -426,19 +489,58 @@ func (m *Model) persist() tea.Cmd {
 		m.dirty = false
 		return nil
 	}
-	snapshot := m.snapshot()
+	if m.pendingSave == nil {
+		snapshot := m.snapshot()
+		snapshot.SaveKey = rand.Text()
+		m.pendingSave = &snapshot
+		m.dirty = false
+	}
+	snapshot := *m.pendingSave
 	epoch := m.sessionEpoch
 	m.saving = true
-	m.dirty = false
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(m.ctx, 12*time.Second)
 		defer cancel()
-		chat, err := backend.SaveConversation(ctx, snapshot)
-		return conversationSaved{chat: chat, epoch: epoch, err: err, titleAtSave: snapshot.Title}
+		size, err := snapshot.SaveSize()
+		if size > client.MaxBody {
+			err = &client.GatewayError{Code: "conversation_too_large", Status: 413, Message: "This conversation exceeds the 8 MiB save limit. Press F6 to keep a recovery file."}
+		}
+		var chat client.Conversation
+		if err == nil {
+			chat, err = backend.SaveConversation(ctx, snapshot)
+		}
+		return conversationSaved{chat: chat, epoch: epoch, err: err, titleAtSave: snapshot.Title, size: size}
 	}
 }
 
+func blockedSave(err error) string {
+	var gateway *client.GatewayError
+	if errors.As(err, &gateway) {
+		if gateway.Code == "save_uncertain" {
+			return gateway.Code
+		}
+		if gateway.Status >= 400 && gateway.Status < 500 && gateway.Status != 408 && gateway.Status != 429 {
+			if gateway.Code != "" {
+				return gateway.Code
+			}
+			return "save_rejected"
+		}
+	}
+	return ""
+}
+
+func (m *Model) clearSaveState() {
+	m.pendingSave = nil
+	m.saveError, m.saveBlocked, m.recoveryAction = "", "", ""
+	m.nearSaveLimit = false
+	m.nextSave = time.Time{}
+}
+
 func (m Model) showHistory(initial bool) (tea.Model, tea.Cmd) {
+	if m.loadingSession {
+		m.notify("Wait for the conversation to finish loading.")
+		return m, nil
+	}
 	if m.busy {
 		m.notify("Press Esc to stop the response first.")
 		return m, nil
@@ -454,9 +556,21 @@ func (m Model) showHistory(initial bool) (tea.Model, tea.Cmd) {
 	}
 	m.loadingHistory = true
 	epoch := m.sessionEpoch
+	if initial && (m.startNew || m.startMode == "new") {
+		return m, func() tea.Msg { return historyLoaded{initial: true, epoch: epoch} }
+	}
+	query := m.initialHistoryQuery(initial)
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(m.ctx, 12*time.Second)
 		defer cancel()
+		if pager, ok := m.gateway.(historyPageGateway); ok {
+			page, err := pager.HistoryPage(ctx, query)
+			lookup := ""
+			if query.Mode == "lookup" {
+				lookup = query.Search
+			}
+			return historyLoaded{records: page.Records, initial: initial, epoch: epoch, cursor: page.NextCursor, paged: page.Paged, lookup: lookup, err: err}
+		}
 		records, err := backend.Conversations(ctx)
 		return historyLoaded{records: records, initial: initial, epoch: epoch, err: err}
 	}
@@ -472,15 +586,20 @@ func (m *Model) loadConversation(id string) tea.Cmd {
 	m.loadingSession = true
 	epoch := m.sessionEpoch
 	draftAtLoad := m.prompt.Value()
+	filesAtLoad := slices.Clone(m.files)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(m.ctx, 12*time.Second)
 		defer cancel()
 		chat, err := backend.Conversation(ctx, id)
-		return conversationLoaded{chat: chat, epoch: epoch, err: err, draftAtLoad: draftAtLoad}
+		return conversationLoaded{chat: chat, epoch: epoch, err: err, draftAtLoad: draftAtLoad, filesAtLoad: filesAtLoad}
 	}
 }
 
 func (m Model) navigate(action string) (tea.Model, tea.Cmd) {
+	if m.recovering {
+		m.notify("Writing recovery file…")
+		return m, nil
+	}
 	if m.busy {
 		if action == "new" || action == "quit" || action == "fork" {
 			m.queuePaused = true
@@ -500,7 +619,12 @@ func (m Model) navigate(action string) (tea.Model, tea.Cmd) {
 		m.afterSave = action
 		return m, nil
 	}
-	if m.dirty {
+	if m.saveBlocked != "" {
+		m.recoveryAction = action
+		m.notify(m.saveError + " Press F6 to save a plain-text recovery file and continue.")
+		return m, nil
+	}
+	if m.dirty || m.pendingSave != nil {
 		cmd := m.persist()
 		if cmd != nil {
 			m.afterSave = action
@@ -519,11 +643,12 @@ func (m Model) performNavigation(action string) (tea.Model, tea.Cmd) {
 	case action == "new":
 		m.sessionEpoch++
 		m.session = client.Conversation{}
+		m.shorterMax = 0
 		m.messages = nil
 		m.renderCache = nil
 		m.prompt.Reset()
 		m.dirty = false
-		m.saveError = ""
+		m.clearSaveState()
 		m.notice = ""
 		m.inputIndex = -1
 		m.loadingHistory = false
@@ -542,8 +667,6 @@ func (m Model) performNavigation(action string) (tea.Model, tea.Cmd) {
 		m.notify("New conversation · Press Alt+H to reopen earlier work.")
 		return m, nil
 	case strings.HasPrefix(action, "open:"):
-		m.sessionEpoch++
-		m.prompt.Reset()
 		return m, m.loadConversation(strings.TrimPrefix(action, "open:"))
 	case action == "fork" || action == "fork-edit":
 		original := m.session
@@ -551,7 +674,7 @@ func (m Model) performNavigation(action string) (tea.Model, tea.Cmd) {
 		if len(title) > 110 {
 			title = title[:110]
 		}
-		m.session = client.Conversation{Model: m.selected, SystemPrompt: original.SystemPrompt, Settings: m.settings, Title: string(title) + " (fork)"}
+		m.session = client.Conversation{Model: m.selected, SystemPrompt: original.SystemPrompt, Settings: m.settings, Context: original.Context, Title: string(title) + " (fork)"}
 		m.sessionEpoch++
 		m.renderCache = nil
 		m.queue = nil
@@ -575,19 +698,4 @@ func (m Model) performNavigation(action string) (tea.Model, tea.Cmd) {
 		return m, m.persist()
 	}
 	return m, nil
-}
-
-func (m Model) requestQuit() (tea.Model, tea.Cmd) {
-	if m.busy {
-		m.stopResponse()
-		m.status = "Stopped"
-		m.dirty = true
-		m.renderMessages()
-		return m, m.persist()
-	}
-	if m.quitting {
-		return m, tea.Quit
-	}
-	m.quitting = true
-	return m.navigate("quit")
 }

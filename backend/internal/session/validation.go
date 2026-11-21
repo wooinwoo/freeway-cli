@@ -26,6 +26,11 @@ func validate(chat contracts.Conversation) error {
 	if settings.MaxTokens < 1 || settings.MaxTokens > 32768 || math.IsNaN(settings.Temperature) || settings.Temperature < 0 || settings.Temperature > 2 {
 		return fmt.Errorf("%w: settings are out of range", ErrInvalid)
 	}
+	if chat.Context != nil {
+		if err := validateContext(*chat.Context); err != nil {
+			return err
+		}
+	}
 	if chat.Messages == nil || len(chat.Messages) > 198 || chat.DraftFiles == nil || chat.Queued == nil || len(chat.Queued) > 20 {
 		return fmt.Errorf("%w: messages, draft files and queue must be bounded arrays", ErrInvalid)
 	}
@@ -52,6 +57,23 @@ func validate(chat contracts.Conversation) error {
 	}
 	if chat.Stash != nil {
 		return validatePrompt(*chat.Stash)
+	}
+	return nil
+}
+
+func validateContext(selection contracts.ContextSelection) error {
+	if selection.RecentTurns < -1 || selection.RecentTurns > 198 {
+		return fmt.Errorf("%w: earlier context turns must be between -1 and 198", ErrInvalid)
+	}
+	if len(selection.ExcludedPriorFiles) > 198*5 {
+		return fmt.Errorf("%w: too many excluded attachment paths", ErrInvalid)
+	}
+	seen := make(map[string]bool, len(selection.ExcludedPriorFiles))
+	for _, path := range selection.ExcludedPriorFiles {
+		if path == "" || !boundedText(path, 1000) || seen[path] {
+			return fmt.Errorf("%w: excluded attachment paths must be unique and match attachment path limits", ErrInvalid)
+		}
+		seen[path] = true
 	}
 	return nil
 }

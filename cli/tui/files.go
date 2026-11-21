@@ -264,5 +264,11 @@ func (m Model) composerExtraRows(width int) []string {
 			rows = append(rows, marker+item.Name+"  "+item.Description)
 		}
 	}
+	if hint := m.replyBudgetHint(); hint != "" {
+		rows = append(rows, hint)
+	}
+	if hint := m.contextHint(); hint != "" {
+		rows = append(rows, hint)
+	}
 	return rows[:min(len(rows), max(0, min(6, m.height-9)))]
 }

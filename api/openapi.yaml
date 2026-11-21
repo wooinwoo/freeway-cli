@@ -3,7 +3,7 @@
   "info": {
     "title": "Freeway Local Gateway API",
     "version": "1.0.0",
-    "description": "Native authenticated loopback HTTP contract. The common Go backend is a separate deliverable. Clients own no provider policy or persistent user database. JSON and accumulated text responses are limited to 8 MiB.",
+    "description": "Native authenticated loopback HTTP contract. Clients own no provider policy or persistent user database. JSON and accumulated text responses are limited to 8 MiB.",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -20,6 +20,53 @@
     }
   ],
   "paths": {
+    "/v1/status": {
+      "get": {
+        "operationId": "gatewayStatus",
+        "responses": {
+          "204": {
+            "description": "The gateway is ready.",
+            "headers": {
+              "X-Freeway-API": {
+                "schema": {"type": "string", "const": "1"}
+              },
+              "X-Freeway-Features": {
+                "description": "Comma-separated features available to this client. Includes idempotent-saves, prompt-history, context-selection for explicit conversation context settings, context-file-selection for individual attachment exclusions, history-pages for conversation paging and scoped prompt history, and opencode when enabled for this key.",
+                "schema": {"type": "string"}
+              }
+            }
+          },
+          "default": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/prompts": {
+      "get": {
+        "operationId": "listRecentPrompts",
+        "description": "Return recent user prompts in chronological order. Responses may include healthy results alongside an incomplete flag. Assistant replies and attachment contents are excluded.",
+        "parameters": [
+          {"name": "workspace", "in": "query", "description": "Limit prompts to sessions saved in this project path. Omit to include all projects.", "schema": {"type": "string", "maxLength": 4096}}
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent prompt text and partial-read status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "incomplete"],
+                  "properties": {
+                    "data": {"type": "array", "items": {"type": "string"}},
+                    "incomplete": {"type": "boolean"}
+                  }
+                }
+              }
+            }
+          },
+          "default": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
     "/v1/models": {
       "get": {
         "operationId": "listModels",
@@ -135,6 +182,14 @@
     "/v1/conversations": {
       "get": {
         "operationId": "listConversations",
+        "description": "Omit limit for the original complete list. Provide limit to enable paging, search, and project filtering.",
+        "parameters": [
+          {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100}},
+          {"name": "workspace", "in": "query", "description": "Filter to this project path and older records without a workspace. Omit to include all projects.", "schema": {"type": "string", "maxLength": 4096}},
+          {"name": "q", "in": "query", "description": "Find case-insensitive matches in ID, title, preview, or path. Lookup mode ranks exact ID, ID prefix, exact title, then partial title.", "schema": {"type": "string", "maxLength": 1024}},
+          {"name": "mode", "in": "query", "description": "Lookup requires q. Latest finds one usable conversation and prefers the requested workspace over older records without one.", "schema": {"type": "string", "enum": ["lookup", "latest"]}},
+          {"name": "cursor", "in": "query", "description": "Pass the previous response's nextCursor with the same filters. Latest mode does not take a cursor.", "schema": {"type": "string", "maxLength": 200}}
+        ],
         "responses": {
           "200": {
             "description": "Saved metadata, newest first",
@@ -151,7 +206,8 @@
                       "items": {
                         "$ref": "#/components/schemas/ConversationSummary"
                       }
-                    }
+                    },
+                    "nextCursor": {"type": "string", "description": "Present when another page is available."}
                   }
                 }
               }
@@ -164,6 +220,8 @@
       },
       "post": {
         "operationId": "createConversation",
+        "description": "Reusing the same save key with the same body returns the original conversation ID and revision 1.",
+        "parameters": [{"$ref": "#/components/parameters/SaveKey"}],
         "requestBody": {
           "required": true,
           "content": {
@@ -205,7 +263,7 @@
       ],
       "get": {
         "operationId": "getConversation",
-        "description": "Interrupted assistant messages are recovered as stopped, never done.",
+        "description": "Interrupted assistant messages are recovered as stopped. An unreadable conversation returns 422 with code chat_unreadable and its original file is preserved.",
         "responses": {
           "200": {
             "description": "Saved conversation",
@@ -224,7 +282,8 @@
       },
       "put": {
         "operationId": "updateConversation",
-        "description": "Atomically compare revision and persist client state. Reject stale revisions with 409 and code chat_conflict. Increment revision only after persistence succeeds; preserve original data on failure. Explicit empty arrays clear messages, attachments and queue. Null clears stash. Enforce the same single-writer/revision invariant across processes.",
+        "description": "Atomically compare revision and persist client state. A retry of one of the four most recent keyed updates with the original body returns its committed revision. Stale revisions return 409 chat_conflict and reuse with a changed body returns 409 save_key_reused. Explicit empty arrays clear messages, attachments and queue. Null clears stash.",
+        "parameters": [{"$ref": "#/components/parameters/SaveKey"}],
         "requestBody": {
           "required": true,
           "content": {
@@ -257,6 +316,14 @@
     }
   },
   "components": {
+    "parameters": {
+      "SaveKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "description": "Optional unique key for a save operation. Reuse it with the original body when the response is lost.",
+        "schema": {"type": "string", "pattern": "^[A-Za-z0-9_-]{16,64}$"}
+      }
+    },
     "securitySchemes": {
       "ClientKey": {
         "type": "http",
@@ -289,6 +356,11 @@
               "retryAfter": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "maxOutputTokens": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Locally estimated output allowance for this exact input when rejected with local_token_budget."
               }
             }
           }
@@ -317,6 +389,11 @@
           },
           "ready": {
             "type": "boolean"
+          },
+          "localTokensRemaining": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Estimated unreserved local token headroom. Input framing and output both consume it."
           }
         }
       },
@@ -432,6 +509,20 @@
             "type": "string",
             "maxLength": 20000
           },
+          "context": {
+            "type": "object",
+            "description": "Client-side input selection for future requests. An omitted field on a new conversation uses the legacy defaults. An update to a conversation with explicit context must send its settings.",
+            "required": ["recentTurns", "includePriorAttachments"],
+            "properties": {
+              "recentTurns": {"type": "integer", "minimum": -1, "maximum": 198, "description": "-1 includes all earlier turns and 0 excludes them."},
+              "includePriorAttachments": {"type": "boolean"},
+              "excludedPriorFiles": {
+                "type": "array", "maxItems": 990, "uniqueItems": true,
+                "items": {"type": "string", "minLength": 1, "maxLength": 1000},
+                "description": "Stored paths to exclude from earlier messages. All earlier copies of a listed path are excluded. The current or retried question still includes its own attachments."
+              }
+            }
+          },
           "workspace": {
             "type": "string"
           },
@@ -510,8 +601,8 @@
             "type": "string"
           },
           "updatedAt": {
-            "type": "string",
-            "format": "date-time"
+            "anyOf": [{"type": "string", "format": "date-time"}, {"const": ""}],
+            "description": "Empty when the metadata of an unreadable record cannot be recovered."
           },
           "messageCount": {
             "type": "integer",
@@ -529,6 +620,10 @@
           "queuedCount": {
             "type": "integer",
             "minimum": 0
+          },
+          "damaged": {
+            "type": "boolean",
+            "description": "True when the original conversation file is preserved but cannot be opened."
           }
         }
       }

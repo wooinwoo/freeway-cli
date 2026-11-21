@@ -26,6 +26,12 @@ type responseEvent struct {
 	generation uint64
 }
 
+type responseTarget struct {
+	model    string
+	settings client.Settings
+	context  client.ContextSelection
+}
+
 // NewConnected uses the gateway interface without owning routing or persistent storage.
 func NewConnected(ctx context.Context, backend gateway) Model {
 	m := New()
@@ -36,18 +42,22 @@ func NewConnected(ctx context.Context, backend gateway) Model {
 	if _, ok := backend.(conversationGateway); ok {
 		m.loadingHistory = true
 	}
-	if _, ok := backend.(interface {
-		PromptHistory(context.Context) ([]string, error)
-	}); ok {
-		m.promptsLoading = true
-	}
 	return m
 }
 
 func (m Model) loadModels() tea.Cmd {
+	return m.refreshModels(false)
+}
+
+func (m Model) refreshModels(reconnect bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(m.ctx, 45*time.Second)
 		defer cancel()
+		if gateway, ok := m.gateway.(interface{ Reconnect(context.Context) error }); reconnect && ok {
+			if err := gateway.Reconnect(ctx); err != nil {
+				return modelsLoaded{err: err}
+			}
+		}
 		models, err := m.gateway.Models(ctx)
 		return modelsLoaded{models: models, err: err}
 	}
@@ -58,7 +68,7 @@ func (m Model) receiveModels(msg modelsLoaded) (tea.Model, tea.Cmd) {
 	m.loadingModels = false
 	var cmd tea.Cmd
 	if msg.err != nil {
-		if isOpenCodeModel(m.selected) {
+		if isOpenCodeModel(m.selected) || m.busy {
 			m.ready = false
 			return m, nil
 		}
@@ -71,28 +81,37 @@ func (m Model) receiveModels(msg modelsLoaded) (tea.Model, tea.Cmd) {
 		}
 	} else {
 		m.availableModels = append([]client.Model(nil), msg.models...)
+		m.ready = len(msg.models) > 0
+		if !m.busy {
+			m.status, m.notice = "Ready", ""
+			m.ensureSelected()
+		}
 		items := m.modelPickerItems()
 		if m.modelsFocused && m.menu == "models" {
-			m.menuAll = items
-			cmd = m.applyMenuFilter()
+			cmd = m.refreshMenuItems(items)
 		} else if !m.modelsFocused {
 			cmd = m.models.list.SetItems(items)
 		}
-		m.ready = len(msg.models) > 0
-		m.status, m.notice = "Ready", ""
 		m.reconnectAttempts = 0
-		m.ensureSelected()
+		m.layout()
 	}
 	m.renderMessages()
 	return m, cmd
 }
 
 func (m Model) startResponse() (tea.Model, tea.Cmd) {
+	return m.startResponseWithSettings(m.settings)
+}
+
+func (m Model) startResponseWithSettings(settings client.Settings) (tea.Model, tea.Cmd) {
 	assistant := newMessage("assistant", "")
 	assistant.Status = "streaming"
 	m.messages = append(m.messages, assistant)
 	m.busy, m.status, m.notice = true, "Preparing response", ""
 	m.startedAt = time.Now()
+	m.responseTarget = responseTarget{model: m.selected, settings: settings, context: m.contextSelection()}
+	m.shorterMax = 0
+	m.responseElapsed, m.lastResponseTokens = 0, 0
 	m.dirty = true
 	m.renderMessages()
 	m.chat.GotoBottom()
@@ -108,82 +127,117 @@ func (m Model) startResponse() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) beginGeneration() (tea.Model, tea.Cmd) {
-	request := []client.Message{}
-	if m.session.SystemPrompt != "" {
-		request = append(request, client.Message{Role: "system", Content: m.session.SystemPrompt})
-	}
-	for _, message := range m.messages {
-		if message.Role == "user" || message.Role == "assistant" && (message.Status == "" || message.Status == "done") && message.Content != "" {
-			request = append(request, client.Message{Role: message.Role, Content: message.Content, Files: append([]client.Attachment(nil), message.Files...)})
-		}
-	}
+	request := m.responseContext().messages()
 	m.generation++
-	ctx, cancel := context.WithTimeout(m.ctx, 150*time.Second)
+	ctx, cancel := context.WithCancel(m.ctx)
 	m.cancel = cancel
 	events := make(chan client.Event, 16)
-	backend, model := m.gateway, m.selected
-	settings := m.settings
+	backend, target := m.gateway, m.responseTarget
 	go func() {
 		defer close(events)
-		emit := func(event client.Event) {
-			select {
-			case events <- event:
-			case <-ctx.Done():
-			}
-		}
-		var buffer strings.Builder
-		lastFlush := time.Now()
-		hasOutput, complete := false, false
-		flush := func() {
-			if buffer.Len() > 0 {
-				emit(client.Event{Type: "text", Text: buffer.String()})
-				buffer.Reset()
-				lastFlush = time.Now()
-			}
-		}
-		callback := func(event client.Event) {
-			switch event.Type {
-			case "text":
-				hasOutput = hasOutput || event.Text != ""
-				buffer.WriteString(event.Text)
-				if time.Since(lastFlush) >= 33*time.Millisecond {
-					flush()
+		requestCtx, stopRequest := context.WithTimeout(ctx, 150*time.Second)
+		defer stopRequest()
+		incoming := make(chan client.Event, 16)
+		go func() {
+			defer close(incoming)
+			emit := func(event client.Event) {
+				select {
+				case incoming <- event:
+				case <-ctx.Done():
 				}
-			case "error": // The returned error decides whether a safe automatic retry is possible.
-			case "done":
-				flush()
-				complete = true
-				emit(event)
-			default:
-				emit(event)
 			}
-		}
-		stream := func(selected string) error {
+			callback := func(event client.Event) {
+				if event.Type != "error" {
+					emit(event)
+				}
+			}
+			var err error
 			if configured, ok := backend.(interface {
 				StreamWithSettings(context.Context, string, []client.Message, client.Settings, func(client.Event)) error
 			}); ok {
-				return configured.StreamWithSettings(ctx, selected, request, settings, callback)
+				err = configured.StreamWithSettings(requestCtx, target.model, request, target.settings, callback)
+			} else {
+				err = backend.Stream(requestCtx, target.model, request, callback)
 			}
-			return backend.Stream(ctx, selected, request, callback)
-		}
-		err := stream(model)
-		if err != nil && ctx.Err() == nil && !hasOutput && !complete && model != "free/auto" && !isOpenCodeModel(model) && canRecover(err) {
-			emit(client.Event{Type: "fallback"})
-			err = stream("free/auto")
-		}
-		flush()
-		if err != nil {
-			// Timeout must still reach the screen after its request context expires.
-			select {
-			case events <- client.Event{Type: "error", Error: friendlyError(err)}:
-			default:
+			if err != nil {
+				event := client.Event{Type: "error", Error: friendlyError(err)}
+				var problem *client.GatewayError
+				if errors.As(err, &problem) && problem.Code == "local_token_budget" {
+					event.MaxOutputTokens = problem.MaxOutputTokens
+				}
+				emit(event)
 			}
-		}
+		}()
+		coalesceResponse(ctx, incoming, events)
 	}()
 	m.events = events
 	m.renderMessages()
 	m.chat.GotoBottom()
 	return m, waitResponse(events, m.generation)
+}
+
+func includesModelContext(message client.Message) bool {
+	return message.Role == "user" || message.Role == "assistant" && (message.Status == "" || message.Status == "done") && message.Content != ""
+}
+
+func coalesceResponse(ctx context.Context, incoming <-chan client.Event, events chan<- client.Event) {
+	emit := func(event client.Event) {
+		select {
+		case events <- event:
+		case <-ctx.Done():
+		}
+	}
+	var buffer strings.Builder
+	var pending client.Event
+	var deadline <-chan time.Time
+	timer := time.NewTimer(33 * time.Millisecond)
+	timer.Stop()
+	defer timer.Stop()
+	flush := func() {
+		timer.Stop()
+		deadline = nil
+		if buffer.Len() > 0 {
+			pending.Text = buffer.String()
+			emit(pending)
+			buffer.Reset()
+		}
+	}
+	first := true
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-deadline:
+			flush()
+		case event, ok := <-incoming:
+			if !ok {
+				flush()
+				return
+			}
+			if event.Type != "text" {
+				flush()
+				emit(event)
+				continue
+			}
+			if event.Text == "" {
+				continue
+			}
+			if first {
+				first = false
+				emit(event)
+				continue
+			}
+			pending.Type = "text"
+			if event.Model != "" {
+				pending.Model, pending.Provider = event.Model, event.Provider
+			}
+			buffer.WriteString(event.Text)
+			if deadline == nil {
+				timer.Reset(33 * time.Millisecond)
+				deadline = timer.C
+			}
+		}
+	}
 }
 
 func waitResponse(events <-chan client.Event, generation uint64) tea.Cmd {
@@ -201,21 +255,21 @@ func (m Model) receiveResponse(msg responseEvent) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	follow := m.find == nil && m.chat.AtBottom()
+	firstText := false
 	switch msg.event.Type {
 	case "text":
 		if len(m.messages) == 0 || m.messages[len(m.messages)-1].Role != "assistant" {
 			m.stopResponse()
 			return m, nil
 		}
+		firstText = m.messages[len(m.messages)-1].Content == ""
 		m.messages[len(m.messages)-1].Content += msg.event.Text
+		if msg.event.Model != "" {
+			m.messages[len(m.messages)-1].Model = msg.event.Model
+		}
 		m.dirty = true
 		m.status = "Writing response"
 		m.renderPending = true
-	case "fallback":
-		m.selected = "free/auto"
-		m.status = "Finding another free connection"
-		m.notify("This model is unavailable. Trying another free connection automatically.")
-		m.dirty = true
 	case "done":
 		m.responseElapsed = time.Since(m.startedAt)
 		if msg.event.Usage != nil {
@@ -223,7 +277,9 @@ func (m Model) receiveResponse(msg responseEvent) (tea.Model, tea.Cmd) {
 		}
 		m.messages[len(m.messages)-1].Content = msg.event.Text
 		m.messages[len(m.messages)-1].Status = "done"
-		m.messages[len(m.messages)-1].Model = msg.event.Model
+		if msg.event.Model != "" {
+			m.messages[len(m.messages)-1].Model = msg.event.Model
+		}
 		m.stopResponse()
 		m.status = "Response complete"
 		m.dirty = true
@@ -234,10 +290,14 @@ func (m Model) receiveResponse(msg responseEvent) (tea.Model, tea.Cmd) {
 			m.messages[len(m.messages)-1].Error = msg.event.Error
 		}
 		m.stopResponse()
-		m.status, m.notice = "Ready to retry", msg.event.Error+"\nAlt+R retry · /auto switch model · Your question and draft are safe."
+		m.status, m.notice = "Ready to retry", msg.event.Error+"\nAlt+R retry · /auto then Alt+R to use Auto."
+		if msg.event.MaxOutputTokens != nil && *msg.event.MaxOutputTokens > 0 && m.selected == m.responseTarget.model {
+			m.shorterMax = min(32768, *msg.event.MaxOutputTokens)
+			m.notice = fmt.Sprintf("%s\nF5 retry with up to %d output tokens · /settings", msg.event.Error, m.shorterMax)
+		}
 		m.dirty = true
 	}
-	if msg.event.Type != "text" || time.Since(m.lastRender) >= 33*time.Millisecond {
+	if firstText || msg.event.Type != "text" || time.Since(m.lastRender) >= 33*time.Millisecond {
 		m.renderMessages()
 	}
 	if follow {
@@ -272,25 +332,20 @@ func (m *Model) stopResponse() {
 	}
 }
 
-func canRecover(err error) bool {
-	var gateway *client.GatewayError
-	if errors.As(err, &gateway) {
-		switch gateway.Code {
-		case "gateway_busy", "gateway_unavailable", "gateway_auth_required", "invalid_api_key", "local_only",
-			"usage_storage_failed", "response_too_large", "upstream_timeout":
-			return false
-		}
-		return gateway.Status == 401 || gateway.Status == 403 || gateway.Status == 404 || gateway.Status == 429 || gateway.Status >= 500
-	}
-	return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
-}
-
 func friendlyError(err error) string {
 	var gateway *client.GatewayError
 	if errors.As(err, &gateway) {
 		switch {
 		case gateway.Code == "chat_conflict":
-			return "This conversation changed in another window. Export your work, then reopen it with Alt+H."
+			return "This conversation changed in another window."
+		case gateway.Code == "chat_unreadable":
+			return terminalSafe(gateway.Message)
+		case gateway.Code == "request_too_large":
+			return "This request exceeds the 8 MiB gateway limit. Use F8 to reduce the earlier context."
+		case gateway.Code == "conversation_too_large" || gateway.Code == "context_settings_unavailable" || gateway.Code == "context_settings_required":
+			return terminalSafe(gateway.Message)
+		case gateway.Code == "invalid_conversation" || gateway.Code == "save_uncertain" || gateway.Code == "save_key_reused":
+			return terminalSafe(gateway.Message)
 		case gateway.Code == "chat_storage_failed" || gateway.Code == "usage_storage_failed":
 			return terminalSafe(gateway.Message)
 		case gateway.Code == "gateway_busy":
@@ -303,6 +358,11 @@ func friendlyError(err error) string {
 			return "The provider timed out. Press Alt+R to retry, or use /auto."
 		case gateway.Code == "response_too_large":
 			return "The reply exceeded the gateway's size limit. Ask for a shorter reply or lower the /settings response limit."
+		case gateway.Code == "local_token_budget":
+			if gateway.MaxOutputTokens != nil && *gateway.MaxOutputTokens > 0 {
+				return "The current context fits with a shorter reply under the local token budget."
+			}
+			return "The current context exceeds the local token budget. Use F8 to reduce it, or shorten the current draft."
 		case gateway.Status == 429 && gateway.RetryAfter > 0:
 			wait := time.Duration(min(gateway.RetryAfter, 86400)) * time.Second
 			return fmt.Sprintf("Free usage is temporarily limited. Try again in %s with Alt+R.", wait)

@@ -15,7 +15,7 @@ import tarfile
 import tempfile
 import threading
 import time
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 import zipfile
@@ -104,8 +104,10 @@ def verify_gateway(launcher, binary, base, environment, run):
             assert key.startswith("fw_")
             connected = dict(environment, FREEWAY_URL=url, FREEWAY_API_KEY=key)
 
-            def api(path, body=None, authenticated=True):
+            def api(path, body=None, authenticated=True, save_key=None):
                 headers = {"Authorization": "Bearer " + key} if authenticated else {}
+                if save_key:
+                    headers["Idempotency-Key"] = save_key
                 data = None
                 if body is not None:
                     headers["Content-Type"] = "application/json"
@@ -123,24 +125,42 @@ def verify_gateway(launcher, binary, base, environment, run):
                 else:
                     raise AssertionError("The installed gateway accepted an unauthenticated request.")
                 assert api("/v1/models") == {"data": []}
-                chat = api("/v1/conversations", {
+                draft = {
                     "title": marker, "model": "free/auto", "workspace": str(base),
-                    "settings": {"maxTokens": 4096, "temperature": 0.6}, "messages": [],
+                    "settings": {"maxTokens": 4096, "temperature": 0.6},
+                    "context": {"recentTurns": 3, "includePriorAttachments": True, "excludedPriorFiles": ["old.txt"]},
+                    "messages": [{"id": "fixture-prompt", "role": "user", "content": marker, "status": "done"}],
                     "draft": marker, "draftFiles": [], "queued": [], "stash": None,
-                })
+                }
+                chat = api("/v1/conversations", draft, save_key="fixture-release-save-key")
+                damaged = api("/v1/conversations", dict(draft, title="Damaged fixture"))
                 assert chat["revision"] == 1
                 records = list(state.glob("*.enc"))
                 assert records and all(marker.encode() not in record.read_bytes() for record in records)
             else:
                 assert key == original_key
+                assert api("/v1/conversations", draft, save_key="fixture-release-save-key") == chat
                 reopened = api("/v1/conversations/" + chat["id"])
                 assert reopened["draft"] == marker and reopened["revision"] == 1
+                assert reopened["context"] == draft["context"]
+                rows = api("/v1/conversations")["data"]
+                assert len(rows) == 2 and any(item["id"] == damaged["id"] and item["damaged"] for item in rows)
+                query = {"workspace": str(base), "limit": 1}
+                page = api("/v1/conversations?" + urlencode(query))
+                assert [item["id"] for item in page["data"]] == [chat["id"]]
+                second = api("/v1/conversations?" + urlencode(dict(query, cursor=page["nextCursor"])))
+                assert [item["id"] for item in second["data"]] == [damaged["id"]] and "nextCursor" not in second
+                assert api("/v1/prompts") == {"data": [marker], "incomplete": True}
+                assert api("/v1/prompts?" + urlencode({"workspace": str(base)})) == {"data": [marker], "incomplete": False}
                 summaries = json.loads(run(launcher, "sessions", "--json", env=connected))
                 assert any(item["id"] == chat["id"] and item["hasDraft"] for item in summaries)
         finally:
             server.terminate()
             server.wait(timeout=20)
-    print("Installed gateway rejected unauthenticated requests and restored an encrypted draft after restart.", flush=True)
+        if attempt == 0:
+            damaged_file = state / f"chat-{damaged['id']}.enc"
+            damaged_file.write_bytes(damaged_file.read_bytes()[:12])
+    print("Installed gateway authenticated, replayed a save across restart and isolated a damaged record.", flush=True)
 
 
 def verify_automatic_gateway(launcher, base, environment, run):
@@ -264,11 +284,19 @@ def run_upgrade(directory, go):
 
         # The stable launcher must recover even if the active version is broken.
         gateway = "freewayd.exe" if system == "windows" else "freewayd"
+        active = root / "versions" / release["version"]
+        assert launcher.read_bytes() != (active / launcher.name).read_bytes()
+        run(active / launcher.name, "install", "--archive", current_archive, "--sha256", artifact["sha256"], "--root", root)
+        assert launcher.read_bytes() == (active / launcher.name).read_bytes()
         assert run(launcher, "gateway", "--version").strip() == release["version"]
         verify_automatic_gateway(launcher, base, environment, run)
         verify_gateway(launcher, root / "versions" / release["version"] / gateway, base, environment, run)
         utility = "freeway-providers.exe" if system == "windows" else "freeway-providers"
         (root / "versions" / release["version"] / utility).write_bytes(b"damaged")
+        run(launcher, "--version", success=False)
+        run(launcher, "install", "--archive", current_archive, "--sha256", artifact["sha256"])
+        assert run(launcher, "--version").strip() == release["version"]
+        (active / utility).write_bytes(b"damaged")
         run(launcher, "--version", success=False)
         run(launcher, "rollback")
         assert run(launcher, "--version").strip() == PREVIOUS_VERSION

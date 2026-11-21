@@ -46,6 +46,12 @@ type Prompt struct {
 	Files []Attachment `json:"files,omitempty"`
 }
 
+type ContextSelection struct {
+	RecentTurns             int      `json:"recentTurns"`
+	IncludePriorAttachments bool     `json:"includePriorAttachments"`
+	ExcludedPriorFiles      []string `json:"excludedPriorFiles,omitempty"`
+}
+
 type Message struct {
 	ID      string       `json:"id"`
 	Role    string       `json:"role"`
@@ -57,18 +63,19 @@ type Message struct {
 }
 
 type Conversation struct {
-	ID           string       `json:"id,omitempty"`
-	Revision     int          `json:"revision,omitempty"`
-	Title        string       `json:"title"`
-	Model        string       `json:"model"`
-	SystemPrompt string       `json:"systemPrompt,omitempty"`
-	Settings     Settings     `json:"settings"`
-	Messages     []Message    `json:"messages"`
-	Draft        string       `json:"draft"`
-	DraftFiles   []Attachment `json:"draftFiles"`
-	Queued       []Prompt     `json:"queued"`
-	Stash        *Prompt      `json:"stash"`
-	Workspace    string       `json:"workspace,omitempty"`
+	ID           string            `json:"id,omitempty"`
+	Revision     int               `json:"revision,omitempty"`
+	Title        string            `json:"title"`
+	Model        string            `json:"model"`
+	SystemPrompt string            `json:"systemPrompt,omitempty"`
+	Settings     Settings          `json:"settings"`
+	Context      *ContextSelection `json:"context,omitempty"`
+	Messages     []Message         `json:"messages"`
+	Draft        string            `json:"draft"`
+	DraftFiles   []Attachment      `json:"draftFiles"`
+	Queued       []Prompt          `json:"queued"`
+	Stash        *Prompt           `json:"stash"`
+	Workspace    string            `json:"workspace,omitempty"`
 }
 
 type ConversationSummary struct {
@@ -81,4 +88,5 @@ type ConversationSummary struct {
 	Workspace    string `json:"workspace,omitempty"`
 	HasDraft     bool   `json:"hasDraft"`
 	QueuedCount  int    `json:"queuedCount"`
+	Damaged      bool   `json:"damaged,omitempty"`
 }

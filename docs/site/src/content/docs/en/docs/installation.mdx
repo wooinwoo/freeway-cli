@@ -1,11 +1,11 @@
 ---
 title: Installation
-description: Two native executables. No Node.js runtime.
+description: Install Freeway from a package with three native executables.
 ---
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 import { Aside } from '@astrojs/starlight/components';
 
-Freeway packages contain `freeway`, `freeway-providers`, a file manifest, and license notices. Choose the archive matching your operating system and CPU. Keep both executables together.
+Freeway packages contain `freeway`, `freewayd`, `freeway-providers`, a file manifest, and license notices. Choose the archive matching your operating system and CPU and keep the three executables together. The local gateway runs in `freewayd`.
 
 <Aside title="Release availability">
 Release publication is separate from this checkout. These instructions also work with archives produced locally. If no release is published, build the package from source; do not download an archive from an unrelated mirror.
@@ -117,6 +117,7 @@ Freeway starts the bundled gateway and opens the chat. Use `freeway --preview` w
   install.json                active and previous versions
   versions/VERSION/
     freeway
+    freewayd
     freeway-providers
     manifest.json
     LICENSE

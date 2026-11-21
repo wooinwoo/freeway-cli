@@ -166,6 +166,85 @@ func TestFailedUpdatesKeepActiveVersion(t *testing.T) {
 	}
 }
 
+func TestUpdateSkipsEqualVersionAndRefusesOlderRelease(t *testing.T) {
+	m := Manager{Root: filepath.Join(t.TempDir(), "app")}
+	ctx := t.Context()
+	archive, sha := archiveFixture(t, "1.0.0-rc.10", nil)
+	if _, err := m.install(ctx, archive, sha, "1.0.0-rc.10"); err != nil {
+		t.Fatal(err)
+	}
+	for _, advertised := range []string{"1.0.0-rc.9", "1.0.0-rc.10"} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/release.json" {
+				t.Error("update downloaded an archive without a newer version")
+				http.NotFound(w, r)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(Release{SchemaVersion: 1, Version: advertised, Artifacts: []Artifact{
+				{OS: runtime.GOOS, Arch: runtime.GOARCH, SHA256: sha, URL: "http://" + r.Host + "/archive"},
+			}})
+		}))
+		m.ReleaseURL = server.URL + "/release.json"
+		state, err := m.Update(ctx)
+		server.Close()
+		if (err != nil) != (advertised == "1.0.0-rc.9") || state.Active != "1.0.0-rc.10" {
+			t.Fatalf("unexpected update result for %s: %+v %v", advertised, state, err)
+		}
+	}
+	if compareVersions("1.0.0", "1.0.0-rc.10") <= 0 {
+		t.Fatal("stable release should follow its prerelease")
+	}
+}
+
+func TestDamagedVersionRepairsFromUpdateAndVerifiedArchive(t *testing.T) {
+	const version = "1.2.3"
+	m := Manager{Root: filepath.Join(t.TempDir(), "app")}
+	content, hash := archiveFixture(t, version, nil)
+	archive := filepath.Join(t.TempDir(), "freeway.zip")
+	if err := os.WriteFile(archive, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Install(t.Context(), archive, hash); err != nil {
+		t.Fatal(err)
+	}
+	versionDir := filepath.Join(m.Root, "versions", version)
+	utility := filepath.Join(versionDir, exe("freeway-providers"))
+	damage := func() {
+		t.Helper()
+		if err := os.WriteFile(utility, []byte("corrupt fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/release.json":
+			_ = json.NewEncoder(w).Encode(Release{SchemaVersion: 1, Version: version, Artifacts: []Artifact{
+				{OS: runtime.GOOS, Arch: runtime.GOARCH, SHA256: hash, URL: "http://" + r.Host + "/archive"},
+			}})
+		case "/archive":
+			_, _ = w.Write(content)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	m.ReleaseURL = server.URL + "/release.json"
+	damage()
+	if state, err := m.Update(t.Context()); err != nil || state.Active != version || state.Previous != "" {
+		t.Fatalf("same-version update: %+v %v", state, err)
+	}
+	if _, err := validatePackage(versionDir, version); err != nil {
+		t.Fatal(err)
+	}
+	damage()
+	if _, err := m.Install(t.Context(), archive, hash); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validatePackage(versionDir, version); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestArchiveRejectsLinksAndDuplicateEntries(t *testing.T) {
 	var zipped bytes.Buffer
 	z := zip.NewWriter(&zipped)

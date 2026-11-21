@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,12 +20,15 @@ type command struct{ Name, Description string }
 var commands = []command{
 	{"/model", "Choose a model"}, {"/history", "Search and resume conversations"}, {"/new", "New conversation"},
 	{"/providers", "Check provider connections and free models"},
+	{"/context", "Review or limit what the next request sends"},
 	{"/opencode", "Choose an OpenCode model for this chat"},
 	{"/continue", "Continue the latest session in this project"},
 	{"/find", "Find text in this conversation"},
-	{"/retry", "Regenerate the last response"}, {"/copy", "Copy the last response"}, {"/code", "Copy the last code block"},
+	{"/retry", "Regenerate the last response"}, {"/retry-shorter", "Retry with a shorter reply"}, {"/copy", "Copy the last response"}, {"/code", "Copy the last code block"},
 	{"/export", "Export conversation to Markdown"}, {"/settings", "Response length"},
 	{"/auto", "Choose a free model automatically"}, {"/reconnect", "Reconnect"}, {"/save", "Save now"},
+	{"/recover", "Save a plain-text recovery file and continue after a failed save"},
+	{"/restore", "Recover a draft from the latest backup or a given JSON path"},
 	{"/help", "Keyboard shortcuts and commands"}, {"/exit", "Save and quit"},
 	{"/attach", "Attach a project text file"}, {"/detach", "Remove attached files"}, {"/queue", "Review queued follow-ups"},
 	{"/editor", "Edit the draft in VISUAL or EDITOR"}, {"/prompts", "Search prompt history"}, {"/fork", "Continue in a new conversation"}, {"/rename", "Rename this conversation"}, {"/resume", "Open a saved conversation"}, {"/clear", "Start a new conversation"},
@@ -65,6 +69,14 @@ func (m Model) commandSuggestion() command {
 
 func (m Model) shortcut(key tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	keyName := key.String()
+	if keyName == "f8" {
+		if m.modelsFocused && m.menu == "context" {
+			next, cmd := m.changeFocus(false)
+			return next, cmd, true
+		}
+		next, cmd := m.openMenu("context")
+		return next, cmd, true
+	}
 	if keyName == "f4" && (!m.modelsFocused || m.menu == "models") ||
 		keyName == "ctrl+r" && m.modelsFocused && m.menu == "providers" {
 		next, cmd := m.showProviders()
@@ -82,6 +94,14 @@ func (m Model) shortcut(key tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		if keyName == "ctrl+a" && m.menu == "history" {
 			query := m.menuQuery
 			m.allSessions = !m.allSessions
+			if m.historyPage.paged {
+				m.history = nil
+				m.historyPage.cursor, m.historyPage.ready = "", false
+				m.menuAll = nil
+				m.models.list.SetItems(nil)
+				next, cmd := m.fetchHistoryPage(false)
+				return next, cmd, true
+			}
 			m.history = client.ScopeConversations(m.allHistory, m.workdir, m.allSessions)
 			next, cmd := m.openMenu("history")
 			model := next.(Model)
@@ -90,6 +110,28 @@ func (m Model) shortcut(key tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 				cmd = tea.Batch(cmd, model.applyMenuFilter())
 			}
 			return model, cmd, true
+		}
+		if keyName == "ctrl+r" && m.menu == "history" && m.historyPage.paged {
+			next, cmd := m.fetchHistoryPage(false)
+			return next, cmd, true
+		}
+		if keyName == "end" && m.menu == "history" {
+			m.models.list.Select(max(0, len(m.models.list.Items())-1))
+			return m, nil, true
+		}
+		if keyName == "ctrl+a" && m.menu == "prompts" {
+			if _, ok := m.gateway.(scopedPromptGateway); ok {
+				m.allPrompts = !m.allPrompts
+				m.savedPrompts = nil
+				m.promptsIncomplete = false
+				items := m.refreshMenuItems(m.promptItems())
+				load := m.loadPrompts()
+				return m, tea.Batch(items, load), true
+			}
+		}
+		if keyName == "ctrl+r" && m.menu == "prompts" && m.promptsIncomplete && !m.promptsLoading {
+			load := m.loadPrompts()
+			return m, load, true
 		}
 		if keyName == "ctrl+p" {
 			m.models.list.CursorUp()
@@ -355,6 +397,8 @@ func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 		return m, m.persist()
 	case "/providers":
 		return m.showProviders()
+	case "/context":
+		return m.contextCommand(arg)
 	case "/opencode":
 		return m.showOpenCode()
 	case "/history":
@@ -367,24 +411,50 @@ func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 		return m.navigate("new")
 	case "/retry":
 		return m.retry()
+	case "/retry-shorter":
+		return m.retryShorter()
 	case "/copy":
 		return m.copyAnswer(false)
 	case "/code":
 		return m.copyAnswer(true)
 	case "/settings":
+		if arg != "" {
+			tokens, err := strconv.Atoi(arg)
+			if err != nil || tokens < 1 || tokens > 32768 {
+				m.notify("Enter /settings followed by an output limit from 1 to 32768.")
+				return m, nil
+			}
+			m.settings.MaxTokens = tokens
+			m.dirty = true
+			m.notify(fmt.Sprintf("Output limit set to %d tokens.", tokens))
+			return m, m.persist()
+		}
 		return m.openMenu("settings")
 	case "/help":
 		return m.openMenu("help")
 	case "/export":
 		return m.export(arg)
 	case "/save":
+		if m.saveBlocked == "save_uncertain" || m.saveBlocked == "chat_conflict" || m.saveBlocked == "save_key_reused" {
+			m.notify(m.saveError + " Press F6 to preserve your work.")
+			return m, nil
+		}
+		m.saveBlocked = ""
 		m.dirty = true
 		return m, m.persist()
+	case "/recover":
+		return m.recoverConversation()
+	case "/restore":
+		return m.restoreRecovery(arg)
 	case "/reconnect":
+		if m.gateway == nil {
+			m.notify("Reconnect is available in connected mode.")
+			return m, nil
+		}
 		m.reconnectAttempts = 0
 		m.loadingModels = true
 		m.status = "Connecting"
-		return m, m.loadModels()
+		return m, m.refreshModels(true)
 	case "/exit":
 		return m.navigate("quit")
 	case "/exit!":
@@ -449,6 +519,20 @@ func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) retry() (tea.Model, tea.Cmd) {
+	return m.retryWithSettings(m.settings)
+}
+
+func (m Model) retryShorter() (tea.Model, tea.Cmd) {
+	if m.shorterMax == 0 || m.selected != m.responseTarget.model {
+		m.notify("A shorter retry is available when a reply can fit within the local token budget.")
+		return m, nil
+	}
+	settings := m.settings
+	settings.MaxTokens = min(settings.MaxTokens, m.shorterMax)
+	return m.retryWithSettings(settings)
+}
+
+func (m Model) retryWithSettings(settings client.Settings) (tea.Model, tea.Cmd) {
 	if m.loadingSession || m.loadingHistory {
 		m.notify("Wait for the conversation to finish loading before retrying.")
 		return m, nil
@@ -471,7 +555,7 @@ func (m Model) retry() (tea.Model, tea.Cmd) {
 	}
 	m.messages = append([]client.Message(nil), m.messages[:last+1]...)
 	m.dirty = true
-	return m.startResponse()
+	return m.startResponseWithSettings(settings)
 }
 
 func (m Model) copyAnswer(codeOnly bool) (tea.Model, tea.Cmd) {
@@ -601,6 +685,8 @@ func (m Model) openMenu(kind string) (tea.Model, tea.Cmd) {
 	m.menu = kind
 	items := []list.Item{}
 	switch kind {
+	case "context":
+		items = m.contextItems()
 	case "settings":
 		for _, n := range []int{4096, 8192, 16384} {
 			items = append(items, modelItem{ID: fmt.Sprint(n), Name: fmt.Sprintf("Response length · %s", map[int]string{4096: "Standard", 8192: "Long", 16384: "Extended"}[n]), Detail: fmt.Sprintf("Up to %s output tokens", fmt.Sprint(n))})
@@ -612,6 +698,9 @@ func (m Model) openMenu(kind string) (tea.Model, tea.Cmd) {
 			{"Ctrl+R", "Search saved prompt history"},
 			{"F3 / /find", "Find a prompt or reply in the current conversation"},
 			{"F4 / /providers", "Check provider keys, models and usage limits"},
+			{"F5", "Retry the last question with a shorter reply"},
+			{"F6 / F7", "Save a recovery file / restore a draft"},
+			{"F8 / /context", "Review earlier turns and attachments sent to the model"},
 			{"Alt+H / Alt+N", "Resume a saved session / start a new one"},
 			{"Alt+P / Alt+R", "Choose a model / regenerate response"},
 			{"Ctrl+S / Ctrl+G", "Stash or restore draft / open external editor"},
@@ -631,23 +720,7 @@ func (m Model) openMenu(kind string) (tea.Model, tea.Cmd) {
 			items = append(items, modelItem{ID: c.Name, Name: c.Name, Detail: c.Description})
 		}
 	case "history":
-		for _, chat := range m.history {
-			when := chat.UpdatedAt
-			if t, err := time.Parse(time.RFC3339, when); err == nil {
-				when = t.Local().Format("01/02 15:04")
-			}
-			detail := fmt.Sprintf("%s · %d messages", when, chat.MessageCount)
-			if chat.Workspace != "" {
-				detail += " · " + chat.Workspace
-			}
-			if chat.HasDraft {
-				detail += " · draft"
-			}
-			if chat.QueuedCount > 0 {
-				detail += fmt.Sprintf(" · %d queued", chat.QueuedCount)
-			}
-			items = append(items, modelItem{ID: chat.ID, Name: chat.Title, Detail: detail})
-		}
+		items = m.historyItems()
 	}
 	m.models.list.SetItems(items)
 	return m.changeFocus(true)
@@ -655,6 +728,9 @@ func (m Model) openMenu(kind string) (tea.Model, tea.Cmd) {
 
 func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 	kind := m.menu
+	if kind == "context" {
+		return m.chooseContext(item)
+	}
 	if kind == "models" && item.ID == openCodePicker {
 		return m.showOpenCode()
 	}
@@ -709,6 +785,12 @@ func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 		return next.(Model).execute(item.ID, "")
 	}
 	if kind == "history" {
+		if item.ID == historyMoreID {
+			return m.fetchHistoryPage(true)
+		}
+		if m.historyPage.loading {
+			return m, nil
+		}
 		next, _ := m.changeFocus(false)
 		return next.(Model).navigate("open:" + item.ID)
 	}
@@ -757,6 +839,8 @@ func (m Model) menuTitle() string {
 		return "Keyboard shortcuts"
 	case "settings":
 		return "Response settings"
+	case "context":
+		return "Request context"
 	}
 	return "Models"
 }
@@ -785,7 +869,16 @@ func (m Model) menuDetail() string {
 		return ""
 	}
 	if m.menu == "history" {
+		if m.historyPage.loading {
+			return "Loading conversations…"
+		}
+		if m.historyPage.err != "" {
+			return m.historyPage.err
+		}
 		if item, ok := m.models.list.SelectedItem().(modelItem); ok {
+			if item.ID == historyMoreID {
+				return item.Detail
+			}
 			return item.ID + " · " + item.Detail
 		}
 	}

@@ -42,7 +42,10 @@ type interactionState struct {
 	filesLoading                     bool
 	fileSelection                    fileQuery
 	promptsLoading                   bool
-	promptSearchWanted               bool
+	promptsIncomplete                bool
+	allPrompts                       bool
+	promptRequest                    uint64
+	savedPrompts                     []string
 	lastResponseTokens               int
 	responseElapsed                  time.Duration
 	editorOpen                       bool
@@ -264,27 +267,31 @@ func (m Model) openPromptSearch() (tea.Model, tea.Cmd) {
 		m.models.list.CursorDown()
 		return m, nil
 	}
+	m.menu = "prompts"
+	m.models.list.SetItems(m.promptItems())
+	next, focus := m.changeFocus(true)
+	m = next.(Model)
+	if !m.promptsLoading {
+		load := m.loadPrompts()
+		return m, tea.Batch(focus, load)
+	}
+	return m, focus
+}
+
+func (m Model) promptItems() []list.Item {
 	items := []list.Item{}
 	seen := map[string]bool{}
-	for i := len(m.inputHistory) - 1; i >= 0; i-- {
-		text := m.inputHistory[i]
-		if seen[text] {
-			continue
+	for source, history := range [][]string{m.inputHistory, m.savedPrompts} {
+		for i := len(history) - 1; i >= 0; i-- {
+			text := history[i]
+			if seen[text] || source == 0 && strings.HasPrefix(text, "/") || strings.TrimSpace(text) == "" {
+				continue
+			}
+			seen[text] = true
+			items = append(items, modelItem{ID: text, Name: strings.Join(strings.Fields(text), " "), Detail: text})
 		}
-		seen[text] = true
-		items = append(items, modelItem{ID: fmt.Sprint(i), Name: strings.Join(strings.Fields(text), " "), Detail: text})
 	}
-	if len(items) == 0 {
-		m.promptSearchWanted = true
-		m.notify("Loading prompt history…")
-		if m.promptsLoading {
-			return m, nil
-		}
-		return m, m.loadPrompts()
-	}
-	m.menu = "prompts"
-	m.models.list.SetItems(items)
-	return m.changeFocus(true)
+	return items
 }
 
 func (m Model) queuePrompt() (tea.Model, tea.Cmd) {
@@ -424,23 +431,38 @@ type editorFinished struct {
 }
 type promptsLoaded struct {
 	prompts []string
+	request uint64
 	err     error
 }
 
+type scopedPromptGateway interface {
+	ScopedPromptHistory(context.Context, string) ([]string, error)
+}
+
 func (m *Model) loadPrompts() tea.Cmd {
-	backend, ok := m.gateway.(interface {
+	var fetch func(context.Context) ([]string, error)
+	if backend, ok := m.gateway.(scopedPromptGateway); ok {
+		workspace := m.workdir
+		if m.allPrompts {
+			workspace = ""
+		}
+		fetch = func(ctx context.Context) ([]string, error) { return backend.ScopedPromptHistory(ctx, workspace) }
+	} else if backend, ok := m.gateway.(interface {
 		PromptHistory(context.Context) ([]string, error)
-	})
-	if !ok {
-		m.notify("No prompt history yet.")
+	}); ok {
+		fetch = backend.PromptHistory
+	}
+	if fetch == nil {
 		return nil
 	}
 	m.promptsLoading = true
+	m.promptRequest++
+	request := m.promptRequest
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(m.ctx, 20*time.Second)
 		defer cancel()
-		items, err := backend.PromptHistory(ctx)
-		return promptsLoaded{prompts: items, err: err}
+		items, err := fetch(ctx)
+		return promptsLoaded{prompts: items, request: request, err: err}
 	}
 }
 func (m Model) openEditor() (tea.Model, tea.Cmd) {

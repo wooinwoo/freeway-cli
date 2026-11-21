@@ -17,6 +17,7 @@ import (
 const (
 	maxAttempts      = 3
 	defaultMaxTokens = 4096
+	minInputTokens   = 17
 )
 
 var errFirstTextTimeout = errors.New("provider did not start its reply in time")
@@ -59,7 +60,14 @@ func (r *Router) Stream(ctx context.Context, input contracts.CompletionRequest, 
 				return contracts.Completion{}, accountingError()
 			}
 			limit := budgetError(blocked)
-			if blockedRoute == nil || limit.RetryAfter < blockedRoute.RetryAfter {
+			if blocked.TokensRemaining != nil {
+				fits := max(0, *blocked.TokensRemaining-(estimate-request.MaxTokens))
+				limit.Code = "local_token_budget"
+				limit.Message = "The prediction exceeds this route's remaining local token budget."
+				limit.MaxOutputTokens = &fits
+			}
+			if blockedRoute == nil || outputFit(limit) > outputFit(blockedRoute) ||
+				outputFit(limit) == outputFit(blockedRoute) && limit.RetryAfter < blockedRoute.RetryAfter {
 				blockedRoute = limit
 			}
 			continue
@@ -83,6 +91,13 @@ func (r *Router) Stream(ctx context.Context, input contracts.CompletionRequest, 
 		return contracts.Completion{}, blockedRoute
 	}
 	return contracts.Completion{}, &contracts.Problem{Code: "no_eligible_free_route", Message: "No eligible free route is ready for this model. Check the provider connection and free catalog.", Status: http.StatusServiceUnavailable}
+}
+
+func outputFit(problem *contracts.Problem) int {
+	if problem.MaxOutputTokens == nil {
+		return 0
+	}
+	return *problem.MaxOutputTokens
 }
 
 func (r *Router) hasFallbackProvider(routes []route, provider string, estimate int) bool {

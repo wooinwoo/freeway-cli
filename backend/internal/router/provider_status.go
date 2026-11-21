@@ -42,10 +42,13 @@ func (r *Router) ProviderStatuses(ctx context.Context) ([]contracts.ProviderStat
 			status.State = "no_free_models"
 		default:
 			status.State = "ready"
+			status.LocalTokensRemaining = r.ledger.TokensRemaining(source.ID, source.Limits)
 			var blocked *quota.Blocked
-			if errors.As(r.ledger.Available(source.ID, source.Limits, 1), &blocked) {
+			if errors.As(r.ledger.Available(source.ID, source.Limits, minInputTokens+1), &blocked) {
 				status.State = "limited"
 				status.RetryAfter = budgetError(blocked).RetryAfter
+			} else if status.LocalTokensRemaining != nil && *status.LocalTokensRemaining < defaultMaxTokens+minInputTokens {
+				status.State = "short_replies"
 			}
 		}
 		statuses = append(statuses, status)

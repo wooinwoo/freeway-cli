@@ -13,11 +13,19 @@ freeway sessions --all
 
 Title and ID-prefix searches respect project scope. Use `--all` to include other projects.
 
+Press **Alt+H** to browse saved conversations. Type to search titles, IDs, previews, and project paths across the selected scope. The current gateway loads up to 50 conversations at a time. When more are available, press **End**, then **Enter** to load the next page. Press **Ctrl+A** to switch between this project and all projects, or **Ctrl+R** to refresh the list.
+
+In the composer, **Ctrl+R** opens saved prompt search for this project. Press **Ctrl+A** in the picker to include all projects, then **Enter** to restore a prompt as an editable draft. The picker loads recent saved prompts when you open it.
+
 ## Drafts and stash
 
 Drafts, text attachments, queued follow-ups, and the **Ctrl+S** stash belong to saved conversation state. Ctrl+S stashes or restores; with two drafts it swaps them.
 
-Independent saves remain available during streaming. A save failure stays visible; retry with `/save`. Durable storage and crash recovery are responsibilities of the connected gateway.
+Freeway saves conversations and drafts during streaming. Use `/save` to retry a temporary failure. The status line warns when a conversation approaches the 8 MiB save limit.
+
+If a conflict or oversized conversation blocks navigation, press **F6** to save a recovery file and continue. The plaintext JSON in `~/.freeway/recovery` includes the conversation, draft, attachments, pending follow-ups, and stashed draft. If no navigation was requested, F6 saves the file and opens a new conversation.
+
+**F7** or `/restore` brings the draft and attachments from the latest recovery file into the composer. Use `/restore "path"` to choose another file. Press **Ctrl+Z** to restore the previous input.
 
 ## Attach text files
 

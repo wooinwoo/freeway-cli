@@ -83,19 +83,37 @@ func (r *Router) Models(ctx context.Context) ([]contracts.Model, error) {
 		return nil, err
 	}
 	models := make([]contracts.Model, 0, 1+len(catalog.routes))
-	readiness := make(map[string]bool, len(r.sources))
+	type capacity struct {
+		ready  bool
+		tokens *int
+	}
+	readiness := make(map[string]capacity, len(r.sources))
 	anyReady := false
+	autoUnbounded := false
+	autoTokens := 0
 	for _, candidate := range catalog.routes {
-		ready, checked := readiness[candidate.source.ID]
+		route, checked := readiness[candidate.source.ID]
 		if !checked {
-			ready = r.ledger.Available(candidate.source.ID, candidate.source.Limits, 1) == nil
-			readiness[candidate.source.ID] = ready
+			route.ready = r.ledger.Available(candidate.source.ID, candidate.source.Limits, minInputTokens+1) == nil
+			route.tokens = r.ledger.TokensRemaining(candidate.source.ID, candidate.source.Limits)
+			readiness[candidate.source.ID] = route
 		}
-		anyReady = anyReady || ready
-		models = append(models, contracts.Model{ID: candidate.model.ID, Name: candidate.model.Name, Detail: candidate.source.Name, Free: true, Ready: ready})
+		if route.ready {
+			anyReady = true
+			if route.tokens == nil {
+				autoUnbounded = true
+			} else {
+				autoTokens = max(autoTokens, *route.tokens)
+			}
+		}
+		models = append(models, contracts.Model{ID: candidate.model.ID, Name: candidate.model.Name, Detail: candidate.source.Name, Free: true, Ready: route.ready, LocalTokensRemaining: route.tokens})
 	}
 	if anyReady {
-		models = append([]contracts.Model{{ID: Auto, Name: "Auto", Detail: "Available free routes", Free: true, Ready: true}}, models...)
+		auto := contracts.Model{ID: Auto, Name: "Auto", Detail: "Available free routes", Free: true, Ready: true}
+		if !autoUnbounded {
+			auto.LocalTokensRemaining = &autoTokens
+		}
+		models = append([]contracts.Model{auto}, models...)
 	}
 	return models, nil
 }

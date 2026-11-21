@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -202,6 +203,13 @@ func (m Manager) Update(ctx context.Context) (State, error) {
 	if err != nil {
 		return State{}, err
 	}
+	state, err := m.Status()
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return State{}, err
+	}
+	if unchanged, err := m.checkUpdate(state, release.Version); unchanged || err != nil {
+		return state, err
+	}
 	for _, artifact := range release.Artifacts {
 		if artifact.OS != runtime.GOOS || artifact.Arch != runtime.GOARCH {
 			continue
@@ -210,9 +218,22 @@ func (m Manager) Update(ctx context.Context) (State, error) {
 		if err != nil {
 			return State{}, err
 		}
-		return m.install(ctx, data, artifact.SHA256, release.Version)
+		return m.installVersion(ctx, data, artifact.SHA256, release.Version, true)
 	}
 	return State{}, errors.New("native release artifact not found")
+}
+
+func (m Manager) checkUpdate(state State, version string) (bool, error) {
+	same, err := updateVersion(state, version)
+	if !same || err != nil {
+		return false, err
+	}
+	root, err := m.root()
+	if err != nil {
+		return false, err
+	}
+	_, err = validatePackage(filepath.Join(root, "versions", state.Active), state.Active)
+	return err == nil, nil
 }
 
 func (m Manager) Install(ctx context.Context, archive, checksum string) (State, error) {
@@ -333,7 +354,7 @@ func extract(data []byte, directory string) error {
 }
 func bytesZip(data []byte) bool { return len(data) >= 4 && string(data[:4]) == "PK\x03\x04" }
 
-func validatePackage(directory, version string) (Package, error) {
+func readPackageManifest(directory, version string) (Package, error) {
 	var p Package
 	data, err := os.ReadFile(filepath.Join(directory, "manifest.json"))
 	if err != nil {
@@ -354,6 +375,16 @@ func validatePackage(directory, version string) (Package, error) {
 		if !safeName(name) || name == "manifest.json" || !validHash(want) {
 			return p, errors.New("invalid package file manifest")
 		}
+	}
+	return p, nil
+}
+
+func validatePackage(directory, version string) (Package, error) {
+	p, err := readPackageManifest(directory, version)
+	if err != nil {
+		return p, err
+	}
+	for name, want := range p.Files {
 		file := filepath.Join(directory, filepath.FromSlash(name))
 		info, err := os.Lstat(file)
 		if err != nil || !info.Mode().IsRegular() {
@@ -405,6 +436,10 @@ func probe(ctx context.Context, directory string, p Package) error {
 }
 
 func (m Manager) install(ctx context.Context, data []byte, want, version string) (State, error) {
+	return m.installVersion(ctx, data, want, version, false)
+}
+
+func (m Manager) installVersion(ctx context.Context, data []byte, want, version string, automatic bool) (_ State, installErr error) {
 	if !validHash(want) || checksum(data) != strings.ToLower(want) {
 		return State{}, errors.New("archive SHA256 mismatch; existing installation was not changed")
 	}
@@ -430,6 +465,11 @@ func (m Manager) install(ctx context.Context, data []byte, want, version string)
 	if state.Removing {
 		return State{}, errors.New("installation removal is in progress")
 	}
+	if automatic {
+		if unchanged, err := m.checkUpdate(state, version); unchanged || err != nil {
+			return state, err
+		}
+	}
 	versions := filepath.Join(root, "versions")
 	if err = os.MkdirAll(versions, 0700); err != nil {
 		return State{}, err
@@ -448,18 +488,51 @@ func (m Manager) install(ctx context.Context, data []byte, want, version string)
 	}
 	target := filepath.Join(versions, p.Version)
 	published := false
+	backup := ""
+	defer func() {
+		if backup == "" {
+			return
+		}
+		if installErr != nil {
+			if published {
+				if err := os.Rename(target, stage); err != nil {
+					installErr = errors.Join(installErr, fmt.Errorf("restore package from %s: %w", backup, err))
+					return
+				}
+			}
+			if err := os.Rename(filepath.Join(backup, "package"), target); err != nil {
+				installErr = errors.Join(installErr, fmt.Errorf("restore package from %s: %w", backup, err))
+				return
+			}
+		}
+		_ = os.RemoveAll(backup)
+	}()
 	if info, statErr := os.Lstat(target); statErr == nil {
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return State{}, errors.New("unsafe existing version directory")
 		}
-		existing, err := validatePackage(target, p.Version)
-		if err != nil {
-			return State{}, err
+		existing, validErr := validatePackage(target, p.Version)
+		var manifestErr error
+		if validErr != nil {
+			existing, manifestErr = readPackageManifest(target, p.Version)
 		}
-		a, _ := json.Marshal(existing.Files)
-		b, _ := json.Marshal(p.Files)
-		if string(a) != string(b) {
+		if manifestErr == nil && !maps.Equal(existing.Files, p.Files) {
 			return State{}, errors.New("an immutable version already exists with different content")
+		}
+		if validErr != nil {
+			saved, err := os.MkdirTemp(versions, ".repair-")
+			if err != nil {
+				return State{}, err
+			}
+			if err := os.Rename(target, filepath.Join(saved, "package")); err != nil {
+				_ = os.Remove(saved)
+				return State{}, fmt.Errorf("close Freeway to repair the installed version: %w", err)
+			}
+			backup = saved
+			if err := os.Rename(stage, target); err != nil {
+				return State{}, err
+			}
+			published = true
 		}
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return State{}, statErr
@@ -471,7 +544,7 @@ func (m Manager) install(ctx context.Context, data []byte, want, version string)
 	// Windows can hold a directory open after an executable inside it has run.
 	// Start version probes only after the directory reaches its final path.
 	if err = probe(ctx, target, p); err != nil {
-		if published {
+		if published && backup == "" {
 			err = errors.Join(err, os.RemoveAll(target))
 		}
 		return State{}, err
@@ -481,20 +554,43 @@ func (m Manager) install(ctx context.Context, data []byte, want, version string)
 		return State{}, err
 	}
 	launcher := filepath.Join(bin, exe("freeway"))
-	if _, err = os.Lstat(launcher); errors.Is(err, os.ErrNotExist) {
-		contents, err := os.ReadFile(filepath.Join(target, exe("freeway")))
-		if err != nil {
-			return State{}, err
-		}
-		if err = atomicWrite(launcher, contents, 0700); err != nil {
-			return State{}, err
-		}
-	} else if err != nil {
+	info, err := os.Lstat(launcher)
+	replaceLauncher := errors.Is(err, os.ErrNotExist)
+	if err != nil && !replaceLauncher {
 		return State{}, err
-	} else if stateErr != nil {
+	}
+	if !replaceLauncher && !info.Mode().IsRegular() {
+		return State{}, errors.New("unsafe existing launcher")
+	}
+	if !replaceLauncher && stateErr != nil {
 		contents, readErr := os.ReadFile(launcher)
 		if readErr != nil || checksum(contents) != p.Files[exe("freeway")] {
 			return State{}, errors.New("refusing to replace an unmanaged launcher")
+		}
+	}
+	if !replaceLauncher && stateErr == nil && !automatic && compareVersions(p.Version, state.Active) >= 0 {
+		// A package bootstrap can refresh an older launcher. The running
+		// launcher remains usable as a recovery entry point during updates.
+		self, selfErr := os.Executable()
+		if selfErr != nil {
+			return State{}, selfErr
+		}
+		running, statErr := os.Stat(self)
+		if statErr != nil {
+			return State{}, statErr
+		}
+		if !os.SameFile(info, running) {
+			contents, readErr := os.ReadFile(launcher)
+			replaceLauncher = readErr != nil || checksum(contents) != p.Files[exe("freeway")]
+		}
+	}
+	if replaceLauncher {
+		contents, readErr := os.ReadFile(filepath.Join(target, exe("freeway")))
+		if readErr != nil {
+			return State{}, readErr
+		}
+		if err := atomicWrite(launcher, contents, 0700); err != nil {
+			return State{}, fmt.Errorf("refresh launcher with Freeway closed: %w", err)
 		}
 	}
 	if err = ctx.Err(); err != nil {

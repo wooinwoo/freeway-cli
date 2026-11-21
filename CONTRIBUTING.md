@@ -1,6 +1,6 @@
 # 개발 참여
 
-현재 구현은 Go TUI, 네이티브 공급처 어댑터·도구, 설치·업데이트와 Astro 정적 문서입니다. 공통 Go 게이트웨이는 별도 구현 대상입니다. [구조와 책임](docs/development/architecture.md), [클라이언트 완료 조건](docs/development/client-delivery.md)을 기준으로 작업합니다.
+현재 구현은 Go TUI, 로컬 Go 게이트웨이, 네이티브 공급처 어댑터·도구, 설치·업데이트와 Astro 정적 문서입니다. [구조와 책임](docs/development/architecture.md), [클라이언트 완료 조건](docs/development/client-delivery.md)을 기준으로 작업합니다.
 
 ## 검사
 
@@ -17,7 +17,7 @@ python3 tests/install/bootstrap_smoke.py --go /absolute/path/to/go
 
 실행 파일 시험의 아카이브 버전은 `VERSION`과 맞춰 사용합니다. 로컬 HTTP fixture를 열 수 있는 환경이 필요합니다. 공급처 실계정 시험은 별도로 실행하며 실제 할당량을 소비합니다.
 
-[사전 검증 워크플로](.github/workflows/preflight.yml)는 패키지 6종을 한 번 빌드하고 동일한 파일을 Linux amd64, macOS arm64, Windows amd64에서 검증합니다. Windows에서는 PowerShell 설치와 업데이트·복구를 검사합니다. Linux와 macOS에서는 설치된 TUI의 터미널 대화도 실행합니다. 워크플로에서 만든 패키지는 Actions 아티팩트로 확인할 수 있습니다.
+[사전 검증 워크플로](.github/workflows/preflight.yml)는 패키지 6종을 한 번 빌드하고 동일한 파일을 Linux amd64, macOS arm64, Windows amd64에서 검증합니다. 세 환경 모두 설치된 TUI에서 스트리밍·중단·초안 복원을 시험합니다. Windows에서는 ConPTY와 PowerShell 설치도 검사합니다. 워크플로에서 만든 패키지는 Actions 아티팩트로 확인할 수 있습니다.
 
 ```sh
 npm --prefix docs/site ci

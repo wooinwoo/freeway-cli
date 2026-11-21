@@ -26,16 +26,13 @@ func ScopeConversations(records []ConversationSummary, workspace string, all boo
 }
 
 func LatestConversation(records []ConversationSummary, workspace string, all bool) (ConversationSummary, bool) {
-	if all && len(records) > 0 {
-		return records[0], true
-	}
 	for _, record := range records {
-		if record.Workspace != "" && SameWorkspace(record.Workspace, workspace) {
+		if !record.Damaged && (all || record.Workspace != "" && SameWorkspace(record.Workspace, workspace)) {
 			return record, true
 		}
 	}
 	for _, record := range records {
-		if record.Workspace == "" {
+		if !record.Damaged && record.Workspace == "" {
 			return record, true
 		}
 	}

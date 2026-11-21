@@ -37,7 +37,6 @@ func (m Model) findTranscript(query string) (tea.Model, tea.Cmd) {
 	input.SetVirtualCursor(false)
 	input.SetWidth(max(1, m.width-10))
 	input.SetValue(query)
-	m.promptSearchWanted = false
 	m.prompt.Blur()
 	m.find = &transcriptSearch{input: input, startRow: m.chat.YOffset()}
 	m.findTranscriptContent(m.chat.GetContent(), true)

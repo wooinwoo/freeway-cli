@@ -92,6 +92,16 @@ jobs:
         env:
           NATIVE_TARGET: ${{ matrix.target }}
         run: python tests/e2e/native_smoke.py "dist/native/freeway_$(<VERSION)_$NATIVE_TARGET.tar.gz"
+      - name: Exercise the installed TUI in Windows ConPTY
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          NATIVE_TARGET: ${{ matrix.target }}
+        run: |
+          python -m pip install --only-binary=:all: pywinpty==3.1.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = (Get-Content VERSION -Raw).Trim()
+          python tests/e2e/native_smoke.py "dist/native/freeway_${version}_${env:NATIVE_TARGET}.zip"
 
   docs:
     name: Build both documentation locales

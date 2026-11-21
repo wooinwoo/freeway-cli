@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -63,9 +64,9 @@ func (m Model) workspaceView() tea.View {
 		body = m.welcomeView(width, m.chat.Height())
 	}
 	composer := m.composerView(width)
-	help := "Enter send · Ctrl+R prompts · F3 find · F4 providers · ? help"
+	help := "Enter send · Ctrl+R prompts · F3 find · F4 providers · F8 context · ? help"
 	if width < 76 {
-		help = "↑↓ history · F4 providers · ? help"
+		help = "↑↓ history · F4 providers · F8 context · ? help"
 	}
 	if m.commandPending() {
 		help = "↑↓ choose command · Tab complete · Enter run"
@@ -111,6 +112,8 @@ func (m Model) workspaceView() tea.View {
 			columns, detail = "CONVERSATION", "UPDATED / PREVIEW"
 		case "settings":
 			columns, detail = "PRESET", "DESCRIPTION"
+		case "context":
+			columns, detail = "ITEM", "INCLUSION"
 		case "help":
 			columns, detail = "KEY / COMMAND", "ACTION"
 		}
@@ -136,6 +139,28 @@ func (m Model) workspaceView() tea.View {
 				scope = "all projects"
 			}
 			help = "Enter resume · Ctrl+A " + scope + " · type to search · Esc back"
+			if m.historyPage.paged {
+				help = "Enter open · Ctrl+A " + scope + " · Ctrl+R refresh · Esc"
+				if m.historyPage.cursor != "" {
+					help = "Enter open · Ctrl+A " + scope + " · End more · Esc"
+				}
+			}
+		}
+		if m.menu == "prompts" {
+			scope := "this project"
+			if m.allPrompts {
+				scope = "all projects"
+			}
+			help = "Enter restore · Esc back"
+			if _, ok := m.gateway.(scopedPromptGateway); ok {
+				help = "Enter restore · Ctrl+A " + scope + " · Esc"
+			}
+			if m.promptsIncomplete && !m.promptsLoading {
+				help = "Some saved prompts unavailable · Ctrl+R retry · Esc"
+			}
+		}
+		if m.menu == "context" {
+			help = "↑↓ inspect · Enter change setting · Esc back"
 		}
 		footer := padCells(muted.Render(ansi.Truncate(oneLine(m.menuDetail()), max(1, width-12), "…")), max(1, width-12)) + muted.Render(padCells(menuPosition(m), 12))
 		rows := []string{header, title, search, ansi.Truncate(columnLine, width, ""), m.menuItemsView()}
@@ -263,6 +288,26 @@ func (m Model) menuItemsView() string {
 		return m.models.View()
 	}
 	message := "No matches. Try another search."
+	if m.menu == "history" {
+		switch {
+		case m.historyPage.loading:
+			message = "Searching saved conversations…"
+		case m.historyPage.err != "":
+			message = m.historyPage.err
+		case m.menuQuery == "":
+			message = "No saved conversations in this scope."
+		}
+	}
+	if m.menu == "prompts" {
+		switch {
+		case m.promptsLoading:
+			message = "Loading saved prompts…"
+		case m.promptsIncomplete:
+			message = "Saved prompts could not be read. Ctrl+R to retry."
+		case m.menuQuery == "":
+			message = "No saved prompts in this scope."
+		}
+	}
 	if m.menu == "files" && m.filesLoading {
 		message = "Scanning project files…"
 	}
@@ -288,6 +333,9 @@ func (m Model) menuQuickSelect() bool {
 }
 
 func (m *Model) applyMenuFilter() tea.Cmd {
+	if m.menu == "history" && m.historyPage.paged {
+		return m.filterPagedHistory()
+	}
 	query := strings.ToLower(m.menuQuery)
 	items := m.menuAll
 	if query != "" && m.menu == "files" {
@@ -331,10 +379,38 @@ func (m *Model) applyMenuFilter() tea.Cmd {
 	return cmd
 }
 
+func (m *Model) selectMenuItem(id string) {
+	if m.menu == "models" && isOpenCodeModel(id) {
+		id = openCodePicker
+	}
+	for i, item := range m.models.list.Items() {
+		if item.(modelItem).ID == id {
+			m.models.list.Select(i)
+			return
+		}
+	}
+}
+
+func (m *Model) refreshMenuItems(items []list.Item) tea.Cmd {
+	selected, ok := m.models.list.SelectedItem().(modelItem)
+	m.menuAll = items
+	cmd := m.applyMenuFilter()
+	if ok {
+		m.selectMenuItem(selected.ID)
+	} else {
+		m.selectMenuItem(m.selected)
+	}
+	return cmd
+}
+
 func (m Model) appendMenuQuery(text string) (tea.Model, tea.Cmd) {
 	text = terminalSafe(text)
 	text = strings.ReplaceAll(text, "\n", " ")
-	room := max(0, 512-len([]rune(m.menuQuery)))
+	limit := 512
+	if m.menu == "history" && m.historyPage.paged {
+		limit = 256
+	}
+	room := max(0, limit-len([]rune(m.menuQuery)))
 	runes := []rune(text)
 	m.menuQuery += string(runes[:min(room, len(runes))])
 	m.menuSearching = true

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/wooinwoo/freeway-cli/cli/client"
@@ -77,5 +78,48 @@ func TestInitialConnectionDoesNotStartParallelRequests(t *testing.T) {
 	_, cmd = m.changeFocus(true)
 	if cmd != nil {
 		t.Fatal("opening the menu started a second model-loading worker")
+	}
+}
+
+type pausedReplyGateway struct {
+	fixtureGateway
+	release <-chan struct{}
+}
+
+func (f pausedReplyGateway) StreamWithSettings(ctx context.Context, model string, _ []client.Message, settings client.Settings, emit func(client.Event)) error {
+	emit(client.Event{Type: "text", Text: model, Model: "kilo/fixture"})
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-f.release:
+	}
+	emit(client.Event{Type: "done", Text: model, Model: "kilo/fixture", Usage: &client.Usage{TotalTokens: settings.MaxTokens}})
+	return nil
+}
+
+func TestFirstChunkShowsTheModelAndKeepsSettingsFromSend(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	release := make(chan struct{})
+	m := update(NewConnected(ctx, pausedReplyGateway{release: release}), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.selected, m.settings.MaxTokens = "kilo/original", 4096
+	m.saving = true
+	m.messages = append(m.messages, newMessage("user", "Hello"))
+	next, _ := m.startResponse()
+	m = next.(Model)
+	m.selected, m.settings.MaxTokens, m.saving = "opencode/next", 8192, false
+	next, cmd := m.beginGeneration()
+	m = next.(Model)
+	defer m.cancel()
+	next, cmd = m.Update(cmd())
+	m = next.(Model)
+	if len(m.messages) != 2 || m.messages[1].Content != "kilo/original" ||
+		m.messages[1].Model != "kilo/fixture" || !strings.Contains(m.chat.GetContent(), "Kilo · fixture") {
+		t.Fatalf("first chunk or model label was delayed: %s", m.chat.GetContent())
+	}
+	close(release)
+	m = update(m, cmd())
+	if m.selected != "opencode/next" || m.lastResponseTokens != 4096 {
+		t.Fatal("changing the next model or settings altered the in-flight reply")
 	}
 }

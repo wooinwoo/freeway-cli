@@ -32,6 +32,8 @@ type Model struct {
 	cancel                                                                  context.CancelFunc
 	events                                                                  <-chan client.Event
 	generation                                                              uint64
+	responseTarget                                                          responseTarget
+	shorterMax                                                              int
 	status                                                                  string
 	notice                                                                  string
 	loadingModels                                                           bool
@@ -49,12 +51,14 @@ type Model struct {
 	openCodeLoading                                                         bool
 	openCodeError                                                           string
 	openCodeRequest                                                         uint64
+	openCodeModels                                                          []client.Model
 	inputHistory                                                            []string
 	inputIndex                                                              int
 	inputDraft, lastRecalled                                                string
 	inputFiles                                                              map[string][]client.Attachment
 	inputDraftFiles                                                         []client.Attachment
 	historyQuery                                                            string
+	historyPage                                                             historyPager
 	commandIndex                                                            int
 	startedAt, lastRender, lastEdit                                         time.Time
 	nextSave                                                                time.Time
@@ -64,9 +68,12 @@ type Model struct {
 	toastUntil                                                              time.Time
 	settings                                                                client.Settings
 	session                                                                 client.Conversation
+	pendingSave                                                             *client.Conversation
 	sessionEpoch                                                            uint64
 	dirty, saving, saveEnabled, loadingHistory, loadingSession, startupDone bool
 	saveError, afterSave, resumeID                                          string
+	saveBlocked, recoveryAction, recoveryPath                               string
+	nearSaveLimit, recovering                                               bool
 	startNew                                                                bool
 	startMode                                                               string
 	allSessions                                                             bool
@@ -74,7 +81,6 @@ type Model struct {
 	history                                                                 []client.ConversationSummary
 	allHistory                                                              []client.ConversationSummary
 	copyText                                                                func(string) error
-	quitting                                                                bool
 }
 
 func New() Model {
@@ -137,6 +143,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyPressMsg:
+		if msg.String() == "f5" && !m.modelsFocused {
+			return m.retryShorter()
+		}
+		if msg.String() == "f6" {
+			return m.recoverConversation()
+		}
+		if msg.String() == "f7" {
+			return m.restoreRecovery("")
+		}
 		if next, cmd, handled := m.shortcut(msg); handled {
 			return next, cmd
 		}
@@ -305,12 +320,11 @@ func (m Model) changeFocus(models bool) (tea.Model, tea.Cmd) {
 		m.menuQuery = ""
 		m.menuSearching = false
 		m.models.list.ResetFilter()
-		for i, item := range m.models.list.Items() {
-			if item.(modelItem).ID == m.selected {
-				m.models.list.Select(i)
-				break
-			}
+		target := m.selected
+		if m.menu == "context" {
+			target = "turns"
 		}
+		m.selectMenuItem(target)
 	} else {
 		m.menu = ""
 		cmd = m.prompt.Focus()

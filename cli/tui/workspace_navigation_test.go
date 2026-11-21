@@ -46,6 +46,31 @@ func TestOpenCodeIsSelectableInTheChat(t *testing.T) {
 	}
 }
 
+func TestModelMenuRefreshPreservesHighlightedChoice(t *testing.T) {
+	m := update(NewConnected(t.Context(), openCodeGatewayFixture{}), tea.WindowSizeMsg{Width: 80, Height: 24})
+	models := []client.Model{{ID: "free/auto", Name: "Auto"}, {ID: "kilo/one", Name: "One"}, {ID: "kilo/two", Name: "Two"}}
+	m = update(m, modelsLoaded{models: models})
+	m = update(m, press(tea.KeyF2))
+	m = update(m, press(tea.KeyDown))
+	m = update(m, press(tea.KeyDown))
+	m = update(m, modelsLoaded{models: []client.Model{models[0], models[2], models[1]}})
+	if item := m.models.list.SelectedItem().(modelItem); item.ID != "kilo/one" || m.selected != "free/auto" {
+		t.Fatal("a catalog refresh changed the highlighted choice or current model")
+	}
+	if !strings.Contains(m.View().Content, "✓ Current") {
+		t.Fatal("the current model was not marked")
+	}
+}
+
+func TestMarkdownWrapsListsAndQuotesWithoutBreakingWords(t *testing.T) {
+	result := ansi.Strip(markdown("- Keep the words together\n> Longer quoted text\n`**literal**`\n```go\n    call()\n```", 15))
+	for _, want := range []string{"• Keep the\n  words", "│ Longer quoted\n│ text", "**literal**", "    call()"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("missing %q in %q", want, result)
+		}
+	}
+}
+
 func TestProviderStatusMenuPreservesDraft(t *testing.T) {
 	m := update(NewConnected(t.Context(), providerGatewayFixture{}), tea.WindowSizeMsg{Width: 80, Height: 24})
 	m.prompt.SetValue("Keep this draft")

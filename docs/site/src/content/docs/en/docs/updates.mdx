@@ -11,7 +11,11 @@ freeway update
 
 The default source is the Freeway GitHub release manifest. An unpublished or unreachable release returns an error and leaves the installed version active. `update check` reads release metadata; it does not install anything.
 
-The updater checks the archive SHA256, safe file paths, platform, API version, required files, individual file hashes, and the version reported by both native executables. It stages the new version separately, then changes the active version in `install.json`. Running sessions continue using their original executable.
+`update` applies newer releases and can repair a damaged copy of the same version. It skips the archive download when the installed version matches and passes validation. You can also repair with a verified local archive of that version. To activate an older version, use `rollback` or install a verified local archive.
+
+To refresh a launcher installed before this behavior was added, close Freeway and rerun the latest [install script](../installation/).
+
+The updater checks the archive SHA256, safe file paths, platform, API version, required files, individual file hashes, and the versions reported by the packaged executables. It stages the new version separately, then changes the active version in `install.json`. Running sessions continue using their original executable.
 
 ## Install a verified local archive
 

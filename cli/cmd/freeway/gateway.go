@@ -27,14 +27,31 @@ func openGateway(ctx context.Context, address, key string) (*client.HTTP, func()
 	if err != nil {
 		return nil, nil, err
 	}
+	connect := func(attempt context.Context) (*client.HTTP, func(), error) {
+		return connectManaged(attempt, ctx, binary)
+	}
+	active, release, err := connect(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	gateway := client.SuperviseManaged(active, release, connect)
+	return gateway, gateway.Close, nil
+}
+
+func connectManaged(ctx, lifetime context.Context, binary string) (*client.HTTP, func(), error) {
 	var leaseErr error
 	for range 2 {
 		gateway, err := discoverGateway(ctx, binary)
 		if err != nil {
 			return nil, nil, err
 		}
-		release, err := gateway.Lease(ctx)
+		release, err := gateway.Lease(lifetime)
 		if err == nil {
+			if err := ctx.Err(); err != nil {
+				release()
+				gateway.Close()
+				return nil, nil, err
+			}
 			return gateway, func() { release(); gateway.Close() }, nil
 		}
 		gateway.Close()

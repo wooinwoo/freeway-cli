@@ -63,6 +63,84 @@ func TestModelsExcludePaidAndUnavailableRoutes(t *testing.T) {
 	}
 }
 
+func TestSaveUsesNegotiatedKey(t *testing.T) {
+	c := fixtureHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Freeway-Features", "idempotent-saves")
+		if r.URL.Path == "/v1/status" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Header.Get("Idempotency-Key") != "stable-fixture-key" {
+			t.Error("save was sent without the negotiated key")
+		}
+		fmt.Fprint(w, `{"id":"conversation","revision":1}`)
+	})
+	if _, err := c.SaveConversation(t.Context(), Conversation{SaveKey: "stable-fixture-key"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestContextSettingsAreNotSilentlyDroppedOnALegacyGateway(t *testing.T) {
+	c := fixtureHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/status" {
+			t.Error("sent a conversation with unsupported context settings")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	_, err := c.SaveConversation(t.Context(), Conversation{Context: &ContextSelection{RecentTurns: 0}})
+	var gateway *GatewayError
+	if !errors.As(err, &gateway) || gateway.Code != "context_settings_unavailable" {
+		t.Fatalf("unexpected save result: %v", err)
+	}
+}
+
+func TestContextFileExclusionsNeedGatewaySupport(t *testing.T) {
+	c := fixtureHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/status" {
+			t.Error("sent individual attachment exclusions to a gateway that cannot save them")
+		}
+		w.Header().Set("X-Freeway-Features", "context-selection, history-pages")
+		w.WriteHeader(http.StatusNoContent)
+	})
+	_, err := c.SaveConversation(t.Context(), Conversation{Context: &ContextSelection{
+		RecentTurns: -1, IncludePriorAttachments: true, ExcludedPriorFiles: []string{"old.txt"},
+	}})
+	var gateway *GatewayError
+	if !errors.As(err, &gateway) || gateway.Code != "context_settings_unavailable" {
+		t.Fatalf("unexpected save result: %v", err)
+	}
+}
+
+func TestManagedGatewayRefreshDoesNotReplayCompletion(t *testing.T) {
+	first := fixtureHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"error":{"code":"invalid_api_key"}}`)
+	})
+	first.managed = true
+	first.features.Store(featureOpenCode)
+	second := fixtureHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			t.Error("completion was replayed after the gateway was replaced")
+		}
+		fmt.Fprint(w, `{"data":[{"id":"free/replacement","free":true,"ready":true}]}`)
+	})
+	second.managed = true
+	c := SuperviseManaged(first, func() {}, func(context.Context) (*HTTP, func(), error) {
+		return second, func() {}, nil
+	})
+	defer c.Close()
+	if !c.CanOpenCode() {
+		t.Fatal("negotiated OpenCode capability was not available")
+	}
+	if err := c.Stream(t.Context(), "free/auto", []Message{{Role: "user", Content: "fixture"}}, nil); err == nil {
+		t.Fatal("the interrupted completion should be reported to the user")
+	}
+	models, err := c.Models(t.Context())
+	if err != nil || len(models) != 1 || models[0].ID != "free/replacement" || c.CanOpenCode() {
+		t.Fatalf("replacement and its capabilities were not applied: %+v %v", models, err)
+	}
+}
+
 func TestPromptHistoryKeepsNewestPromptsInOldestFirstOrderAtLimit(t *testing.T) {
 	c := fixtureHTTP(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/conversations" {
@@ -78,6 +156,40 @@ func TestPromptHistoryKeepsNewestPromptsInOldestFirstOrderAtLimit(t *testing.T) 
 	prompts, err := c.PromptHistory(context.Background())
 	if err != nil || len(prompts) != 200 || prompts[0] != "prompt-005" || prompts[199] != "prompt-204" {
 		t.Fatalf("bounded history lost ordering: %v %v", prompts, err)
+	}
+}
+
+func TestPromptHistoryKeepsResultsAfterAnUnreadableConversation(t *testing.T) {
+	c := fixtureHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/conversations":
+			fmt.Fprint(w, `{"data":[{"id":"new","updatedAt":"3"},{"id":"damaged","updatedAt":"2"},{"id":"old","updatedAt":"1"}]}`)
+		case "/v1/conversations/damaged":
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			fmt.Fprint(w, `{"error":{"code":"chat_unreadable"}}`)
+		case "/v1/conversations/new", "/v1/conversations/old":
+			fmt.Fprintf(w, `{"messages":[{"role":"user","content":%q}]}`, r.URL.Path)
+		default:
+			t.Error("unexpected request", r.URL.Path)
+		}
+	})
+	prompts, err := c.PromptHistory(t.Context())
+	if err == nil || len(prompts) != 2 || prompts[0] != "/v1/conversations/old" || prompts[1] != "/v1/conversations/new" {
+		t.Fatalf("partial history discarded: %v %v", prompts, err)
+	}
+}
+
+func TestPromptHistoryNegotiatesSingleRequest(t *testing.T) {
+	c := fixtureHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/prompts" {
+			t.Error("prompt search fetched a full conversation")
+		}
+		fmt.Fprint(w, `{"data":["useful saved prompt"],"incomplete":true}`)
+	})
+	c.features.Store(featurePromptHistory)
+	prompts, err := c.PromptHistory(t.Context())
+	if !errors.Is(err, errIncompletePrompts) || len(prompts) != 1 || prompts[0] != "useful saved prompt" {
+		t.Fatalf("unexpected prompt index response: %v %v", prompts, err)
 	}
 }
 
@@ -162,7 +274,8 @@ func TestStreamPreservesUnicodeSettingsAndFileContext(t *testing.T) {
 	})
 	var events []Event
 	err := c.StreamWithSettings(context.Background(), "free/ready", []Message{{Role: "system", Content: "Keep context"}, {ID: "private-ui-id", Role: "user", Content: "Read @a.go", Status: "done", Error: "private-ui-error", Files: []Attachment{{Path: "a.go", Content: "package main // 🌏"}}}}, Settings{MaxTokens: 8192, Temperature: 0.2}, func(e Event) { events = append(events, e) })
-	if err != nil || len(events) != 2 || events[0].Text != "안녕 🌏" || events[1].Type != "done" || events[1].Usage.TotalTokens != 12 || events[1].Model != "fixture/free" {
+	if err != nil || len(events) != 2 || events[0].Text != "안녕 🌏" || events[0].Model != "fixture/free" || events[0].Provider != "fixture" ||
+		events[1].Type != "done" || events[1].Usage.TotalTokens != 12 || events[1].Model != "fixture/free" {
 		t.Fatalf("invalid stream: %#v %v", events, err)
 	}
 }

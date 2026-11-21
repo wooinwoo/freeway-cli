@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -28,13 +29,33 @@ func isOpenCodeModel(id string) bool { return strings.HasPrefix(id, "opencode/")
 
 func (m Model) modelPickerItems() []list.Item {
 	items := make([]list.Item, 0, len(m.availableModels)+1)
-	if gateway, ok := m.gateway.(openCodeGateway); ok && gateway.CanOpenCode() {
-		items = append(items, modelItem{ID: openCodePicker, Name: "OpenCode…", Detail: "Browse models from the official CLI"})
+	gateway, local := m.gateway.(openCodeGateway)
+	start := 0
+	if len(m.availableModels) > 0 && m.availableModels[0].ID == "free/auto" {
+		items = append(items, m.modelRow(m.availableModels[0]))
+		start = 1
 	}
-	for _, model := range m.availableModels {
-		items = append(items, modelItem(model))
+	if local && gateway.CanOpenCode() {
+		detail := "Browse models from the official CLI"
+		if isOpenCodeModel(m.selected) {
+			detail = "Current connection · Browse OpenCode models"
+		}
+		items = append(items, modelItem{ID: openCodePicker, Name: "OpenCode…", Detail: detail})
+	}
+	for _, model := range m.availableModels[start:] {
+		items = append(items, m.modelRow(model))
 	}
 	return items
+}
+
+func (m Model) modelRow(model client.Model) modelItem {
+	if model.LocalTokensRemaining != nil {
+		model.Detail = strings.TrimPrefix(model.Detail+fmt.Sprintf(" · %d local tokens", *model.LocalTokensRemaining), " · ")
+	}
+	if model.ID == m.selected {
+		model.Detail = strings.TrimSuffix("✓ Current · "+model.Detail, " · ")
+	}
+	return modelItem(model)
 }
 
 func (m Model) showOpenCode() (tea.Model, tea.Cmd) {
@@ -73,21 +94,17 @@ func (m Model) receiveOpenCodeModels(msg openCodeModelsLoaded) (tea.Model, tea.C
 		}
 		return m, nil
 	}
-	m.menuAll = make([]list.Item, 0, len(msg.models))
+	m.openCodeModels = nil
+	items := make([]list.Item, 0, len(msg.models))
 	for _, model := range msg.models {
 		if isOpenCodeModel(model.ID) && model.Free && model.Ready {
-			m.menuAll = append(m.menuAll, modelItem(model))
+			m.openCodeModels = append(m.openCodeModels, model)
+			items = append(items, m.modelRow(model))
 		}
 	}
-	if len(m.menuAll) == 0 {
+	if len(items) == 0 {
 		m.openCodeError = "No free models found. Check the OpenCode CLI, then press Ctrl+R."
 	}
-	cmd := m.applyMenuFilter()
-	for i, item := range m.models.list.Items() {
-		if item.(modelItem).ID == m.selected {
-			m.models.list.Select(i)
-			break
-		}
-	}
+	cmd := m.refreshMenuItems(items)
 	return m, cmd
 }

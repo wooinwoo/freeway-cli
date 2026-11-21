@@ -101,6 +101,41 @@ func TestAutoOnlyRetriesAStalledProviderBeforeText(t *testing.T) {
 	}
 }
 
+func TestLocalTokenBudgetReportsHowMuchOfTheReplyFits(t *testing.T) {
+	vault, err := storage.Open(filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer vault.Close()
+	ledger, err := quota.Open(vault, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := &fakeUpstream{}
+	r := New(upstream, ledger, []Source{{ID: "fixture", Limits: quota.Limits{DayTokens: 4000}}}, nil, nil)
+	models, err := r.Models(t.Context())
+	if err != nil || len(models) != 2 || models[0].LocalTokensRemaining == nil || *models[0].LocalTokensRemaining != 4000 {
+		t.Fatalf("model budget missing: %+v %v", models, err)
+	}
+	statuses, err := r.ProviderStatuses(t.Context())
+	if err != nil || statuses[0].State != "short_replies" {
+		t.Fatalf("provider readiness did not disclose the limit: %+v %v", statuses, err)
+	}
+	input := contracts.CompletionRequest{Model: Auto, Messages: []contracts.InputMessage{{Role: "user", Content: "안녕"}}}
+	_, err = r.Stream(t.Context(), input, nil)
+	var problem *contracts.Problem
+	const fits = 4000 - len("안녕") - 16
+	if !errors.As(err, &problem) || problem.Code != "local_token_budget" ||
+		problem.MaxOutputTokens == nil || *problem.MaxOutputTokens != fits || len(upstream.called) != 0 {
+		t.Fatalf("incorrect local budget or an upstream call was already made: %+v %v", problem, upstream.called)
+	}
+	maxOutput := fits
+	input.MaxTokens = &maxOutput
+	if _, err := r.Stream(t.Context(), input, nil); err != nil || len(upstream.called) != 1 {
+		t.Fatalf("adjusted request did not fit: %v %v", err, upstream.called)
+	}
+}
+
 func TestRouteSelectionAndAccounting(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

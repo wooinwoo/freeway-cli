@@ -114,18 +114,21 @@ func TestTokenBurstIsCoalescedAndDraftRemainsEditable(t *testing.T) {
 	}
 }
 
-func TestSelectedModelFailureRecoversOnceWithoutDuplicatingPrompt(t *testing.T) {
+func TestSelectedModelFailureWaitsForExplicitAutoChoice(t *testing.T) {
 	g := &burstGateway{failFirst: true}
 	m := connectedFixture(g)
 	m.selected = "free/chosen"
 	m.prompt.SetValue("중복되면 안 되는 질문")
 	next, cmd := m.Update(press(tea.KeyEnter))
 	m, _ = drainResponse(t, next.(Model), cmd)
-	if strings.Join(g.calls, ",") != "free/chosen,free/auto" || m.selected != "free/auto" || len(m.messages) != 2 || len(g.requests[1]) != 1 {
-		t.Fatalf("automatic retry corrupted conversation: %#v %#v", g.calls, m.messages)
+	if strings.Join(g.calls, ",") != "free/chosen" || m.selected != "free/chosen" || !strings.Contains(m.notice, "Alt+R") {
+		t.Fatalf("selected model was not preserved: %#v %s %s", g.calls, m.selected, m.notice)
 	}
-	if m.notice != "" {
-		t.Fatalf("recovered request still shows an error: %s", m.notice)
+	next, _ = m.execute("/auto", "")
+	next, cmd = next.(Model).retry()
+	m, _ = drainResponse(t, next.(Model), cmd)
+	if strings.Join(g.calls, ",") != "free/chosen,free/auto" || len(m.messages) != 2 || len(g.requests[1]) != 1 {
+		t.Fatalf("explicit Auto retry duplicated prompt: %#v %#v", g.calls, m.messages)
 	}
 }
 
