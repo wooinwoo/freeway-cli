@@ -4,7 +4,13 @@
 
 네이티브 패키지에는 TUI, 로컬 Go 게이트웨이, 공급처 관리 도구, 설치·업데이트 기능이 포함됩니다. 제품 실행에 Node.js가 필요하지 않습니다.
 
-전체 설치 스크립트는 루트의 [install.sh](install.sh)와 [install.ps1](install.ps1)입니다. 지금은 Go 1.26 이상을 설치한 소스 체크아웃에서 실행합니다.
+## Windows 설치
+
+[GitHub Releases](https://github.com/wooinwoo/freeway-cli/releases)에서 일반 PC는 `Freeway-Setup-x64.exe`, Windows on Arm은 `Freeway-Setup-arm64.exe`를 받으세요. 실행하고 설치를 누르면 시작 메뉴에서 Freeway를 열 수 있습니다. 한 파일에 필요한 프로그램이 들어 있어 Go나 Node.js를 설치할 필요가 없습니다.
+
+## 소스에서 설치
+
+Go 1.26 이상이 필요합니다. 저장소에서 [install.sh](install.sh) 또는 [install.ps1](install.ps1)을 실행하세요.
 
 ```sh
 bash install.sh --source

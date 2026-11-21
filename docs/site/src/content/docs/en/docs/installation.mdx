@@ -5,6 +5,15 @@ description: Install Freeway from a package with three native executables.
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 import { Aside } from '@astrojs/starlight/components';
 
+## Install on Windows
+
+Download **Freeway-Setup-x64.exe** for most Windows PCs or **Freeway-Setup-arm64.exe** for Windows on Arm from the official [GitHub Releases](https://github.com/wooinwoo/freeway-cli/releases).
+
+1. Double-click the setup file and confirm installation.
+2. Open Freeway from the finish dialog. Search for **Freeway** in the Start menu to open it again.
+
+The setup file includes the full package. It installs under `$HOME\.freeway\app` and needs no administrator access, Go, Node.js, or PATH changes. Windows may show an unsigned-app prompt.
+
 Freeway packages contain `freeway`, `freewayd`, `freeway-providers`, a file manifest, and license notices. Choose the archive matching your operating system and CPU and keep the three executables together. The local gateway runs in `freewayd`.
 
 <Aside title="Release availability">
@@ -62,7 +71,7 @@ Install Go 1.26 or later. From the repository root:
 go -C cli run ./cmd/package --root "$PWD"
 ~~~
 
-This creates archives for Linux, macOS, and Windows on amd64 and arm64 in `dist/native`, plus `SHA256SUMS` and `release.json`. To build one target, append `--targets linux/amd64`. Cross compilation does not prove execution on another operating system.
+This creates archives for Linux, macOS, and Windows on amd64 and arm64, both Windows Setup executables, `SHA256SUMS`, and `release.json` in `dist/native`. To build one target, append `--targets linux/amd64`. Build and execution verification are separate stages.
 
 ## Verify and install
 

@@ -66,7 +66,19 @@ def main():
                 assert result.returncode != 0, arguments
             return result
 
-        run(package / executable, "install", "--archive", str(archive), "--sha256", expected, "--root", str(base / "app"))
+        if windows:
+            architecture = archive.stem.rsplit("_", 1)[-1]
+            setup = archive.with_name(f"Freeway-Setup-{'x64' if architecture == 'amd64' else architecture}.exe")
+            body = setup.read_bytes()
+            damaged = base / "damaged-setup.exe"
+            damaged.write_bytes(body[:-1] + bytes([body[-1] ^ 1]))
+            corrupt_root = base / "damaged setup target"
+            run(damaged, "--quiet", "--root", str(corrupt_root), success=False)
+            assert not (corrupt_root / "install.json").exists()
+            assert run(setup, "--quiet", "--root", str(base / "app")).stdout.strip() == version
+            assert run(setup, "--quiet", "--root", str(base / "app")).stdout.strip() == version
+        else:
+            run(package / executable, "install", "--archive", str(archive), "--sha256", expected, "--root", str(base / "app"))
         assert run(program, "--version").stdout.strip() == version
         assert "Node.js or POC runtime is required" in run(program, "--help").stdout
         run(program, "providers", "--help")

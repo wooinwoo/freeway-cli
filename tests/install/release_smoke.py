@@ -32,6 +32,9 @@ def sha256(data):
 def archive_name(artifact):
     return urlsplit(artifact["url"]).path.rsplit("/", 1)[-1]
 
+def windows_setup_name(arch):
+    return f"Freeway-Setup-{'x64' if arch == 'amd64' else arch}.exe"
+
 
 def verify_bundle(directory):
     release = json.loads((directory / "release.json").read_text())
@@ -44,7 +47,7 @@ def verify_bundle(directory):
         checksum, name = line.split()
         assert name not in actual_sums, name
         actual_sums[name] = checksum
-    assert actual_sums == {archive_name(a): a["sha256"] for a in artifacts}
+    expected_sums = {archive_name(a): a["sha256"] for a in artifacts}
     for artifact in artifacts:
         system, arch = artifact["os"], artifact["arch"]
         extension = ".zip" if system == "windows" else ".tar.gz"
@@ -53,6 +56,10 @@ def verify_bundle(directory):
         path = directory / name
         assert sha256(path.read_bytes()) == artifact["sha256"], name
         if extension == ".zip":
+            setup_name = windows_setup_name(arch)
+            setup = (directory / setup_name).read_bytes()
+            assert setup.startswith(b"MZ") and setup.endswith(path.read_bytes()), setup_name
+            expected_sums[setup_name] = sha256(setup)
             with zipfile.ZipFile(path) as package:
                 names = package.namelist()
                 assert len(names) == len(set(names)), name
@@ -75,7 +82,8 @@ def verify_bundle(directory):
             assert parts[0] == "licenses" and len(parts) > 1, entry
             assert all(part not in ("", ".", "..") and "\\" not in part for part in parts), entry
             assert not entry.endswith((".js", ".mjs", ".exe")), entry
-    print("Verified all six targets against SHA256SUMS, release metadata, and internal manifests.", flush=True)
+    assert actual_sums == expected_sums
+    print("Verified six packages and both Windows Setup files against the release checksums.", flush=True)
 
 
 def verify_gateway(launcher, binary, base, environment, run):
@@ -296,6 +304,9 @@ def run_upgrade(directory, go):
         run(launcher, "--version", success=False)
         run(launcher, "install", "--archive", current_archive, "--sha256", artifact["sha256"])
         assert run(launcher, "--version").strip() == release["version"]
+        if system == "windows":
+            run(previous / windows_setup_name(architecture), "--quiet", "--root", root, success=False)
+            assert run(launcher, "--version").strip() == release["version"]
         (active / utility).write_bytes(b"damaged")
         run(launcher, "--version", success=False)
         run(launcher, "rollback")

@@ -242,14 +242,26 @@ func (m Manager) Install(ctx context.Context, archive, checksum string) (State, 
 		return State{}, err
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, MaxArchive+1))
+	return m.installArchive(ctx, f, checksum, "")
+}
+
+// InstallBundle installs the bundled release while preserving a newer installation.
+func (m Manager) InstallBundle(ctx context.Context, archive io.Reader, checksum, version string) (State, error) {
+	if !versionPattern.MatchString(version) {
+		return State{}, errors.New("invalid setup version")
+	}
+	return m.installArchive(ctx, archive, checksum, version)
+}
+
+func (m Manager) installArchive(ctx context.Context, archive io.Reader, checksum, version string) (State, error) {
+	data, err := io.ReadAll(io.LimitReader(archive, MaxArchive+1))
 	if err != nil {
 		return State{}, err
 	}
 	if len(data) > MaxArchive {
 		return State{}, errors.New("archive exceeds size limit")
 	}
-	return m.install(ctx, data, checksum, "")
+	return m.install(ctx, data, checksum, version)
 }
 
 func validHash(value string) bool {
@@ -426,7 +438,9 @@ func probe(ctx context.Context, directory string, p Package) error {
 	}
 	for _, name := range names {
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		out, err := exec.CommandContext(ctx, filepath.Join(directory, exe(name)), "--version").Output()
+		cmd := exec.CommandContext(ctx, filepath.Join(directory, exe(name)), "--version")
+		hideVersionProbe(cmd)
+		out, err := cmd.Output()
 		cancel()
 		if err != nil || strings.TrimSpace(string(out)) != p.Version {
 			return fmt.Errorf("%s did not pass native version verification", name)
@@ -485,6 +499,11 @@ func (m Manager) installVersion(ctx context.Context, data []byte, want, version 
 	p, err := validatePackage(stage, version)
 	if err != nil {
 		return State{}, err
+	}
+	if !automatic && version != "" {
+		if _, err := updateVersion(state, version); err != nil {
+			return state, err
+		}
 	}
 	target := filepath.Join(versions, p.Version)
 	published := false
@@ -801,6 +820,7 @@ func (m Manager) RemoveFiles(ctx context.Context) error {
 		}
 		versionErr := os.RemoveAll(filepath.Join(root, "versions"))
 		if binErr == nil && versionErr == nil {
+			removeSetupShortcut(root)
 			return os.Remove(filepath.Join(root, "install.json"))
 		}
 		if runtime.GOOS != "windows" {

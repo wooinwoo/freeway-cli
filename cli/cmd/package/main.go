@@ -111,10 +111,7 @@ func run() error {
 				name += ".exe"
 			}
 			output := filepath.Join(build, name)
-			cmd := exec.Command(*goBin, "-C", filepath.Join(root, binary.module), "build", "-trimpath", "-buildvcs=false", "-ldflags", "-s -w -X main.version="+version, "-o", output, binary.command)
-			cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+goos, "GOARCH="+arch)
-			cmd.Stderr = os.Stderr
-			if err = cmd.Run(); err != nil {
+			if err = buildBinary(*goBin, filepath.Join(root, binary.module), goos, arch, output, binary.command, "-s -w -X main.version="+version); err != nil {
 				return fmt.Errorf("build %s %s: %w", target, name, err)
 			}
 			files[name], err = os.ReadFile(output)
@@ -143,6 +140,14 @@ func run() error {
 		}
 		sum := hash(data)
 		fmt.Fprintf(&sums, "%s  %s\n", sum, name)
+		if goos == "windows" {
+			setupName, setupSum, err := buildWindowsSetup(*goBin, root, build, out, arch, version, sum, data)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(&sums, "%s  %s\n", setupSum, setupName)
+			fmt.Println(filepath.Join(out, setupName))
+		}
 		release.Artifacts = append(release.Artifacts, update.Artifact{OS: goos, Arch: arch, URL: strings.TrimRight(base, "/") + "/" + name, SHA256: sum})
 		fmt.Println(filepath.Join(out, name))
 	}
@@ -154,6 +159,36 @@ func run() error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(out, "SHA256SUMS"), []byte(sums.String()), 0644)
+}
+
+func buildBinary(goBin, module, goos, arch, output, command, ldflags string) error {
+	cmd := exec.Command(goBin, "-C", module, "build", "-trimpath", "-buildvcs=false", "-ldflags", ldflags, "-o", output, command)
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+goos, "GOARCH="+arch)
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func buildWindowsSetup(goBin, root, build, out, arch, version, sum string, archive []byte) (string, string, error) {
+	bootstrap := filepath.Join(build, "freeway-setup.exe")
+	flags := fmt.Sprintf("-s -w -H=windowsgui -X main.version=%s -X main.archiveSize=%d -X main.archiveSHA256=%s",
+		version, len(archive), sum)
+	if err := buildBinary(goBin, filepath.Join(root, "cli"), "windows", arch, bootstrap, "./cmd/setup", flags); err != nil {
+		return "", "", fmt.Errorf("build Windows Setup for %s: %w", arch, err)
+	}
+	executable, err := os.ReadFile(bootstrap)
+	if err != nil {
+		return "", "", err
+	}
+	label := arch
+	if arch == "amd64" {
+		label = "x64"
+	}
+	name := "Freeway-Setup-" + label + ".exe"
+	bundle := append(executable, archive...)
+	if err := os.WriteFile(filepath.Join(out, name), bundle, 0644); err != nil {
+		return "", "", err
+	}
+	return name, hash(bundle), nil
 }
 
 func hash(data []byte) string { s := sha256.Sum256(data); return hex.EncodeToString(s[:]) }

@@ -8,7 +8,9 @@ Go 1.26 이상으로 저장소 루트에서 실행합니다. 패키지는 Go 실
 go -C cli run ./cmd/package --root "$PWD"
 ```
 
-기준 버전은 루트 `VERSION`입니다. Linux·macOS·Windows의 amd64·arm64를 빌드하고 `dist/native`에 tar.gz/ZIP, `release.json`, `SHA256SUMS`를 만듭니다. `--targets linux/amd64`, `--out PATH`, `--go PATH`, `--base-url HTTPS_URL`로 빌드·출력·배포 주소를 지정합니다. 파일을 업로드하거나 릴리스를 공개하지 않습니다.
+기준 버전은 루트 `VERSION`입니다. Linux·macOS·Windows의 amd64·arm64를 빌드하고 `dist/native`에 tar.gz/ZIP, `Freeway-Setup-x64.exe`, `Freeway-Setup-arm64.exe`, `release.json`, `SHA256SUMS`를 만듭니다. `--targets linux/amd64`, `--out PATH`, `--go PATH`, `--base-url HTTPS_URL`로 빌드·출력·배포 주소를 지정합니다.
+
+Windows Setup EXE에는 해당 CPU의 ZIP과 예상 체크섬이 들어 있습니다. GitHub 릴리스에 Setup EXE, 압축 파일, `SHA256SUMS`, `release.json`을 함께 올립니다. 설치 GUI는 기본 계정에 시작 메뉴 바로가기를 만들고 Freeway를 열 수 있습니다. 자동화에서는 `Freeway-Setup-x64.exe --quiet --root PATH`를 사용합니다.
 
 패키지는 `freeway`, `freeway-providers`, `freewayd`, `manifest.json`, 프로젝트·Go·실제 빌드 의존성의 라이선스와 고지를 포함합니다. 세 실행 파일은 같은 버전으로 빌드합니다. Go 캐시에 의존성 고지가 없으면 패키징이 실패합니다.
 

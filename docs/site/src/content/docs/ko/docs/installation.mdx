@@ -5,6 +5,15 @@ description: 세 개의 네이티브 실행 파일로 Freeway를 설치합니다
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 import { Aside } from '@astrojs/starlight/components';
 
+## Windows에서 바로 설치
+
+공식 [GitHub Releases](https://github.com/wooinwoo/freeway-cli/releases)에서 Windows 설치 파일을 받습니다. 대부분의 Windows PC는 **Freeway-Setup-x64.exe**, Windows on Arm은 **Freeway-Setup-arm64.exe**를 사용합니다.
+
+1. 파일을 더블클릭한 뒤 설치를 확인합니다.
+2. 완료 화면에서 Freeway를 엽니다. 이후에는 시작 메뉴에서 **Freeway**를 검색하면 됩니다.
+
+설치 파일에 전체 패키지가 포함됩니다. 관리자 권한, Go, Node.js, PATH 설정이 필요하지 않습니다. 서명되지 않은 설치 파일에는 Windows가 확인 화면을 표시할 수 있습니다. 설치 위치는 `$HOME\.freeway\app`입니다.
+
 패키지에는 `freeway`, `freewayd`, `freeway-providers`, 파일 검증 명세와 라이선스가 들어 있습니다. 운영체제와 CPU에 맞는 패키지를 선택하고 세 실행 파일을 함께 보관하세요. `freewayd`가 로컬 게이트웨이를 실행합니다.
 
 <Aside title="릴리스 공개 여부">
@@ -62,7 +71,7 @@ Go 1.26 이상을 설치하고 저장소 루트에서 실행합니다.
 go -C cli run ./cmd/package --root "$PWD"
 ~~~
 
-`dist/native`에 Linux·macOS·Windows의 amd64·arm64 압축 파일과 `SHA256SUMS`, `release.json`이 생성됩니다. 한 대상만 빌드하려면 `--targets linux/amd64`를 추가하세요. 교차 빌드 성공은 해당 운영체제에서의 실행 검증과 다릅니다.
+`dist/native`에 Linux·macOS·Windows의 amd64·arm64 압축 파일, Windows Setup EXE 2종, `SHA256SUMS`, `release.json`이 생성됩니다. 한 대상만 빌드하려면 `--targets linux/amd64`를 추가하세요. 교차 빌드와 각 운영체제의 실행 검증은 별도 단계입니다.
 
 ## 검증 후 설치
 
