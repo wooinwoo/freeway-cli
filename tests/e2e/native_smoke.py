@@ -117,7 +117,7 @@ def main():
         (active / "freeway-providers").write_bytes(b"damaged")
         run(program, "--version", success=False)
         marker = base / "home" / ".freeway" / "accounts.json"
-        marker.parent.mkdir(parents=True)
+        marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("preserve user data")
         run(program, "uninstall")
         assert marker.read_text() == "preserve user data"

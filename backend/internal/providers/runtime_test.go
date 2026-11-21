@@ -36,7 +36,10 @@ func TestNativeCLIResolvesNPMOptionalBinaryWithoutLaunchingNode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX symlink layout; Windows package candidates have a separate fixture")
 	}
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	bin := filepath.Join(root, "bin")
 	modules := filepath.Join(root, "lib", "node_modules")
 	wrapper := filepath.Join(modules, "opencode-ai", "bin", "opencode")

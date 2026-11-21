@@ -111,8 +111,13 @@ try {
   }
   if ($SHA256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Expected SHA256 must contain 64 hexadecimal characters.' }
   $Archive = (Resolve-Path -LiteralPath $Archive).ProviderPath
-  if ((Get-Item -LiteralPath $Archive).Length -gt 268435456) { throw 'Archive exceeds size limit.' }
-  $actual = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash
+  $archiveStream = [IO.File]::OpenRead($Archive)
+  try {
+    if ($archiveStream.Length -gt 268435456) { throw 'Archive exceeds size limit.' }
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try { $actual = [BitConverter]::ToString($hasher.ComputeHash($archiveStream)).Replace('-', '') }
+    finally { $hasher.Dispose() }
+  } finally { $archiveStream.Dispose() }
   if ($actual -ine $SHA256) { throw 'Archive SHA256 mismatch. No package executable was run.' }
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   $zip = [IO.Compression.ZipFile]::OpenRead($Archive)
