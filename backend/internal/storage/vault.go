@@ -58,10 +58,7 @@ func (v *Vault) initialize() error {
 	if err := requirePrivate(v.root, ".", info); err != nil {
 		return err
 	}
-	if err := v.checkFile(".lock"); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	v.lock, err = v.root.OpenFile(".lock", os.O_CREATE|os.O_RDWR, 0600)
+	v.lock, err = v.openLock()
 	if err != nil {
 		return err
 	}
@@ -94,6 +91,24 @@ func (v *Vault) initialize() error {
 	}
 	v.aead, err = cipher.NewGCMWithRandomNonce(block)
 	return err
+}
+
+func (v *Vault) openLock() (*os.File, error) {
+	const name = ".lock"
+	err := v.checkFile(name)
+	if errors.Is(err, os.ErrNotExist) {
+		// On macOS, competing create-or-open calls can return ENOENT.
+		// Create exclusively, then validate and open a competing creator's file.
+		file, createErr := v.root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+		if !errors.Is(createErr, os.ErrExist) {
+			return file, createErr
+		}
+		err = v.checkFile(name)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return v.root.OpenFile(name, os.O_RDWR, 0)
 }
 
 func (v *Vault) Close() error {

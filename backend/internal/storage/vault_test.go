@@ -46,3 +46,41 @@ func TestVaultLockAndMissingKey(t *testing.T) {
 		t.Fatalf("missing key should remain untouched: %v", err)
 	}
 }
+
+func TestConcurrentFirstOpenSelectsOneVaultWriter(t *testing.T) {
+	type result struct {
+		vault *Vault
+		err   error
+	}
+	const contenders = 8
+	for trial := range 8 {
+		path := filepath.Join(t.TempDir(), "state")
+		start := make(chan struct{})
+		results := make(chan result, contenders)
+		for range contenders {
+			go func() {
+				<-start
+				vault, err := Open(path)
+				results <- result{vault, err}
+			}()
+		}
+		close(start)
+		var writers []*Vault
+		for range contenders {
+			got := <-results
+			if got.err == nil {
+				writers = append(writers, got.vault)
+			} else if !errors.Is(got.err, ErrLocked) {
+				t.Errorf("trial %d: concurrent vault open: %v", trial, got.err)
+			}
+		}
+		for _, writer := range writers {
+			if err := writer.Close(); err != nil {
+				t.Error(err)
+			}
+		}
+		if len(writers) != 1 {
+			t.Errorf("trial %d: got %d vault writers, want one", trial, len(writers))
+		}
+	}
+}
