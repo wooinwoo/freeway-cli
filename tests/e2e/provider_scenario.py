@@ -11,14 +11,15 @@ from gateway_scenario import Terminal
 def provider_smoke(program, environment, base):
     env = dict(
         environment, FREEWAY_GATEWAY_HOME=str(base / "control-gateway"),
-        FREEWAY_PROVIDER_HOME=str(base / "control-providers"), FREEWAY_GATEWAY_PROVIDERS="groq",
-        GROQ_API_KEY="fixture-environment-key",
+        FREEWAY_PROVIDER_HOME=str(base / "control-providers"), FREEWAY_GATEWAY_PROVIDERS="gemini_api",
+        GEMINI_API_KEY="fixture-environment-key",
     )
 
     def run(*args):
         return subprocess.check_output([str(program), *args], cwd=base, env=env, timeout=12, text=True)
 
-    run("providers", "auth", "groq", "--from-env", "--confirm-free")
+    # Gemini API checks no key over the network, so the fixture key stays offline.
+    run("providers", "auth", "gemini_api", "--from-env", "--confirm-free")
     credentials = base / "control-providers" / "auth" / "provider-auth.enc"
     before = credentials.read_bytes()
     info = json.loads(run("gateway", "connect"))
@@ -28,8 +29,8 @@ def provider_smoke(program, environment, base):
         with urllib.request.urlopen(request, timeout=5) as response:
             return json.load(response)["data"]
 
-    assert [(status["id"], status.get("scopedCheck")) for status in query("/v1/providers")] == [("groq", True)]
-    assert [status["id"] for status in query("/v1/providers?provider=groq")] == ["groq"]
+    assert [(status["id"], status.get("scopedCheck")) for status in query("/v1/providers")] == [("gemini_api", True)]
+    assert [status["id"] for status in query("/v1/providers?provider=gemini_api")] == ["gemini_api"]
     try:
         query("/v1/providers?provider=disabled-fixture")
     except urllib.error.HTTPError as err:
@@ -67,7 +68,7 @@ def provider_smoke(program, environment, base):
         terminal.wait_text("Auto 제외")
         models = query("/v1/models")
         assert models and "free/auto" not in [model["id"] for model in models]
-        assert all(model["readyProviders"] == ["Groq"] for model in models)
+        assert all(model["readyProviders"] == ["Gemini API"] for model in models)
 
         terminal.send(b"\r")
         terminal.wait_text("Auto에 포함")
