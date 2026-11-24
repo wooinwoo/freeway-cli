@@ -158,6 +158,20 @@ func run() error {
 	if err = os.WriteFile(filepath.Join(out, "release.json"), data, 0644); err != nil {
 		return err
 	}
+	// Published releases need release.json.sig; clients accept unsigned manifests only from loopback.
+	if keyPath := os.Getenv("FREEWAY_RELEASE_SIGNING_KEY"); keyPath != "" {
+		seed, err := os.ReadFile(keyPath)
+		if err != nil {
+			return err
+		}
+		signature, err := update.SignRelease(data, seed)
+		if err != nil {
+			return err
+		}
+		if err = os.WriteFile(filepath.Join(out, "release.json.sig"), signature, 0644); err != nil {
+			return err
+		}
+	}
 	return os.WriteFile(filepath.Join(out, "SHA256SUMS"), []byte(sums.String()), 0644)
 }
 

@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 )
@@ -179,6 +180,15 @@ func (m Manager) Check(ctx context.Context) (Release, error) {
 	data, err := m.fetch(ctx, address, 1024*1024)
 	if err != nil {
 		return Release{}, err
+	}
+	if !loopbackRelease(address) {
+		signature, err := m.fetch(ctx, address+".sig", 1024)
+		if err != nil {
+			return Release{}, errReleaseSignature
+		}
+		if err := verifyRelease(data, signature); err != nil {
+			return Release{}, err
+		}
 	}
 	var release Release
 	if json.Unmarshal(data, &release) != nil || release.SchemaVersion != 1 || !versionPattern.MatchString(release.Version) {
@@ -414,7 +424,12 @@ func validatePackage(directory, version string) (Package, error) {
 			return p, fmt.Errorf("package checksum mismatch: %s", name)
 		}
 	}
-	err = filepath.WalkDir(directory, func(file string, d os.DirEntry, err error) error {
+	return p, rejectUnlisted(directory, p)
+}
+
+// rejectUnlisted blocks extra files, such as a planted library next to the executables.
+func rejectUnlisted(directory string, p Package) error {
+	return filepath.WalkDir(directory, func(file string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -431,7 +446,50 @@ func validatePackage(directory, version string) (Package, error) {
 		}
 		return nil
 	})
-	return p, err
+}
+
+// packageStamp records the size and modification time of each file that last
+// passed a full checksum check, so an unchanged package skips re-hashing.
+type packageStamp struct {
+	Version string              `json:"version"`
+	Files   map[string][2]int64 `json:"files"`
+}
+
+func stampPackage(directory string, p Package) (map[string][2]int64, error) {
+	files := make(map[string][2]int64, len(p.Files)+1)
+	for _, name := range append(slices.Collect(maps.Keys(p.Files)), "manifest.json") {
+		info, err := os.Lstat(filepath.Join(directory, filepath.FromSlash(name)))
+		if err != nil {
+			return nil, err
+		}
+		files[name] = [2]int64{info.Size(), info.ModTime().UnixNano()}
+	}
+	return files, nil
+}
+
+// validateActive hashes the package only when a file changed since the last
+// successful check. It detects damaged or partly replaced installs; a user who
+// can write the install folder could replace the launcher anyway.
+func validateActive(root, directory, version string) error {
+	stampPath := filepath.Join(root, "verified.json")
+	if p, err := readPackageManifest(directory, version); err == nil {
+		var saved packageStamp
+		data, readErr := os.ReadFile(stampPath)
+		if current, statErr := stampPackage(directory, p); readErr == nil && statErr == nil &&
+			json.Unmarshal(data, &saved) == nil && saved.Version == version && maps.Equal(saved.Files, current) {
+			return rejectUnlisted(directory, p)
+		}
+	}
+	p, err := validatePackage(directory, version)
+	if err != nil {
+		return err
+	}
+	if files, err := stampPackage(directory, p); err == nil {
+		if data, err := json.Marshal(packageStamp{Version: version, Files: files}); err == nil {
+			_ = atomicWrite(stampPath, data, 0600) // ponytail: best effort; a missing stamp only costs one full check.
+		}
+	}
+	return nil
 }
 
 func probe(ctx context.Context, directory string, p Package) error {
@@ -724,7 +782,7 @@ func Forward(args []string) (bool, int, error) {
 		return true, 1, err
 	}
 	target := filepath.Join(root, "versions", s.Active, exe("freeway"))
-	if _, err = validatePackage(filepath.Dir(target), s.Active); err != nil {
+	if err = validateActive(root, filepath.Dir(target), s.Active); err != nil {
 		return true, 1, err
 	}
 	cmd := exec.Command(target, args...)

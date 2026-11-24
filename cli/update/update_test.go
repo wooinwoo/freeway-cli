@@ -312,3 +312,41 @@ func TestInstallerRejectsConcurrentOperationAndSymlinkRoot(t *testing.T) {
 		}
 	}
 }
+
+func TestActivePackageStampSkipsHashingOnlyWhileFilesAreUnchanged(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "versions", "1.2.3")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("fixture binary")
+	files := map[string]string{}
+	for _, name := range []string{exe("freeway"), exe("freeway-providers"), exe("freewayd"), "LICENSE", "THIRD_PARTY_NOTICES.md"} {
+		os.WriteFile(filepath.Join(directory, name), body, 0o700)
+		files[name] = checksum(body)
+	}
+	manifest, _ := json.Marshal(Package{SchemaVersion: 1, Version: "1.2.3", OS: runtime.GOOS, Arch: runtime.GOARCH, APIVersion: 1, Files: files})
+	os.WriteFile(filepath.Join(directory, "manifest.json"), manifest, 0o600)
+	if err := validateActive(root, directory, "1.2.3"); err != nil {
+		t.Fatalf("a valid package was rejected: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "verified.json")); err != nil {
+		t.Fatalf("the verified stamp was not written: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, exe("freeway")), []byte("damaged binary"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateActive(root, directory, "1.2.3"); err == nil {
+		t.Fatal("a changed file passed on a stale stamp")
+	}
+	os.WriteFile(filepath.Join(directory, exe("freeway")), body, 0o700)
+	if err := validateActive(root, directory, "1.2.3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "planted.dll"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateActive(root, directory, "1.2.3"); err == nil {
+		t.Fatal("an unlisted file passed on the fast path")
+	}
+}

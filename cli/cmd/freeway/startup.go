@@ -22,7 +22,7 @@ func interactiveTerminal() bool {
 // The launcher restarts the same invocation after activating the approved build.
 func startupUpdate(ctx context.Context, prefs tui.Preferences, options []tea.ProgramOption) (bool, error) {
 	root := os.Getenv("FREEWAY_INSTALL_ROOT")
-	if root == "" || version == "dev" {
+	if root == "" || version == "dev" || os.Getenv("FREEWAY_NO_UPDATE_CHECK") != "" {
 		return false, nil
 	}
 	return offerStartupUpdate(ctx, update.Manager{Root: root}, version, prefs, options)
