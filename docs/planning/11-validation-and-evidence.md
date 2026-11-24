@@ -53,20 +53,20 @@ OpenCode 재시도처럼 완료하지 못한 실행은 성공으로 승격하지
 다음 두 명령은 읽기 전용 설치·인증 점검이다.
 
 ```bash
-/home/rst010/.local/bin/ori --version
-/home/rst010/.local/bin/ori doctor --json
+~/.local/bin/ori --version
+~/.local/bin/ori doctor --json
 ```
 
 다음 명령은 실제 모델 요청을 전송한다. 무료 모델을 지정하더라도 Ori 내부의 별도 호출까지 무료라고 보장하지 않으므로 기본 비용 회귀 시험 명령으로 사용하지 않는다.
 
 ```bash
-/home/rst010/.local/bin/ori code --model openrouter/free --approvals manual -p 'Reply exactly FREE_OK.'
+~/.local/bin/ori code --model openrouter/free --approvals manual -p 'Reply exactly FREE_OK.'
 ```
 
 OpenCode의 목록 확인 명령은 다음과 같다.
 
 ```bash
-/home/rst010/.local/bin/opencode models opencode
+~/.local/bin/opencode models opencode
 ```
 
 정확한 재현에는 CLI 버전, 계정 권한, 현재 무료 카탈로그, 지역, 네트워크 조건이 필요하다. 인증 키를 재현 문서의 명령행에 넣지 않는다. 임시 진단에서 사용한 비공개 credential helper를 제품 인증 API로 채택하지 않는다.

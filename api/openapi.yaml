@@ -31,8 +31,25 @@
                 "schema": {"type": "string", "const": "1"}
               },
               "X-Freeway-Features": {
-                "description": "Comma-separated features available to this client. Includes idempotent-saves, prompt-history, context-selection for explicit conversation context settings, context-file-selection for individual attachment exclusions, history-pages for conversation paging and scoped prompt history, and opencode when enabled for this key.",
+                "description": "Comma-separated features available to this client. Includes idempotent-saves, prompt-history, context-selection for explicit conversation context settings, context-file-selection for individual attachment exclusions, history-pages for conversation paging and scoped prompt history, and opencode only for the automatically started local client when the OpenCode route is enabled. Every authenticated response carries this header.",
                 "schema": {"type": "string"}
+              }
+            }
+          },
+          "default": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/lease": {
+      "get": {
+        "operationId": "holdLease",
+        "description": "Keep an automatically started gateway alive. The response headers arrive immediately and the body stays open until the client closes the connection. The gateway shuts down after a short grace period once no lease remains.",
+        "responses": {
+          "200": {
+            "description": "Lease held for the lifetime of this connection. The body is empty.",
+            "headers": {
+              "X-Freeway-API": {
+                "schema": {"type": "string", "const": "1"}
               }
             }
           },
@@ -482,7 +499,7 @@
           "catalogChecked": { "type": "boolean" },
           "keyChecked": { "type": "boolean", "description": "A provider's authenticated key endpoint accepted the configured key." },
           "scopedCheck": { "type": "boolean", "description": "The gateway can check this provider without discovering other providers." },
-          "state": { "type": "string" },
+          "state": { "type": "string", "description": "For example ready, short_replies, limited, needs_key, confirm_free_account, disconnected, no_free_models, connection_rejected, unreachable, key_check_unavailable or credential_store_failed." },
           "freeModels": { "type": "integer", "minimum": 0 },
           "retryAfter": { "type": "integer", "minimum": 0 },
           "management": { "type": "boolean" },
@@ -491,7 +508,8 @@
           "checkedAt": { "type": "string", "format": "date-time" },
           "localRequests": { "type": "integer", "minimum": 0 },
           "providerRemaining": { "type": "integer", "minimum": 0 },
-          "cliProfile": { "type": "string", "description": "Opaque local CLI profile identity for managing official CLI tools." }
+          "cliProfile": { "type": "string", "description": "Opaque local CLI profile identity for managing official CLI tools." },
+          "localTokensRemaining": { "type": "integer", "minimum": 0, "description": "Estimated local daily token headroom. Omitted when no local token cap applies." }
         }
       },
       "Attachment": {

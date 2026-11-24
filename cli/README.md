@@ -26,18 +26,19 @@ PowerShell에서는 현재 셸의 `$env:FREEWAY_API_KEY`와 `$env:FREEWAY_URL`�
 - 채팅 상단에 연결된 공급처가 표시됩니다. F4 또는 `/providers`에서 공급처별 연결 상태, 등록된 키, 무료 모델과 사용량 제한을 확인합니다. Ctrl+R로 새로고침합니다.
 - 공급처를 선택하고 Enter를 누르거나 `freeway connect`를 실행하면 공식 로그인 또는 API 키 발급·등록 안내가 열립니다. 연결된 모델이 없을 때는 이 안내가 채팅보다 먼저 열립니다.
 - `/language`에서 한국어·영어를 선택합니다. `/theme`는 채팅을 보여 주면서 ↑↓로 색상을 즉시 미리 봅니다. Enter로 저장하거나 Esc로 취소합니다.
-- 설치된 CLI에서 대화형 기본 게이트웨이를 시작할 때 최신 릴리스를 확인합니다. 새 버전이 있으면 업데이트 후 시작하거나 현재 버전으로 계속할 수 있습니다.
+- 설치된 CLI에서 대화형 기본 게이트웨이를 시작할 때 최신 릴리스를 확인합니다. 새 버전이 있으면 업데이트 후 시작하거나 현재 버전으로 계속할 수 있습니다. `FREEWAY_NO_UPDATE_CHECK=1`로 이 확인을 끕니다.
 - Esc로 생성을 중지합니다. 다음 초안은 보존합니다. Ctrl+C는 생성 중지, 입력 보관 후 지우기, 빈 입력에서 두 번 누르면 종료 순서입니다.
 - Alt+H·`/resume`은 저장 대화, Alt+N·`/new`는 새 대화입니다. `freeway continue`, `freeway resume ID_OR_TITLE`, `freeway sessions [--all] [--json]`도 지원합니다.
 - Ctrl+S로 초안·첨부를 보관하거나 복원합니다. Ctrl+R은 프롬프트 검색, Alt+R은 재생성, Ctrl+G는 외부 편집기입니다.
 - F3 또는 `/find`로 현재 대화의 질문과 답변을 검색합니다. ↑↓로 결과를 고르고 Enter로 이동합니다.
+- F5는 로컬 토큰 한도에 맞춰 더 짧은 응답으로 다시 시도합니다. F6은 저장에 실패한 작업을 일반 텍스트 복구 파일로 보존하고, F7·`/restore`는 복구 파일의 초안과 첨부를 가져옵니다. F8·`/context`는 다음 요청에 보낼 이전 질문과 첨부를 확인하고 줄입니다.
 - 위로 스크롤했을 때 입력창 위의 `↓ Jump to latest` 버튼이나 Ctrl+End로 최신 메시지로 이동합니다.
 - `@`·`/attach`는 프로젝트 내부 UTF-8 파일을 첨부합니다. `@`로 파일을 고르다가 Esc를 눌러도 입력한 경로가 남습니다. 질문당 5개, 파일당 128 KB입니다.
 - 생성 중 Enter·Tab은 다음 질문을 대기열에 넣습니다. `/queue pause|resume|clear`로 관리합니다. `clear`를 확인하면 예약한 질문과 첨부만 삭제합니다.
 - `/fork`는 원본을 보존해 분기합니다. `/rename TITLE`은 제목을 바꿉니다.
 - `/export filename.md`는 메시지·초안·첨부·보관함·대기열을 평문 Markdown으로 내보냅니다. 기존 파일은 덮어쓰지 않습니다.
 - `/copy`, `/code`, `/settings`, `/save`, `/reconnect`, `/help`를 제공합니다.
-- F6에서 Streamable HTTP 이미지 MCP 도구를 최대 세 개 연결하고 우선순위를 바꿉니다. F6을 열면 도구별 연결 상태를 확인합니다. 다음 도구로 자동 전환하는 시점은 생성 호출 전까지입니다. HTTPS와 동적 OAuth 등록을 지원하는 서버에서는 브라우저로 승인할 수 있습니다. 서버가 갱신 토큰을 발급하면 만료된 로그인을 자동으로 갱신합니다. Bearer 인증은 `FREEWAY_MCP_IMAGE_TOKEN` 같은 환경변수 이름을 입력합니다. 터미널에서도 `freeway image status`로 확인할 수 있습니다.
+- F9 또는 `/image-setup`에서 Streamable HTTP 이미지 MCP 도구를 최대 세 개 연결하고 우선순위를 바꿉니다. F9를 열면 도구별 연결 상태를 확인합니다. 다음 도구로 자동 전환하는 시점은 생성 호출 전까지입니다. HTTPS와 동적 OAuth 등록을 지원하는 서버에서는 브라우저로 승인할 수 있습니다. 서버가 갱신 토큰을 발급하면 만료된 로그인을 자동으로 갱신합니다. Bearer 인증은 `FREEWAY_MCP_IMAGE_TOKEN` 같은 환경변수 이름을 입력합니다. 터미널에서도 `freeway image status`로 확인할 수 있습니다.
 - `/mcp` 또는 `freeway mcp manage`에서 일반 MCP 서버를 저장하고 연결 상태를 확인합니다. 브라우저 로그인과 Bearer 환경변수를 지원합니다. `freeway mcp connect`는 서버 추가로 바로 이동합니다.
 - `/mcp-ask 질문`은 현재 모델에게 질문과 저장된 일반 MCP 도구 요약을 보냅니다. 표시된 서버·도구·인수를 확인한 뒤 F8로 승인하거나 Esc로 취소합니다. 승인하면 도구를 한 번 호출하고 텍스트 결과를 선택한 모델의 답변에 사용합니다.
 - `freeway mcp tools`는 저장한 서버와 F9 연결의 도구와 입력 스키마를 함께 조회합니다. `freeway mcp call --server ID --args-file arguments.json TOOL`로 조회 결과의 서버와 도구를 지정합니다. `--args-file -`는 표준 입력에서 JSON 객체를 읽습니다. 세션에서만 쓸 서버는 `--url URL`로 지정하고, 필요한 경우 `--token-env FREEWAY_MCP_TOKEN`을 함께 사용합니다. 명령은 터미널에 JSON 결과를 출력합니다.

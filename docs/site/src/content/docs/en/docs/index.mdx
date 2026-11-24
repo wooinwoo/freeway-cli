@@ -8,26 +8,14 @@ Freeway is a personal, native Go terminal client for model APIs and official CLI
 
 ## Install the native client
 
-The repository now includes `install.sh` and `install.ps1`. The new native release assets are not published yet, so use **source installation with Go 1.26+** today. Node.js is not required.
+Install the native package from the official [GitHub Releases](https://github.com/wooinwoo/freeway-cli/releases). Go and Node.js are not required.
 
 <Tabs>
-<TabItem label="Linux">
+<TabItem label="Linux / macOS">
 
 ~~~sh
-git clone https://github.com/wooinwoo/freeway-cli.git
-cd freeway-cli
-bash install.sh --source
-export PATH="$HOME/.freeway/app/bin:$PATH"
-freeway --preview
-~~~
-
-</TabItem>
-<TabItem label="macOS">
-
-~~~sh
-git clone https://github.com/wooinwoo/freeway-cli.git
-cd freeway-cli
-bash install.sh --source
+curl -fsSLO https://raw.githubusercontent.com/wooinwoo/freeway-cli/main/install.sh
+bash install.sh
 export PATH="$HOME/.freeway/app/bin:$PATH"
 freeway --preview
 ~~~
@@ -35,18 +23,12 @@ freeway --preview
 </TabItem>
 <TabItem label="Windows">
 
-~~~powershell
-git clone https://github.com/wooinwoo/freeway-cli.git
-cd freeway-cli
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Source
-$env:Path = "$HOME\.freeway\app\bin;$env:Path"
-freeway --preview
-~~~
+Download **Freeway-Setup-x64.exe** (or **Freeway-Setup-arm64.exe** for Windows on Arm) from the release, run it, then open **Freeway** from the Start menu.
 
 </TabItem>
 </Tabs>
 
-The script builds only your platform, verifies the archive, and activates both native executables. See [installation](./installation) for local archives, release downloads, and a custom directory. Preview is offline and needs no credentials.
+The script detects your OS and CPU, verifies the latest release checksum, and installs `freeway`, `freewayd`, and `freeway-providers` together. See [installation](./installation) for source builds (Go 1.26+), local archives, and custom install locations. The preview works offline without an account.
 
 ## Explore Freeway
 

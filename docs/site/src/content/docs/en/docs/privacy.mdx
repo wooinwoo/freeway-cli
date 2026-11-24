@@ -14,7 +14,7 @@ Messages and selected file contents reach the connected gateway and chosen upstr
 
 Explicit model selections send requests to that model's provider. When you choose Auto, the gateway may retry with another free provider before output begins.
 
-The TUI uses gateway storage APIs for conversations and drafts. The standalone provider utility can store encrypted keys in its dedicated user directory; a backend may supply its own credential store.
+The TUI uses gateway storage APIs for conversations and drafts. The standalone provider utility can store encrypted keys in its dedicated user directory; a backend may supply its own credential store. The encryption keys for gateway data and provider keys live in the same user directories, so anyone who can read those directories can decrypt them; owner-only directory permissions are the real protection boundary. Image MCP sign-in data additionally uses operating-system user protection (DPAPI) on Windows only.
 
 ## Free conditions
 

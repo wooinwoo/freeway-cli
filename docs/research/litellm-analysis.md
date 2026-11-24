@@ -121,7 +121,7 @@ Rust 코어는 registry와 settings를 `RouterStateSnapshot`으로 묶는다. `C
 Rust `litellm-router-core`의 기존 `call_loop` 시험 111개가 통과했다. 시험은 ScriptedHost를 사용하며 실제 모델 API나 개인 자격증명을 사용하지 않는다. 같은 그룹 재시도, fallback 거절, cooldown, 요청별 fallback, 스트림 관련 코어 결정을 포함한다.
 
 ```bash
-/home/rst010/.cargo/bin/cargo +stable test --locked --offline --manifest-path litellm/litellm/rust/Cargo.toml -p litellm-router-core --test call_loop --target-dir /tmp/freeway-research-build/litellm
+~/.cargo/bin/cargo +stable test --locked --offline --manifest-path litellm/litellm/rust/Cargo.toml -p litellm-router-core --test call_loop --target-dir /tmp/freeway-research-build/litellm
 ```
 
 실제 출력: `111 passed; 0 failed; 0 ignored`. Python 프록시 전체, Redis·DB 연동, 위에서 읽은 모든 스트림 이어쓰기 분기를 실행 검증한 결과는 아니다. 추가 실행은 사용자의 범위 지적 후 중단했다.

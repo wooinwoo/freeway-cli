@@ -11,11 +11,13 @@ freeway update
 
 The default source is the Freeway GitHub release manifest. An unpublished or unreachable release returns an error and leaves the installed version active. `update check` reads release metadata; it does not install anything.
 
+Each release manifest `release.json` ships with an Ed25519 signature, `release.json.sig`. The client verifies it with the public key built into the executable before it uses any archive address or hash from the manifest. A missing or invalid signature stops the update and keeps the installed version.
+
 `update` applies newer releases and can repair a damaged copy of the same version. It skips the archive download when the installed version matches and passes validation. You can also repair with a verified local archive of that version. To activate an older version, use `rollback` or install a verified local archive.
 
 To refresh a launcher installed before this behavior was added, close Freeway and rerun the latest [install script](../installation/).
 
-The updater checks the archive SHA256, safe file paths, platform, API version, required files, individual file hashes, and the versions reported by the packaged executables. It stages the new version separately, then changes the active version in `install.json`. Running sessions continue using their original executable.
+The updater checks the archive SHA256, safe file paths, platform, API version, required files, individual file hashes, and the versions reported by all three executables (`freeway`, `freeway-providers`, `freewayd`). It stages the new version separately, then changes the active version in `install.json`. Running sessions continue using their original executable.
 
 ## Install a verified local archive
 
@@ -49,4 +51,8 @@ On Windows, removal runs in a temporary helper after Freeway exits. Close other 
 
 `--root PATH` selects a dedicated application directory. The installed launcher remembers its own root. `--release-url HTTPS_URL` selects a trusted manifest, for example when testing your own release. Anyone controlling that manifest and its hashes can distribute executable code, so only use a source you trust.
 
-Updates run only when explicitly requested. Provider CLI installation is separate; see Provider connections for official CLI versions and login.
+## Update check at startup
+
+An installed Freeway checks for the latest release when you start it interactively with the bundled gateway. If a newer version exists, choose **Update and restart** or **Continue with this version**; nothing installs without your choice. The check waits at most 3 seconds, and a failed check starts the current version. Connections set with `FREEWAY_URL` and `FREEWAY_API_KEY`, and runs from source with `go run`, skip the check. Set `FREEWAY_NO_UPDATE_CHECK=1` to turn off the startup check. You can still run `freeway update` at any time.
+
+Provider CLI installation is separate; see Provider connections for official CLI versions and login.

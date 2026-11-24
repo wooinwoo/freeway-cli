@@ -16,13 +16,25 @@ The setup file includes the full package. It installs under `$HOME\.freeway\app`
 
 Freeway packages contain `freeway`, `freewayd`, `freeway-providers`, a file manifest, and license notices. Choose the archive matching your operating system and CPU and keep the three executables together. The local gateway runs in `freewayd`.
 
-<Aside title="Release availability">
-Release publication is separate from this checkout. These instructions also work with archives produced locally. If no release is published, build the package from source; do not download an archive from an unrelated mirror.
+## Install on Linux and macOS
+
+Download the installer script and run it without options. It detects the OS and CPU, fetches `SHA256SUMS` and the matching archive from the latest release, verifies SHA256, and installs without Go or Node.js. It needs `curl`, `tar`, and `sha256sum` or `shasum`.
+
+~~~sh
+curl -fsSLO https://raw.githubusercontent.com/wooinwoo/freeway-cli/main/install.sh
+bash install.sh
+export PATH="$HOME/.freeway/app/bin:$PATH"
+~~~
+
+To use a script on Windows, download `install.ps1` the same way and run `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`. If the release cannot be fetched, the script fails without changing the installed version. `--release-url HTTPS_BASE_URL` / `-ReleaseUrl HTTPS_BASE_URL` selects a trusted release directory. `--root PATH` or `-Root PATH` chooses a dedicated install directory. PATH changes above apply to the current terminal; add the same directory to your shell configuration or Windows user PATH for future terminals.
+
+<Aside title="Use the official source">
+Download releases only from the official GitHub Releases page. Each release contains archives for each OS and CPU, both Windows setup executables, `SHA256SUMS`, `release.json`, and its signature `release.json.sig`. Do not download an archive from an unrelated mirror.
 </Aside>
 
-## Installer scripts
+## Install from source
 
-The repository root includes `install.sh` and `install.ps1`. Source installation is available now with Go 1.26+:
+You need Go 1.26+ and a repository checkout.
 
 <Tabs>
 <TabItem label="Linux / macOS">
@@ -43,9 +55,9 @@ $env:Path = "$HOME\.freeway\app\bin;$env:Path"
 </TabItem>
 </Tabs>
 
-Run from a source checkout. The script builds the current OS/CPU package, verifies it, and delegates activation to the native installer. Node.js is not used. `--root PATH` or `-Root PATH` chooses a dedicated install directory. PATH changes above apply to the current terminal; add the same directory to your shell configuration or Windows user PATH for future terminals.
+The script builds the current OS/CPU package, verifies it, and delegates activation to the native installer. Node.js is not used.
 
-### Install a local archive
+## Install a local archive
 
 No manual extraction is needed:
 
@@ -58,10 +70,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Archive .\fre
 ~~~
 
 Use a checksum from a trusted source. The archive is checked before its executable runs.
-
-### Download a native release
-
-Once the new native release assets are published, run `bash install.sh` or `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` without source/archive flags. This detects the OS and CPU, fetches `SHA256SUMS` and the matching archive, verifies SHA256, and installs without Go or Node.js. A missing release fails without changing the installed version. `--release-url HTTPS_BASE_URL` / `-ReleaseUrl HTTPS_BASE_URL` selects a trusted release directory.
 
 ## Build release archives
 

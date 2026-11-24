@@ -20,7 +20,7 @@ Freeway provides a personal local client for supported model APIs and official C
 
 ## Operating Context
 
-The public repository is github.com/wooinwoo/freeway-cli. Existing provider guides, CLI behavior, and tests are the content authority. The common Go backend is implemented last; the client must use a documented HTTP boundary and remain independently testable.
+The public repository is github.com/wooinwoo/freeway-cli. Existing provider guides, CLI behavior, and tests are the content authority. The common Go backend ships as the local gateway `freewayd`; the client uses the documented HTTP boundary and remains independently testable.
 
 ## Capabilities and Constraints
 
@@ -40,4 +40,4 @@ The native code and tests live in cli/ and backend/internal/providers/. Historic
 - Explain actual model routes, free conditions, and unknown usage accurately.
 - Preserve drafts and saved conversations through ordinary client actions.
 - Document the commands that the distributed binary really implements.
-- Keep backend policy and persistent user data outside the TUI.
+- Keep backend policy and persistent user data outside the TUI. Known deviation: MCP server settings, image tool settings, and image OAuth tokens are currently stored by the client (`cli/imagegen`) in the user configuration directory until they move into the gateway.

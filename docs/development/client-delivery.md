@@ -1,6 +1,6 @@
 # Native client delivery
 
-The authorized scope is the Go TUI, native provider integrations, the public documentation site, and product installation and updates. The common Go backend is implemented last. The final product must not require Node.js or the historical POC. Node.js may be used to build the statically exported documentation site; the published files require no Node server.
+The authorized scope is the Go TUI, native provider integrations, the public documentation site, and product installation and updates. The common Go backend was implemented last and now ships as the local gateway `freewayd`. The final product must not require Node.js or the historical POC. Node.js may be used to build the statically exported documentation site; the published files require no Node server.
 
 ## Acceptance conditions
 

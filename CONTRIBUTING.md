@@ -11,11 +11,19 @@ FREEWAY_LIVE=0 go -C cli test -race ./...
 FREEWAY_LIVE=0 go -C backend test -race ./...
 go -C cli run ./cmd/package --root "$PWD"
 python3 tests/install/release_smoke.py dist/native --go go
-python3 tests/e2e/native_smoke.py dist/native/freeway_0.6.0-dev_linux_amd64.tar.gz
+python3 tests/e2e/native_smoke.py "dist/native/freeway_$(cat VERSION)_linux_amd64.tar.gz"
 python3 tests/install/bootstrap_smoke.py --go /absolute/path/to/go
 ```
 
 실행 파일 시험의 아카이브 버전은 `VERSION`과 맞춰 사용합니다. 로컬 HTTP fixture를 열 수 있는 환경이 필요합니다. 공급처 실계정 시험은 별도로 실행하며 실제 할당량을 소비합니다.
+
+배포용 패키지는 서명 키를 지정해 빌드합니다. `FREEWAY_RELEASE_SIGNING_KEY`에 Ed25519 시드(base64) 파일 경로를 넣으면 `dist/native/release.json.sig`가 함께 만들어집니다. 키 파일은 저장소 밖에 두고, 공개키는 `cli/update/signature.go`의 `releaseKeys`와 맞아야 합니다. 클라이언트는 HTTPS 릴리스 명세에 서명이 없으면 거부합니다. 서명 없는 명세는 루프백 HTTP 주소(시험용)에서만 받습니다.
+
+```sh
+FREEWAY_RELEASE_SIGNING_KEY=/path/outside/repo/release-signing.key go -C cli run ./cmd/package --root "$PWD"
+```
+
+Linux에서는 언어·이미지·공급처·MCP 흐름까지 시험합니다. macOS와 Windows는 설정 폴더가 `XDG_CONFIG_HOME`을 따르지 않으므로, 복구·문맥·기록·재시작 흐름만 시험합니다.
 
 [사전 검증 워크플로](.github/workflows/preflight.yml)는 패키지 6종을 한 번 빌드하고 동일한 파일을 Linux amd64, macOS arm64, Windows amd64에서 검증합니다. 세 환경 모두 설치된 TUI에서 스트리밍·중단·초안 복원을 시험합니다. Windows에서는 ConPTY와 PowerShell 설치도 검사합니다. 워크플로에서 만든 패키지는 Actions 아티팩트로 확인할 수 있습니다.
 
