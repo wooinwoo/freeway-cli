@@ -61,11 +61,11 @@ func (*Client) Stream(context.Context, Request, func(string)) (Completion, error
 
 ### 공급처 목록
 
-Providers는 네트워크 요청 없이 11개 공급처의 ID·Name·Transport·Protocol·RequiresCLI·AuthURL·Env를 반환합니다. Kind는 기존 호환용 필드입니다.
+Providers는 네트워크 요청 없이 9개 공급처의 ID·Name·Transport·Protocol·RequiresCLI·AuthURL·Env를 반환합니다. Kind는 기존 호환용 필드입니다.
 
 | Transport | Protocol | 업체 |
 | --- | --- | --- |
-| http | openai_compatible | kilo, nvidia, zai, requesty, vikasit, openrouter, groq, gemini_api, novita |
+| http | openai_compatible | kilo, nvidia, zai, requesty, openrouter, groq, gemini_api |
 | cli | opencode_session | opencode |
 | cli | acp | cline |
 

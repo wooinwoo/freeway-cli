@@ -575,7 +575,7 @@ func TestUnavailableModelKeepsSelectionAndDraftUntilRefresh(t *testing.T) {
 }
 
 func TestCatalogOutageDistinguishesListedModelsFromLegacyIDs(t *testing.T) {
-	const listed = "vikasit/vikasit-nova"
+	const listed = "groq/openai/gpt-oss-20b"
 	m := connectedFixture(&burstGateway{})
 	m = update(m, modelsLoaded{models: []client.Model{{ID: listed, Ready: true, Free: true}}})
 	next, _ := m.execute("/model", listed)

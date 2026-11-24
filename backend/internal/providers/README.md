@@ -22,7 +22,7 @@ Windows PowerShell:
 powershell -NoProfile -File scripts/install/providers.ps1 -Action install
 ```
 
-설치기는 독립 Go 도구 freeway-providers를 빌드하고, 공식 네이티브 CLI 패키지를 직접 받아 무결성과 실행 버전을 확인합니다. Node·npm을 실행하지 않습니다. HTTP API 9곳은 업체 프로그램을 설치하지 않으므로 HTTP만 쓸 때는 --api-only 또는 -ApiOnly를 사용합니다.
+설치기는 독립 Go 도구 freeway-providers를 빌드하고, 공식 네이티브 CLI 패키지를 직접 받아 무결성과 실행 버전을 확인합니다. Node·npm을 실행하지 않습니다. HTTP API 7곳은 업체 프로그램을 설치하지 않으므로 HTTP만 쓸 때는 --api-only 또는 -ApiOnly를 사용합니다.
 
 ## 인증·모델·추론·한도
 
@@ -46,7 +46,7 @@ select는 이 독립 도구의 기본 모델만 저장합니다. 백엔드의 �
 
 API 키는 숨김 입력·업체별 환경변수·auth 업체ID --stdin으로 받습니다. 키를 명령행 인수에 넣지 않습니다. CLI 도구의 키는 전용 auth 폴더에 암호화해 저장합니다. 기존 공식 CLI 로그인은 재사용하며 새 기기·브라우저 인증은 공식 화면에서 완료합니다.
 
-NVIDIA·Vikasit·Groq·Gemini API·Novita는 무료 계정 조건을 확인한 뒤 auth 업체ID --confirm-free를 실행합니다. 새 키를 저장하면 이전 확인은 초기화됩니다. auth all의 일부 업체가 준비되지 않으면 업체별 결과를 출력하고 1로 종료합니다.
+NVIDIA·Groq·Gemini API는 무료 계정 조건을 확인한 뒤 auth 업체ID --confirm-free를 실행합니다. 새 키를 저장하면 이전 확인은 초기화됩니다. auth all의 일부 업체가 준비되지 않으면 업체별 결과를 출력하고 1로 종료합니다.
 
 models의 reasoning.efforts에 있는 값만 지정합니다. Kilo는 모델별 reasoning 또는 reasoning_effort, OpenCode는 variant로 전달합니다. Cline ACP는 현재 추론 깊이 미지원이며 지정하면 unsupported_reasoning으로 거절합니다.
 
@@ -89,11 +89,9 @@ openai_compatible은 HTTP 형식이며 OpenAI 업체·계정을 뜻하지 않습
 | nvidia | HTTP API | [NVIDIA](nvidia/README.md) |
 | zai | HTTP API | [Z.ai](zai/README.md) |
 | requesty | HTTP API | [Requesty](requesty/README.md) |
-| vikasit | HTTP API | [Vikasit](vikasit/README.md) |
 | openrouter | HTTP API | [OpenRouter](openrouter/README.md) |
 | groq | HTTP API | [Groq](groq/README.md) |
 | gemini_api | HTTP API | [Gemini API](gemini_api/README.md) |
-| novita | HTTP API | [Novita](novita/README.md) |
 | opencode | 공식 CLI HTTP·SSE | [OpenCode](opencode/README.md) |
 | cline | 공식 CLI ACP | [Cline](cline/README.md) |
 
@@ -105,7 +103,7 @@ auth.json은 공개 인증 안내이며 키·토큰 파일이 아닙니다.
 | --- | --- |
 | [client.go](client.go) · [types.go](types.go) | 백엔드용 Go API·호출 검증·수명주기 |
 | [adapter.go](adapter.go) · [catalog.go](catalog.go) | 어댑터 계약·업체 정의·무료 판정 |
-| [native_http.go](native_http.go) | HTTP 9곳의 직접 모델 조회·추론 |
+| [native_http.go](native_http.go) | HTTP 7곳의 직접 모델 조회·추론 |
 | [native_opencode.go](native_opencode.go) | 공식 서버·세션·SSE·권한 거절 |
 | [native_cline.go](native_cline.go) | 공식 ACP·모델 선택·권한 거절 |
 | [runtime.go](runtime.go) | 관리 설치·공식 실행 파일 발견 |

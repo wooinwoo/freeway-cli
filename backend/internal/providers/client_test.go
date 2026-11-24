@@ -299,7 +299,7 @@ func TestNativeClientListsProvidersWithoutNodeOrNetwork(t *testing.T) {
 	t.Setenv("PATH", "")
 	f := newClientFixture(t, nil, clientReply)
 	listed, err := f.client.Providers(context.Background())
-	if err != nil || len(listed) != 11 || f.catalog.Load() != 0 || f.inference.Load() != 0 {
+	if err != nil || len(listed) != 9 || f.catalog.Load() != 0 || f.inference.Load() != 0 {
 		t.Fatalf("metadata: %+v / %v", listed, err)
 	}
 	var apiCount, cliCount int
@@ -311,7 +311,7 @@ func TestNativeClientListsProvidersWithoutNodeOrNetwork(t *testing.T) {
 			cliCount++
 		}
 	}
-	if apiCount != 9 || cliCount != 2 {
+	if apiCount != 7 || cliCount != 2 {
 		t.Fatalf("metadata: HTTP=%d CLI=%d", apiCount, cliCount)
 	}
 }

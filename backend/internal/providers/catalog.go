@@ -18,12 +18,10 @@ var definitions = []Definition{
 	{Provider: Provider{ID: "cline", Name: "Cline CLI"}, Proof: "cli-free-catalog", Priority: 21},
 	{Provider: Provider{ID: "nvidia", Name: "NVIDIA NIM", Env: "NVIDIA_API_KEY"}, BaseURL: "https://integrate.api.nvidia.com/v1", Catalog: true, Proof: "free-prototype", NeedsConfirmation: true, Priority: 30, Limits: map[string]int{"minute": 40}},
 	{Provider: Provider{ID: "zai", Name: "Z.ai", Env: "ZAI_API_KEY"}, BaseURL: "https://api.z.ai/api/paas/v4", Proof: "allowlist", Seed: []string{"glm-4.7-flash", "glm-4.5-flash"}, Priority: 40, KeyCheck: "/models"},
-	{Provider: Provider{ID: "requesty", Name: "Requesty", Env: "REQUESTY_API_KEY"}, BaseURL: "https://router.requesty.ai/v1", Catalog: true, Proof: "catalog-zero", Priority: 50, Limits: map[string]int{"day": 200}},
-	{Provider: Provider{ID: "vikasit", Name: "Vikasit", Env: "VIKASIT_API_KEY"}, BaseURL: "https://api.vikasit.ai/v1", Proof: "allowlist", Seed: []string{"vikasit-nova"}, NeedsConfirmation: true, Priority: 60, Limits: map[string]int{"dayTokens": 2000000}},
+	{Provider: Provider{ID: "requesty", Name: "Requesty", Env: "REQUESTY_API_KEY"}, BaseURL: "https://router.requesty.ai/v1", Catalog: true, Proof: "catalog-zero", Priority: 50, Limits: map[string]int{"minute": 20, "day": 200}},
 	{Provider: Provider{ID: "openrouter", Name: "OpenRouter", Env: "OPENROUTER_API_KEY"}, BaseURL: "https://openrouter.ai/api/v1", Catalog: true, Proof: "suffix-free", Priority: 70, Limits: map[string]int{"minute": 20, "day": 50}, KeyCheck: "/key"},
 	{Provider: Provider{ID: "groq", Name: "Groq", Env: "GROQ_API_KEY"}, BaseURL: "https://api.groq.com/openai/v1", Proof: "free-account", Seed: []string{"openai/gpt-oss-120b", "openai/gpt-oss-20b"}, NeedsConfirmation: true, Priority: 80, Limits: map[string]int{"minute": 30, "day": 1000, "dayTokens": 200000}},
-	{Provider: Provider{ID: "gemini_api", Name: "Gemini API", Env: "GEMINI_API_KEY"}, BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai", Proof: "free-account", Seed: []string{"gemini-2.5-flash", "gemini-2.5-flash-lite"}, NeedsConfirmation: true, Priority: 90},
-	{Provider: Provider{ID: "novita", Name: "Novita", Env: "NOVITA_API_KEY"}, BaseURL: "https://api.novita.ai/openai", Proof: "allowlist", Seed: []string{"apodex/apodex-1.1-mini"}, NeedsConfirmation: true, Priority: 100},
+	{Provider: Provider{ID: "gemini_api", Name: "Gemini API", Env: "GEMINI_API_KEY"}, BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai", Proof: "free-account", Seed: []string{"gemini-2.5-flash-lite"}, NeedsConfirmation: true, Priority: 90},
 }
 
 func IsProvider(id string) bool {

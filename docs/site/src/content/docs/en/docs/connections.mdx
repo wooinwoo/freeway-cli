@@ -34,8 +34,6 @@ Keys are accepted through hidden input, provider environment variables, or `--st
 | NVIDIA | `NVIDIA_API_KEY` | Confirm evaluation/trial entitlement |
 | Groq | `GROQ_API_KEY` | Confirm the account's free plan |
 | Gemini API | `GEMINI_API_KEY` | Confirm project tier and region |
-| Novita | `NOVITA_API_KEY` | Confirm the supported model's entitlement |
-| Vikasit | `VIKASIT_API_KEY` | Confirm Nova's current free entitlement |
 
 A new key clears the old free-account confirmation. Concurrent changes to the same credential return `credential_conflict` instead of restoring an old key. Check the account before retrying.
 
