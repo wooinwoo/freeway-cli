@@ -28,7 +28,12 @@ func isolatedImageConfig(t *testing.T) string {
 	for _, name := range []string{"XDG_CONFIG_HOME", "HOME", "APPDATA"} {
 		t.Setenv(name, dir)
 	}
-	return filepath.Join(dir, "freeway")
+	// macOS ignores XDG_CONFIG_HOME, so resolve the folder the same way the code does.
+	config, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(config, "freeway")
 }
 
 func TestImageRoutesPreserveLegacySettingsAndRejectStaleWrites(t *testing.T) {
