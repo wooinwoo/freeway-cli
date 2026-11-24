@@ -200,8 +200,10 @@ func (m Model) beginTextStream(model string, request []client.Message, prefix st
 	mcpRunning := m.mcpRunning
 	go func() {
 		defer close(events)
-		// The timeout ends only the request, so its error can still reach the screen.
-		requestCtx, stopRequest := context.WithTimeout(ctx, 150*time.Second)
+		// The gateway ends stalled routes after 90 seconds of silence and caps a reply at 15 minutes.
+		// This outer limit only covers a gateway that stops responding. It ends just the
+		// request, so the error can still reach the screen.
+		requestCtx, stopRequest := context.WithTimeout(ctx, 16*time.Minute)
 		defer stopRequest()
 		incoming := make(chan client.Event, 16)
 		go func() {

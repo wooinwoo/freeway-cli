@@ -40,6 +40,7 @@ type Router struct {
 	allowed       map[string]bool
 	active        chan struct{}
 	firstTextWait time.Duration
+	idleWait      time.Duration
 	resolveLegacy bool
 	mu            sync.Mutex
 	reload        chan struct{}
@@ -68,7 +69,7 @@ func New(upstream Upstream, ledger *quota.Ledger, sources []Source, preferred, a
 	r := &Router{
 		upstream: upstream, ledger: ledger, sources: slices.Clone(sources),
 		prefer: map[string]int{}, allowed: map[string]bool{},
-		active: make(chan struct{}, 4), firstTextWait: 35 * time.Second,
+		active: make(chan struct{}, 4), firstTextWait: 35 * time.Second, idleWait: idleWait,
 	}
 	for i, id := range preferred {
 		if _, exists := r.prefer[id]; !exists {
@@ -85,7 +86,7 @@ func New(upstream Upstream, ledger *quota.Ledger, sources []Source, preferred, a
 func (r *Router) WithSources(sources []Source, resolveLegacy bool) *Router {
 	return &Router{
 		upstream: r.upstream, ledger: r.ledger, sources: slices.Clone(sources),
-		prefer: r.prefer, allowed: r.allowed, active: r.active, firstTextWait: r.firstTextWait,
+		prefer: r.prefer, allowed: r.allowed, active: r.active, firstTextWait: r.firstTextWait, idleWait: r.idleWait,
 		resolveLegacy: resolveLegacy,
 	}
 }

@@ -217,3 +217,17 @@ func TestNativeHTTPCancellationClosesTheUpstreamRequest(t *testing.T) {
 		t.Fatal("upstream request remained open")
 	}
 }
+
+func TestNativeHTTPReportsReasoningProgressWithoutText(t *testing.T) {
+	a, model := nativeHTTPFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"thinking\"}}]}\n\n"+
+			"data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning\":\"still thinking\"}}]}\n\n"+
+			"data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"answer\"}}]}\n\ndata: [DONE]\n\n")
+	})
+	var events []string
+	result, err := a.Stream(context.Background(), model, "", nativeHTTPRequest(model), func(text string) { events = append(events, text) })
+	if err != nil || result.Content != "answer" || strings.Join(events, "|") != "||answer" {
+		t.Fatalf("reasoning progress: %q %+v %v", events, result, err)
+	}
+}

@@ -109,6 +109,11 @@ type Message struct {
 	Content string `json:"content"`
 }
 
+// MaxStreamDuration caps one reply. Routes that stop producing output end sooner.
+const MaxStreamDuration = 15 * time.Minute
+
+// Stream callbacks receive reply text. An empty string reports reasoning progress
+// without visible text, so callers can tell a thinking model from a stalled one.
 type Request struct {
 	Provider        string    `json:"provider"`
 	Model           string    `json:"model"`

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -157,7 +158,7 @@ func (a *clineAdapter) Stream(ctx context.Context, model Model, key string, requ
 	if err := ctx.Err(); err != nil {
 		return Completion{}, err
 	}
-	ctx, requestCancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, requestCancel := context.WithTimeout(ctx, MaxStreamDuration)
 	defer requestCancel()
 	a.mu.Lock()
 	stale := a.listedAt.IsZero() || time.Since(a.listedAt) > time.Minute
@@ -209,7 +210,7 @@ func (a *clineAdapter) Stream(ctx context.Context, model Model, key string, requ
 		history.WriteString("[" + message.Role + "]\n" + message.Content)
 	}
 	args := []string{"--acp", "--auto-approve", "false", "--provider", "cline", "--compaction", "off",
-		"--retries", "1", "--timeout", "120", "--cwd", workspace, "--hooks-dir", workspace, "--system", clineTextOnly}
+		"--retries", "1", "--timeout", strconv.Itoa(int(MaxStreamDuration / time.Second)), "--cwd", workspace, "--hooks-dir", workspace, "--system", clineTextOnly}
 	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := a.command(childCtx, binary, args...)
@@ -346,6 +347,9 @@ func clineConversation(stdout io.Reader, stdin io.Writer, workspace string, mode
 				if emit != nil && delta != "" {
 					emit(delta)
 				}
+			} else if item.Method == "session/update" && step == 4 && item.Params.SessionID == sessionID &&
+				item.Params.Update.SessionUpdate == "agent_thought_chunk" && emit != nil {
+				emit("") // Thinking keeps the route alive without visible text.
 			}
 			continue
 		}

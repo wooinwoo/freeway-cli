@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -353,5 +354,73 @@ func TestRouteSelectionAndAccounting(t *testing.T) {
 				t.Fatalf("first route usage: %+v", got)
 			}
 		})
+	}
+}
+
+func stallFixture(t *testing.T, first func(context.Context, providers.Request, func(string)) (providers.Completion, error)) (*Router, *fakeUpstream) {
+	t.Helper()
+	vault, err := storage.Open(filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = vault.Close() })
+	ledger, err := quota.Open(vault, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := &fakeUpstream{first: first}
+	r := New(upstream, ledger, []Source{{ID: "first", Priority: 1}, {ID: "second", Priority: 2}}, nil, nil)
+	r.firstTextWait, r.idleWait = 60*time.Millisecond, 120*time.Millisecond
+	return r, upstream
+}
+
+func TestReasoningProgressKeepsAThinkingModelOnItsRoute(t *testing.T) {
+	r, upstream := stallFixture(t, func(ctx context.Context, req providers.Request, emit func(string)) (providers.Completion, error) {
+		for range 6 { // 300 ms of reasoning outlasts both the first-text wait and the idle wait.
+			emit("")
+			time.Sleep(50 * time.Millisecond)
+		}
+		emit("answer")
+		return providers.Completion{Model: req.Model, Provider: req.Provider}, ctx.Err()
+	})
+	result, err := r.Stream(t.Context(), contracts.CompletionRequest{Model: Auto}, nil)
+	if err != nil || result.Provider != "first" || len(upstream.called) != 1 {
+		t.Fatalf("a thinking route was abandoned: %+v %v via %v", result, err, upstream.called)
+	}
+}
+
+func TestStalledReplyEndsAfterTheIdleWaitAndKeepsPartialText(t *testing.T) {
+	r, upstream := stallFixture(t, func(ctx context.Context, _ providers.Request, emit func(string)) (providers.Completion, error) {
+		emit("partial")
+		<-ctx.Done()
+		return providers.Completion{}, ctx.Err()
+	})
+	var deltas []string
+	started := time.Now()
+	_, err := r.Stream(t.Context(), contracts.CompletionRequest{Model: Auto}, func(delta contracts.TextDelta) error {
+		deltas = append(deltas, delta.Text)
+		return nil
+	})
+	var problem *contracts.Problem
+	if !errors.As(err, &problem) || problem.Code != "upstream_timeout" || len(deltas) != 1 || len(upstream.called) != 1 || time.Since(started) > 2*time.Second {
+		t.Fatalf("stalled output was not reported promptly without mixing routes: %v %v %v", err, deltas, upstream.called)
+	}
+}
+
+func TestSlowSteadyReplyIsNotCutByAFixedDeadline(t *testing.T) {
+	r, _ := stallFixture(t, func(ctx context.Context, req providers.Request, emit func(string)) (providers.Completion, error) {
+		for range 8 { // Each gap is shorter than idleWait, but the total is far longer.
+			emit("x")
+			time.Sleep(80 * time.Millisecond)
+		}
+		return providers.Completion{Model: req.Model, Provider: req.Provider}, ctx.Err()
+	})
+	var text strings.Builder
+	_, err := r.Stream(t.Context(), contracts.CompletionRequest{Model: Auto}, func(delta contracts.TextDelta) error {
+		text.WriteString(delta.Text)
+		return nil
+	})
+	if err != nil || text.String() != "xxxxxxxx" {
+		t.Fatalf("a steady reply was cut off: %q %v", text.String(), err)
 	}
 }

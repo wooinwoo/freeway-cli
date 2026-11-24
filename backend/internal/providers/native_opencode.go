@@ -70,7 +70,7 @@ func openCodeConfiguration() map[string]any {
 }
 
 func (a *openCodeAdapter) operation(ctx context.Context) (context.Context, func()) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, MaxStreamDuration)
 	stop := context.AfterFunc(a.lifetime, cancel)
 	return ctx, func() { stop(); cancel() }
 }
@@ -408,6 +408,7 @@ func (a *openCodeAdapter) Stream(ctx context.Context, model Model, _ string, inp
 		defer close(eventsDone)
 		assistants := map[string]bool{}
 		parts := map[string]string{}
+		reasoning := map[string]bool{}
 		_ = readSSE(events.Body, func(raw []byte) error {
 			var envelope struct {
 				Payload json.RawMessage `json:"payload"`
@@ -486,6 +487,11 @@ func (a *openCodeAdapter) Stream(ctx context.Context, model Model, _ string, inp
 			}
 			if event.Type == "message.part.updated" {
 				part := props.Part
+				if part.SessionID == session.ID && part.Type == "reasoning" && assistants[part.MessageID] {
+					reasoning[part.ID] = true
+					send(openCodeUpdate{})
+					return nil
+				}
 				if part.SessionID != session.ID || part.Type != "text" || !assistants[part.MessageID] {
 					return nil
 				}
@@ -496,7 +502,9 @@ func (a *openCodeAdapter) Stream(ctx context.Context, model Model, _ string, inp
 				parts[part.ID] = part.Text
 			}
 			if event.Type == "message.part.delta" && props.SessionID == session.ID && props.Field == "text" && assistants[props.MessageID] {
-				if previous, ok := parts[props.PartID]; ok {
+				if reasoning[props.PartID] {
+					send(openCodeUpdate{})
+				} else if previous, ok := parts[props.PartID]; ok {
 					parts[props.PartID] = previous + props.Delta
 					send(openCodeUpdate{text: props.Delta})
 				}
@@ -553,8 +561,8 @@ func (a *openCodeAdapter) Stream(ctx context.Context, model Model, _ string, inp
 			if update.result == nil {
 				if !blocked.Load() {
 					emitted.WriteString(update.text)
-					if emit != nil && update.text != "" {
-						emit(update.text)
+					if emit != nil {
+						emit(update.text) // Empty text reports reasoning progress.
 					}
 				}
 				continue

@@ -22,7 +22,13 @@ const (
 	minInputTokens   = 17
 )
 
-var errFirstTextTimeout = errors.New("provider did not start its reply in time")
+var (
+	errFirstTextTimeout = errors.New("provider did not start its reply in time")
+	errIdleTimeout      = errors.New("provider stopped sending output")
+)
+
+// A reply may take as long as it keeps producing output; idleWait ends a stalled route.
+const idleWait = 90 * time.Second
 
 func (r *Router) Stream(ctx context.Context, input contracts.CompletionRequest, emit func(contracts.TextDelta) error) (contracts.Completion, error) {
 	select {
@@ -33,7 +39,7 @@ func (r *Router) Stream(ctx context.Context, input contracts.CompletionRequest, 
 	default:
 		return contracts.Completion{}, &contracts.Problem{Code: "gateway_busy", Message: "The gateway already has four active requests.", Status: http.StatusTooManyRequests, RetryAfter: 1}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, providers.MaxStreamDuration)
 	defer cancel()
 	discovered, err := r.discover(ctx, false)
 	if err != nil {
@@ -182,13 +188,21 @@ func (r *Router) try(ctx context.Context, request providers.Request, reservation
 	if firstTextWait > 0 {
 		firstTextTimer = time.AfterFunc(firstTextWait, func() { cancel(errFirstTextTimeout) })
 	}
+	idle := time.AfterFunc(r.idleWait, func() { cancel(errIdleTimeout) })
+	defer idle.Stop()
 	started := false
 	var emitErr error
 	response, err := r.upstream.Stream(ctx, request, func(text string) {
-		if text == "" || emitErr != nil || ctx.Err() != nil {
+		if emitErr != nil || ctx.Err() != nil {
 			return
 		}
+		idle.Reset(r.idleWait)
 		if !started && firstTextTimer != nil && !firstTextTimer.Stop() {
+			return
+		}
+		if text == "" {
+			// Reasoning progress keeps a thinking model on its route, but only text starts the reply.
+			firstTextTimer = nil
 			return
 		}
 		started = true
@@ -209,8 +223,12 @@ func (r *Router) try(ctx context.Context, request providers.Request, reservation
 	if emitErr != nil {
 		return contracts.Completion{}, started, emitErr
 	}
-	if errors.Is(context.Cause(ctx), errFirstTextTimeout) {
+	cause := context.Cause(ctx)
+	if errors.Is(cause, errFirstTextTimeout) || !started && errors.Is(cause, errIdleTimeout) {
 		return contracts.Completion{}, false, &contracts.Problem{Code: "upstream_first_text_timeout", Message: "The provider did not start its reply in time.", Status: http.StatusGatewayTimeout}
+	}
+	if errors.Is(cause, errIdleTimeout) {
+		return contracts.Completion{}, started, &contracts.Problem{Code: "upstream_timeout", Message: "The provider stopped sending output.", Status: http.StatusGatewayTimeout}
 	}
 	if ctx.Err() != nil {
 		return contracts.Completion{}, started, executionError(ctx.Err())

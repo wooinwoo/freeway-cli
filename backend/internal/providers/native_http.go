@@ -147,7 +147,7 @@ func (a *httpAdapter) Stream(ctx context.Context, model Model, key string, input
 	if err != nil || len(encoded) > 2*1024*1024 {
 		return Completion{}, failure("invalid_request", 400)
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, MaxStreamDuration)
 	defer cancel()
 	started := time.Now()
 	response, err := a.request(ctx, "/chat/completions", key, encoded)
@@ -206,7 +206,9 @@ func (a *httpAdapter) Stream(ctx context.Context, model Model, key string, input
 				Choices []struct {
 					Index int `json:"index"`
 					Delta struct {
-						Content string `json:"content"`
+						Content          string `json:"content"`
+						Reasoning        string `json:"reasoning"`
+						ReasoningContent string `json:"reasoning_content"`
 					} `json:"delta"`
 				} `json:"choices"`
 			}
@@ -221,9 +223,13 @@ func (a *httpAdapter) Stream(ctx context.Context, model Model, key string, input
 			}
 			sawChoice = sawChoice || len(chunk.Choices) > 0
 			for _, choice := range chunk.Choices {
-				if choice.Index == 0 {
-					appendText(choice.Delta.Content)
+				if choice.Index != 0 {
+					continue
 				}
+				if choice.Delta.Content == "" && emit != nil && (choice.Delta.Reasoning != "" || choice.Delta.ReasoningContent != "") {
+					emit("")
+				}
+				appendText(choice.Delta.Content)
 			}
 			return ctx.Err()
 		})
