@@ -30,6 +30,7 @@ type Source struct {
 	Limits        quota.Limits
 	ExplicitOnly  bool
 	RemoteCatalog bool
+	KeyCheck      bool
 }
 
 type Router struct {

@@ -93,7 +93,7 @@ func (r *Router) providerStatus(ctx context.Context, source Source, count int, c
 	status.KeyConfigured = connection.KeyConfigured
 	status.AutoExcluded = connection.AutoExcluded
 	var keyErr error
-	if err == nil && source.ID == "openrouter" && connection.KeyConfigured && !connection.Disconnected && catalogErr == nil {
+	if err == nil && source.KeyCheck && connection.KeyConfigured && !connection.Disconnected && catalogErr == nil {
 		if verifier, ok := r.upstream.(interface {
 			CheckProviderKey(context.Context, string) error
 		}); ok {

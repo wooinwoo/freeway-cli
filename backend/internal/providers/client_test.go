@@ -189,6 +189,46 @@ func TestOpenRouterChecksKeyBeforeReadingPublicCatalog(t *testing.T) {
 	}
 }
 
+func TestZAIChecksKeyAlthoughItsModelsAreAFixedAllowlist(t *testing.T) {
+	const id = "zai"
+	t.Setenv("ZAI_API_KEY", "")
+	store := &clientCredentials{values: map[string]Credential{}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" || r.Method != http.MethodGet {
+			t.Error("credential check should not run inference")
+			w.WriteHeader(404)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer valid-fixture-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = io.WriteString(w, `{"data":[]}`)
+	}))
+	defer server.Close()
+	client, err := New(Config{HTTPClient: server.Client(), Credentials: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	definition := client.definitions[id]
+	definition.BaseURL = server.URL
+	client.adapters[id] = NewHTTPAdapter(definition, server.Client())
+	ctx := t.Context()
+	if _, err := client.Authenticate(ctx, id, AuthOptions{Key: "invalid-fixture-key"}); err == nil {
+		t.Fatal("the fixed allowlist accepted an invalid key")
+	}
+	if saved, err := store.Load(ctx, id); err != nil || saved.Key != "" {
+		t.Fatal("a rejected key was saved")
+	}
+	if status, err := client.Authenticate(ctx, id, AuthOptions{Key: "valid-fixture-key"}); err != nil || !status.Ready || status.ModelCount != 2 {
+		t.Fatalf("valid key was not connected: %+v %v", status, err)
+	}
+	if err := client.CheckProviderKey(ctx, id); err != nil {
+		t.Fatalf("saved key was not verified: %v", err)
+	}
+}
+
 func TestManageConnectionRespectsEnvironmentAndRetainsAutoPolicy(t *testing.T) {
 	const id = "groq"
 	ctx := t.Context()

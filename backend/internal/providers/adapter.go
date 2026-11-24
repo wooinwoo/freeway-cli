@@ -25,6 +25,8 @@ type Definition struct {
 	NeedsConfirmation bool           `json:"needsConfirmation"`
 	Priority          int            `json:"priority"`
 	Limits            map[string]int `json:"limits"`
+	// KeyCheck is an authenticated path that verifies a key without running inference.
+	KeyCheck string `json:"keyCheck,omitempty"`
 }
 
 type CLIConfig struct {

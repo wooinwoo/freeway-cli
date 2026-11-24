@@ -30,8 +30,8 @@ func NewHTTPAdapter(d Definition, client *http.Client) Adapter {
 
 func (a *httpAdapter) Close() error { return nil }
 
-// OpenRouter's model catalog is public, so it cannot verify the key on its own.
-func (a *httpAdapter) checkOpenRouterKey(ctx context.Context, key string) error {
+// checkKey calls the vendor's KeyCheck path. A public catalog or a fixed allowlist cannot verify a key on its own.
+func (a *httpAdapter) checkKey(ctx context.Context, key string) error {
 	if err := a.validateKey(key); err != nil {
 		return err
 	}
@@ -39,13 +39,16 @@ func (a *httpAdapter) checkOpenRouterKey(ctx context.Context, key string) error 
 	client := *a.client
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	verify.client = &client
-	reply, err := verify.request(ctx, "/key", key, nil)
+	reply, err := verify.request(ctx, a.definition.KeyCheck, key, nil)
 	if err != nil {
 		return err
 	}
 	defer reply.Body.Close()
 	if reply.StatusCode != http.StatusOK {
 		return httpStatusError(reply)
+	}
+	if a.definition.ID != "openrouter" {
+		return nil
 	}
 	var payload struct {
 		Data *struct {

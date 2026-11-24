@@ -185,7 +185,7 @@ func configuredSources(ids []string, managed bool) ([]router.Source, error) {
 			continue
 		}
 		limits := item.Limits
-		sources = append(sources, router.Source{ID: item.ID, Name: item.Name, Priority: item.Priority, ExplicitOnly: localOpenCode, RemoteCatalog: item.Catalog || localOpenCode,
+		sources = append(sources, router.Source{ID: item.ID, Name: item.Name, Priority: item.Priority, ExplicitOnly: localOpenCode, RemoteCatalog: item.Catalog || localOpenCode, KeyCheck: item.KeyCheck != "",
 			Limits: quota.Limits{Minute: limits["minute"], Hour: limits["hour"], Day: limits["day"], DayTokens: limits["dayTokens"]}})
 		delete(wanted, item.ID)
 	}

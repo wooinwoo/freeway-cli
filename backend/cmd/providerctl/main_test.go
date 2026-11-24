@@ -93,9 +93,10 @@ func executeCLI(t *testing.T, root, input string, args ...string) (map[string]an
 }
 
 func TestProviderCLIStdinAuthenticationPersistsEncryptedWithoutInference(t *testing.T) {
+	// Groq uses a fixed model list and no key check, so this setup stays offline.
 	root := t.TempDir()
 	key := "standalone-fixture-key"
-	result, code, output := executeCLI(t, root, key+"\n", "auth", "zai", "--stdin")
+	result, code, output := executeCLI(t, root, key+"\n", "auth", "groq", "--stdin", "--confirm-free")
 	if code != 0 || result["ok"] != true {
 		t.Fatalf("authentication: %d %s", code, output)
 	}
@@ -110,7 +111,7 @@ func TestProviderCLIStdinAuthenticationPersistsEncryptedWithoutInference(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := store.Load(context.Background(), "zai")
+	value, err := store.Load(context.Background(), "groq")
 	if err != nil || value.Key != key {
 		t.Fatal("credential was not persisted")
 	}
@@ -123,7 +124,7 @@ func TestProviderCLIStdinAuthenticationPersistsEncryptedWithoutInference(t *test
 	if strings.Contains(string(ciphertext), key) {
 		t.Fatal("credential was saved as plaintext")
 	}
-	models, code, _ := executeCLI(t, root, "", "models", "zai")
+	models, code, _ := executeCLI(t, root, "", "models", "groq")
 	if code != 0 {
 		t.Fatal("saved credentials not reusable")
 	}
@@ -135,14 +136,14 @@ func TestProviderCLIStdinAuthenticationPersistsEncryptedWithoutInference(t *test
 	if commands["probe"].([]any)[1] != "probe" {
 		t.Fatal("model executable argv missing")
 	}
-	_, code, _ = executeCLI(t, root, "", "select", "zai", "glm-4.7-flash")
+	_, code, _ = executeCLI(t, root, "", "select", "groq", "openai/gpt-oss-20b")
 	if code != 0 {
 		t.Fatal("model selection failed")
 	}
-	if selectionData, err := os.ReadFile(filepath.Join(root, "selected-models", "zai.txt")); err != nil || strings.TrimSpace(string(selectionData)) != "zai/glm-4.7-flash" {
+	if selectionData, err := os.ReadFile(filepath.Join(root, "selected-models", "groq.txt")); err != nil || strings.TrimSpace(string(selectionData)) != "groq/openai/gpt-oss-20b" {
 		t.Fatal("selection not persisted")
 	}
-	failed, code, _ := executeCLI(t, root, "", "probe", "zai", "--model", "not-a-free-model")
+	failed, code, _ := executeCLI(t, root, "", "probe", "groq", "--model", "not-a-free-model")
 	if code != 1 || failed["ok"] != false {
 		t.Fatal("unknown model was accepted")
 	}

@@ -235,8 +235,8 @@ func (c *Client) Authenticate(ctx context.Context, id string, options AuthOption
 		return result, failure(result.Reason, 409)
 	}
 	if result.Reason == "" {
-		if d.ID == "openrouter" && options.Key != "" {
-			if err := c.checkOpenRouterKey(ctx, value.Key); err != nil {
+		if d.KeyCheck != "" && options.Key != "" {
+			if err := c.checkKey(ctx, d.ID, value.Key); err != nil {
 				return result, err
 			}
 		}
@@ -258,27 +258,27 @@ func (c *Client) Authenticate(ctx context.Context, id string, options AuthOption
 	return result, nil
 }
 
-func (c *Client) checkOpenRouterKey(ctx context.Context, key string) error {
-	adapter, ok := c.adapters["openrouter"].(*httpAdapter)
-	if !ok {
+func (c *Client) checkKey(ctx context.Context, id, key string) error {
+	adapter, ok := c.adapters[id].(*httpAdapter)
+	if !ok || adapter.definition.KeyCheck == "" {
 		return failure("key_check_unavailable", http.StatusServiceUnavailable)
 	}
-	return adapter.checkOpenRouterKey(ctx, key)
+	return adapter.checkKey(ctx, key)
 }
 
-// CheckProviderKey verifies the currently configured OpenRouter key without running inference.
+// CheckProviderKey verifies the configured key of a provider with a KeyCheck path, without running inference.
 func (c *Client) CheckProviderKey(ctx context.Context, id string) error {
 	ctx, done, err := c.call(ctx)
 	if err != nil {
 		return err
 	}
 	defer done()
-	if id != "openrouter" {
-		return failure("key_check_unavailable", http.StatusServiceUnavailable)
-	}
 	d, err := c.definition(id)
 	if err != nil {
 		return err
+	}
+	if d.KeyCheck == "" {
+		return failure("key_check_unavailable", http.StatusServiceUnavailable)
 	}
 	value, err := c.credential(ctx, d)
 	if err != nil {
@@ -287,7 +287,7 @@ func (c *Client) CheckProviderKey(ctx context.Context, id string) error {
 	if reason := readiness(d, value); reason != "" {
 		return failure(reason, http.StatusConflict)
 	}
-	return c.checkOpenRouterKey(ctx, value.Key)
+	return c.checkKey(ctx, id, value.Key)
 }
 
 func (c *Client) saveCredential(ctx context.Context, id string, previous, value Credential) error {
