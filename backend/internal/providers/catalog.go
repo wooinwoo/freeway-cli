@@ -24,7 +24,7 @@ var definitions = []Definition{
 	// again, and restore vikasit/auth.json from git (it was removed in 5e5bfb1).
 	// {Provider: Provider{ID: "vikasit", Name: "Vikasit", Env: "VIKASIT_API_KEY"}, BaseURL: "https://vikasit.ai/zen/v1", Catalog: true, Proof: "catalog-zero", Priority: 60, Limits: map[string]int{"dayTokens": 2000000}},
 	{Provider: Provider{ID: "openrouter", Name: "OpenRouter", Env: "OPENROUTER_API_KEY"}, BaseURL: "https://openrouter.ai/api/v1", Catalog: true, Proof: "suffix-free", Priority: 70, Limits: map[string]int{"minute": 20, "day": 50}, KeyCheck: "/key"},
-	{Provider: Provider{ID: "groq", Name: "Groq", Env: "GROQ_API_KEY"}, BaseURL: "https://api.groq.com/openai/v1", Proof: "free-account", Seed: []string{"openai/gpt-oss-120b", "openai/gpt-oss-20b"}, NeedsConfirmation: true, Priority: 80, Limits: map[string]int{"minute": 30, "day": 1000, "dayTokens": 200000}},
+	{Provider: Provider{ID: "groq", Name: "Groq", Env: "GROQ_API_KEY"}, BaseURL: "https://api.groq.com/openai/v1", Proof: "free-account", Seed: []string{"openai/gpt-oss-120b", "openai/gpt-oss-20b"}, NeedsConfirmation: true, Priority: 80, Limits: map[string]int{"minute": 30, "day": 1000, "dayTokens": 200000}, KeyCheck: "/models"},
 	{Provider: Provider{ID: "gemini_api", Name: "Gemini API", Env: "GEMINI_API_KEY"}, BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai", Proof: "free-account", Seed: []string{"gemini-2.5-flash-lite"}, NeedsConfirmation: true, Priority: 90},
 }
 

@@ -229,6 +229,24 @@ func TestZAIChecksKeyAlthoughItsModelsAreAFixedAllowlist(t *testing.T) {
 	}
 }
 
+// acceptKeys points a provider's key check at a local server that accepts any key.
+func acceptKeys(t *testing.T, c *Client, id string) {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" || r.Method != http.MethodGet {
+			t.Errorf("credential check should not run inference: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(404)
+			return
+		}
+		_, _ = io.WriteString(w, `{"data":[]}`)
+	}))
+	t.Cleanup(server.Close)
+	d := c.definitions[id]
+	d.BaseURL = server.URL
+	c.definitions[id] = d
+	c.adapters[id] = NewHTTPAdapter(d, server.Client())
+}
+
 func TestManageConnectionRespectsEnvironmentAndRetainsAutoPolicy(t *testing.T) {
 	const id = "groq"
 	ctx := t.Context()
@@ -246,6 +264,7 @@ func TestManageConnectionRespectsEnvironmentAndRetainsAutoPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
+	acceptKeys(t, c, id)
 	for _, action := range []string{"exclude-auto", "disconnect"} {
 		if err := c.Manage(ctx, id, action); err != nil {
 			t.Fatal(err)
@@ -359,6 +378,7 @@ func TestNativeClientBindsFreeConfirmationToBackendCredential(t *testing.T) {
 	t.Setenv("GROQ_API_KEY", "")
 	store := &clientCredentials{values: map[string]Credential{"groq": {Key: "old-key", FreeConfirmed: true}}}
 	f := newClientFixture(t, store, clientReply)
+	acceptKeys(t, f.client, "groq")
 	auth, err := f.client.Authenticate(context.Background(), "groq", AuthOptions{Key: "new-key"})
 	if err != nil || auth.Ready || auth.Reason != "confirm_free_account" {
 		t.Fatalf("replacement: %+v / %v", auth, err)

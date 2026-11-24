@@ -93,10 +93,10 @@ func executeCLI(t *testing.T, root, input string, args ...string) (map[string]an
 }
 
 func TestProviderCLIStdinAuthenticationPersistsEncryptedWithoutInference(t *testing.T) {
-	// Groq uses a fixed model list and no key check, so this setup stays offline.
+	// Gemini API uses a fixed model list and no key check, so this setup stays offline.
 	root := t.TempDir()
 	key := "standalone-fixture-key"
-	result, code, output := executeCLI(t, root, key+"\n", "auth", "groq", "--stdin", "--confirm-free")
+	result, code, output := executeCLI(t, root, key+"\n", "auth", "gemini_api", "--stdin", "--confirm-free")
 	if code != 0 || result["ok"] != true {
 		t.Fatalf("authentication: %d %s", code, output)
 	}
@@ -111,7 +111,7 @@ func TestProviderCLIStdinAuthenticationPersistsEncryptedWithoutInference(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := store.Load(context.Background(), "groq")
+	value, err := store.Load(context.Background(), "gemini_api")
 	if err != nil || value.Key != key {
 		t.Fatal("credential was not persisted")
 	}
@@ -124,26 +124,26 @@ func TestProviderCLIStdinAuthenticationPersistsEncryptedWithoutInference(t *test
 	if strings.Contains(string(ciphertext), key) {
 		t.Fatal("credential was saved as plaintext")
 	}
-	models, code, _ := executeCLI(t, root, "", "models", "groq")
+	models, code, _ := executeCLI(t, root, "", "models", "gemini_api")
 	if code != 0 {
 		t.Fatal("saved credentials not reusable")
 	}
 	entries := models["results"].([]any)[0].(map[string]any)["models"].([]any)
-	if len(entries) != 2 {
+	if len(entries) != 1 {
 		t.Fatal("seed model list missing")
 	}
 	commands := entries[0].(map[string]any)["commands"].(map[string]any)
 	if commands["probe"].([]any)[1] != "probe" {
 		t.Fatal("model executable argv missing")
 	}
-	_, code, _ = executeCLI(t, root, "", "select", "groq", "openai/gpt-oss-20b")
+	_, code, _ = executeCLI(t, root, "", "select", "gemini_api", "gemini-2.5-flash-lite")
 	if code != 0 {
 		t.Fatal("model selection failed")
 	}
-	if selectionData, err := os.ReadFile(filepath.Join(root, "selected-models", "groq.txt")); err != nil || strings.TrimSpace(string(selectionData)) != "groq/openai/gpt-oss-20b" {
+	if selectionData, err := os.ReadFile(filepath.Join(root, "selected-models", "gemini_api.txt")); err != nil || strings.TrimSpace(string(selectionData)) != "gemini_api/gemini-2.5-flash-lite" {
 		t.Fatal("selection not persisted")
 	}
-	failed, code, _ := executeCLI(t, root, "", "probe", "groq", "--model", "not-a-free-model")
+	failed, code, _ := executeCLI(t, root, "", "probe", "gemini_api", "--model", "not-a-free-model")
 	if code != 1 || failed["ok"] != false {
 		t.Fatal("unknown model was accepted")
 	}
@@ -154,11 +154,11 @@ func TestProviderCLIStdinAuthenticationPersistsEncryptedWithoutInference(t *test
 
 func TestProviderCLIKeyReplacementDoesNotKeepFreeConfirmation(t *testing.T) {
 	root := t.TempDir()
-	_, code, _ := executeCLI(t, root, "first-fixture-key\n", "auth", "groq", "--stdin", "--confirm-free")
+	_, code, _ := executeCLI(t, root, "first-fixture-key\n", "auth", "gemini_api", "--stdin", "--confirm-free")
 	if code != 0 {
 		t.Fatal("confirmed setup failed")
 	}
-	result, code, output := executeCLI(t, root, "second-fixture-key\n", "auth", "groq", "--stdin")
+	result, code, output := executeCLI(t, root, "second-fixture-key\n", "auth", "gemini_api", "--stdin")
 	if code != 1 || result["ok"] != false || strings.Contains(output, "second-fixture-key") {
 		t.Fatal("replacement result invalid")
 	}
@@ -166,7 +166,7 @@ func TestProviderCLIKeyReplacementDoesNotKeepFreeConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := store.Load(context.Background(), "groq")
+	value, err := store.Load(context.Background(), "gemini_api")
 	if err != nil || value.Key != "second-fixture-key" || value.FreeConfirmed {
 		t.Fatal("free-account confirmation survived key replacement")
 	}
