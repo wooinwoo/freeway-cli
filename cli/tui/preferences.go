@@ -87,7 +87,7 @@ func (p *Preferences) ConfigureAppearance(options ...tea.ProgramOption) (bool, e
 			Options:      chosen.themeOptions(),
 			Selected:     chosen.Theme,
 			previewTheme: true,
-			escapeID:     "back",
+			EscapeID:     "back",
 		}
 		id, err = theme.Run(chosen, options...)
 		if err != nil || id == "" {

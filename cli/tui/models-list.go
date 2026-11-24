@@ -116,7 +116,7 @@ func (m Model) modelPickerItems() []list.Item {
 			model.Detail += fmt.Sprintf(m.tr(" · %d local tokens", " · 로컬 토큰 %d개"), *model.LocalTokensRemaining)
 		}
 		if model.ID == m.selected {
-			model.Detail = m.tr("✓ Current · ", "✓ 현재 · ") + model.Detail
+			model.Detail = strings.TrimSuffix(m.tr("✓ Current · ", "✓ 현재 · ")+model.Detail, " · ")
 		}
 		items = append(items, modelItem(model))
 	}

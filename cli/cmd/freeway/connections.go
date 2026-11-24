@@ -103,6 +103,14 @@ func setupConnections(ctx context.Context, gateway *client.HTTP, prefs *tui.Pref
 			Notice:   notice,
 		}
 		ready, _ = connectionReadiness(statuses)
+		if startup {
+			// Esc skips the guide instead of quitting. Ctrl+C still quits.
+			dialog.EscapeID = "skip"
+			dialog.Help = t("↑↓ move  ·  Enter select  ·  Esc chat  ·  Ctrl+C quit", "↑↓ 이동  ·  Enter 선택  ·  Esc 채팅으로  ·  Ctrl+C 종료")
+			if ready {
+				dialog.EscapeID = "continue"
+			}
+		}
 		if startup && ready {
 			dialog.Options = append(dialog.Options, tui.SetupOption{ID: "continue", Label: t("Start chat", "채팅 시작"), Detail: t("Use the free models already available.", "지금 사용할 수 있는 무료 모델로 시작합니다.")})
 		} else if startup {
@@ -128,6 +136,9 @@ func setupConnections(ctx context.Context, gateway *client.HTTP, prefs *tui.Pref
 			if err := prefs.Save(); err != nil {
 				fmt.Fprintln(os.Stderr, t("Could not save setup preferences.", "연결 안내 설정을 저장하지 못했습니다."))
 			}
+			return startMode, statuses, nil
+		}
+		if choice == "skip" {
 			return startMode, statuses, nil
 		}
 		if choice == "history" {
@@ -227,7 +238,7 @@ func configureProvider(ctx context.Context, prefs tui.Preferences, options []tea
 	dialog.Detail += "\n" + tui.ProviderUsageText(prefs, status)
 	if status.State == "disconnected" {
 		dialog.Options = append(dialog.Options, tui.SetupOption{ID: "enable", Label: t("Enable in Freeway", "Freeway에서 다시 사용")})
-	} else {
+	} else if !tui.ProviderUnconnected(status) {
 		if status.AutoSupported {
 			option := tui.SetupOption{ID: "exclude-auto", Label: t("Exclude from Auto", "Auto에서 제외")}
 			if status.AutoExcluded {

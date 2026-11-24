@@ -54,6 +54,16 @@ func tick() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
+// nextTick keeps the 100 ms cadence only while work is pending. Each tick redraws
+// the whole screen, so an idle screen refreshes once per second instead.
+func (m Model) nextTick() tea.Cmd {
+	if m.busy || m.dirty || m.pendingSave != nil || m.saving || m.renderPending || m.recovering ||
+		len(m.queue) > 0 || !m.modelsStarted || time.Now().Before(m.toastUntil) {
+		return tick()
+	}
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
 func (m Model) commandMatches() []command {
 	value := m.prompt.Value()
 	if !strings.HasPrefix(value, "/") || strings.ContainsAny(value, " \n\t") {
@@ -488,12 +498,12 @@ func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 		if arg != "" {
 			tokens, err := strconv.Atoi(arg)
 			if err != nil || tokens < 1 || tokens > 32768 {
-				m.notify("Enter /settings followed by an output limit from 1 to 32768.")
+				m.notify(m.tr("Enter /settings followed by an output limit from 1 to 32768.", "/settings 뒤에 1부터 32768 사이의 출력 한도를 입력하세요."))
 				return m, nil
 			}
 			m.settings.MaxTokens = tokens
 			m.dirty = true
-			m.notify(fmt.Sprintf("Output limit set to %d tokens.", tokens))
+			m.notify(fmt.Sprintf(m.tr("Output limit set to %d tokens.", "출력 한도를 %d토큰으로 정했습니다."), tokens))
 			return m, m.persist()
 		}
 		return m.openMenu("settings")
@@ -505,7 +515,7 @@ func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 		return m.export(arg)
 	case "/save":
 		if m.saveBlocked == "save_uncertain" || m.saveBlocked == "chat_conflict" || m.saveBlocked == "save_key_reused" {
-			m.notify(m.saveError + " Press F6 to preserve your work.")
+			m.notify(m.saveError + m.tr(" Press F6 to preserve your work.", " F6으로 작업 내용을 보존하세요."))
 			return m, nil
 		}
 		m.saveBlocked = ""
@@ -590,7 +600,7 @@ func (m Model) retry() (tea.Model, tea.Cmd) {
 
 func (m Model) retryShorter() (tea.Model, tea.Cmd) {
 	if m.shorterMax == 0 || m.selected != m.responseTarget.model {
-		m.notify("A shorter retry is available when a reply can fit within the local token budget.")
+		m.notify(m.tr("F5 is available after a reply exceeds the local token budget.", "F5는 응답이 로컬 토큰 예산을 넘었을 때 사용할 수 있습니다."))
 		return m, nil
 	}
 	settings := m.settings
@@ -764,13 +774,15 @@ func (m Model) openMenu(kind string) (tea.Model, tea.Cmd) {
 		m.notify(m.tr("Press Esc to stop the response before opening this menu.", "Esc로 응답을 중지한 뒤 이 메뉴를 여세요."))
 		return m, nil
 	}
-	m.menu = kind
+	m.menu, m.menuParent = kind, ""
 	items := []list.Item{}
 	switch kind {
 	case "context":
 		items = m.contextItems()
 	case "settings":
-		items = append(items, modelItem{ID: "language", Name: m.tr("Language", "표시 언어")}, modelItem{ID: "theme", Name: m.tr("Color theme", "색상 테마")})
+		items = append(items,
+			modelItem{ID: "language", Name: m.tr("Language", "표시 언어"), Detail: optionLabel(languageOptions(), m.prefs.Language)},
+			modelItem{ID: "theme", Name: m.tr("Color theme", "색상 테마"), Detail: optionLabel(m.prefs.themeOptions(), m.prefs.Theme)})
 		lengths := []string{m.tr("Standard", "표준"), m.tr("Long", "길게"), m.tr("Extended", "더 길게")}
 		for i, n := range []int{4096, 8192, 16384} {
 			items = append(items, modelItem{ID: fmt.Sprint(n), Name: fmt.Sprintf(m.tr("Response length · %s", "응답 길이 · %s"), lengths[i]), Detail: fmt.Sprintf(m.tr("Up to %d output tokens", "최대 출력 %d토큰"), n)})
@@ -804,7 +816,7 @@ func (m Model) openMenu(kind string) (tea.Model, tea.Cmd) {
 			{"Ctrl+S / Ctrl+G", "Stash or restore draft / open external editor", "초안 보관 또는 복원 / 외부 편집기 열기"},
 			{"Ctrl+U·K·W / Ctrl+Y", "Delete to line edge or previous word / yank deleted text", "줄 끝 또는 단어까지 삭제 / 삭제한 텍스트 붙여넣기"},
 			{"Ctrl+Z / Ctrl+Shift+Z", "Undo / redo input changes", "입력 되돌리기 / 다시 적용"},
-			{"Tab / ↑ while running", "Queue follow-up / take queued message back", "후속 질문 예약 / 예약 되돌리기"},
+			{"Tab / ↑", "While a reply runs: queue a follow-up / take it back", "응답 중: 후속 질문 예약 / 예약 되돌리기"},
 			{"@ / /attach", "Select a project file to include in the prompt", "질문에 첨부할 프로젝트 파일 선택"},
 			{"Esc Esc", "Clear draft; on empty input, edit last prompt in a fork", "초안 비우기 · 입력이 비어 있으면 이전 질문 편집"},
 			{"Ctrl+C", "Stop response; clear draft; press twice on empty input to quit", "응답 중지 · 초안 비우기 · 빈 입력에서 두 번 눌러 종료"},
@@ -918,7 +930,10 @@ func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 	}
 	if kind == "settings" {
 		if item.ID == "language" || item.ID == "theme" {
-			return m.openMenu(item.ID)
+			next, cmd := m.openMenu(item.ID)
+			model := next.(Model)
+			model.menuParent = "settings"
+			return model, cmd
 		}
 		fmt.Sscan(item.ID, &m.settings.MaxTokens)
 		m.dirty = true
@@ -1017,7 +1032,7 @@ func (m Model) menuDetail() string {
 	}
 	if m.menu == "history" {
 		if m.historyPage.loading {
-			return "Loading conversations…"
+			return m.tr("Loading conversations…", "대화 불러오는 중…")
 		}
 		if m.historyPage.err != "" {
 			return m.historyPage.err
@@ -1048,5 +1063,17 @@ func (m Model) menuDetail() string {
 			return terminalSafe(item.Detail)
 		}
 	}
+	if m.menu != "models" {
+		return ""
+	}
 	return m.modelLabel(m.selected) + m.tr(" · current", " · 현재 선택")
+}
+
+func optionLabel(options []SetupOption, id string) string {
+	for _, option := range options {
+		if option.ID == id {
+			return option.Label
+		}
+	}
+	return id
 }

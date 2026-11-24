@@ -23,9 +23,12 @@ type SetupDialog struct {
 	Wait                  func() string
 	Check                 func(context.Context) (status, detail string)
 	Selected              string
-	previewTheme          bool
-	cancel                bool
-	escapeID              string
+	// EscapeID is returned for Esc. Empty closes the dialog without a choice.
+	EscapeID string
+	// Help replaces the default key hint for dialogs whose Esc does something else.
+	Help         string
+	previewTheme bool
+	cancel       bool
 }
 
 func (d SetupDialog) Run(prefs Preferences, options ...tea.ProgramOption) (string, error) {
@@ -132,7 +135,7 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "esc", "ctrl+c":
 			if msg.String() == "esc" {
-				m.result = m.escapeID
+				m.result = m.EscapeID
 			}
 			m.input.Reset()
 			return m, tea.Quit
@@ -190,7 +193,7 @@ func (m setupModel) View() tea.View {
 	}
 	rows := []string{accent.Bold(true).Render(label("freeway")), "", text.Bold(true).Render(label(title))}
 	if m.Detail != "" {
-		detail := strings.Split(ansi.Hardwrap(terminalSafe(m.Detail), width, true), "\n")
+		detail := strings.Split(ansi.Wrap(terminalSafe(m.Detail), width, ""), "\n")
 		rows = append(rows, muted.Render(strings.Join(detail[:min(len(detail), max(1, m.height-9))], "\n")))
 	}
 	rows = append(rows, "")
@@ -200,6 +203,9 @@ func (m setupModel) View() tea.View {
 	}
 	if m.cancel {
 		help = m.prefs.Text("↑↓ move  ·  Enter select  ·  Esc cancel", "↑↓ 이동  ·  Enter 선택  ·  Esc 취소")
+	}
+	if m.Help != "" {
+		help = m.Help
 	}
 	if m.hasInput() {
 		rows = append(rows, m.input.View())
@@ -237,7 +243,7 @@ func (m setupModel) View() tea.View {
 		}
 	}
 	if m.Notice != "" {
-		notice := strings.Split(ansi.Hardwrap(terminalSafe(m.Notice), width, true), "\n")
+		notice := strings.Split(ansi.Wrap(terminalSafe(m.Notice), width, ""), "\n")
 		rows = append(rows, accent.Render(strings.Join(notice[:min(2, len(notice))], "\n")))
 	}
 	rows = append(rows, "", muted.Render(label(help)))

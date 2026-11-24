@@ -46,7 +46,7 @@ func (m Model) fileToken() (fileQuery, bool) {
 	return fileQuery{Start: start, End: end, Text: string(runes[start+1 : end]), Original: string(runes), Inline: true}, true
 }
 
-func indexProjectFiles(root string) ([]list.Item, error) {
+func indexProjectFiles(root, detail string) ([]list.Item, error) {
 	items := []list.Item{}
 	visited := 0
 	skip := map[string]bool{"node_modules": true, ".git": true, ".data": true, "build": true, "dist": true, "target": true, "vendor": true, "AppData": true, "go": true}
@@ -87,7 +87,7 @@ func indexProjectFiles(root string) ([]list.Item, error) {
 			return nil
 		}
 		rel = filepath.ToSlash(rel)
-		items = append(items, modelItem{ID: rel, Name: rel, Detail: "Attach text file from this project"})
+		items = append(items, modelItem{ID: rel, Name: rel, Detail: detail})
 		return nil
 	})
 	return items, err
@@ -112,9 +112,9 @@ func (m Model) openFiles(query fileQuery) (tea.Model, tea.Cmd) {
 	m.filesLoading = true
 	m.fileEpoch++
 	epoch := m.fileEpoch
-	root := m.workdir
+	root, detail := m.workdir, m.tr("Attach text file from this project", "이 프로젝트의 텍스트 파일 첨부")
 	return m, func() tea.Msg {
-		items, err := indexProjectFiles(root)
+		items, err := indexProjectFiles(root, detail)
 		return filesIndexed{items: items, epoch: epoch, err: err, query: query}
 	}
 }
@@ -125,6 +125,9 @@ func (m Model) inlineFilePicker() bool {
 
 func (m Model) dismissMenu() (tea.Model, tea.Cmd) {
 	m.lastEscape = time.Time{}
+	if m.menuParent != "" {
+		return m.openMenu(m.menuParent)
+	}
 	if m.menu == "files" {
 		query := m.fileSelection
 		if query.Inline && m.menuQuery != query.Text && m.prompt.Value() == query.Original {
@@ -219,7 +222,7 @@ func (m Model) reviewQueue(action string) (tea.Model, tea.Cmd) {
 	}
 	items := []list.Item{}
 	for i, item := range m.queue {
-		items = append(items, modelItem{ID: fmt.Sprint(i), Name: strings.Join(strings.Fields(item.Text), " "), Detail: "Enter to take back and edit this follow-up"})
+		items = append(items, modelItem{ID: fmt.Sprint(i), Name: strings.Join(strings.Fields(item.Text), " "), Detail: m.tr("Enter to take back and edit this follow-up", "Enter로 이 후속 질문을 되돌려 편집")})
 	}
 	m.menu = "queue"
 	m.models.list.SetItems(items)
@@ -229,7 +232,7 @@ func (m Model) reviewQueue(action string) (tea.Model, tea.Cmd) {
 func (m Model) composerExtraRows(width int) []string {
 	rows := []string{}
 	if m.editingAt >= 0 {
-		rows = append(rows, "Editing previous prompt · Enter forks · Esc cancels")
+		rows = append(rows, m.tr("Editing previous prompt · Enter forks · Esc cancels", "이전 질문 편집 중 · Enter 분기 · Esc 취소"))
 	}
 	if len(m.queue) > 0 {
 		state := m.tr("waiting", "대기")
@@ -243,7 +246,7 @@ func (m Model) composerExtraRows(width int) []string {
 		for _, file := range m.files {
 			names = append(names, "@"+file.Path)
 		}
-		rows = append(rows, "Attached: "+strings.Join(names, "  ")+" · /detach")
+		rows = append(rows, m.tr("Attached: ", "첨부: ")+strings.Join(names, "  ")+" · /detach")
 	}
 	if matches := m.commandMatches(); len(matches) > 0 {
 		start := max(0, min(m.commandIndex-3, len(matches)-4))

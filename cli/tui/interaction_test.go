@@ -198,7 +198,7 @@ func TestProjectFileAttachmentIsBoundedAndRestorable(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "hello.go"), []byte("package main\n// 한글 🌏"), 0600)
 	os.Mkdir(filepath.Join(root, "node_modules"), 0700)
 	os.WriteFile(filepath.Join(root, "node_modules", "hidden.js"), []byte("hidden"), 0600)
-	items, err := indexProjectFiles(root)
+	items, err := indexProjectFiles(root, "Attach text file from this project")
 	if err != nil || len(items) != 1 {
 		t.Fatalf("file index: %v %v", items, err)
 	}

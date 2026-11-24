@@ -49,6 +49,7 @@ type Model struct {
 	availableModels                                                         []client.Model
 	modelRanking                                                            modelRanking
 	menu                                                                    string
+	menuParent                                                              string // Esc returns here from a submenu.
 	menuQuery                                                               string
 	menuAll                                                                 []list.Item
 	menuSearching                                                           bool
@@ -386,7 +387,7 @@ func (m Model) changeFocus(models bool) (tea.Model, tea.Cmd) {
 			m.selectMenuItem("turns")
 		}
 	} else {
-		m.menu = ""
+		m.menu, m.menuParent = "", ""
 		cmd = m.prompt.Focus()
 	}
 	m.layout()

@@ -31,11 +31,11 @@ type recoveryDraftLoaded struct {
 
 func (m Model) recoverConversation() (tea.Model, tea.Cmd) {
 	if m.saveError == "" {
-		m.notify("Recovery is available when a conversation cannot be saved.")
+		m.notify(m.tr("Recovery is available when a conversation cannot be saved.", "복구는 대화를 저장하지 못했을 때 사용할 수 있습니다."))
 		return m, nil
 	}
 	if m.recovering || m.busy || m.saving || m.loadingSession || m.attachmentsPending > 0 {
-		m.notify("Wait for the current operation before saving a recovery copy.")
+		m.notify(m.tr("Wait for the current operation before saving a recovery copy.", "진행 중인 작업이 끝난 뒤 복구 사본을 저장하세요."))
 		return m, nil
 	}
 	m.recovering = true
@@ -54,11 +54,11 @@ func (m Model) recoverConversation() (tea.Model, tea.Cmd) {
 func (m Model) receiveRecovery(saved recoverySaved) (tea.Model, tea.Cmd, bool) {
 	m.recovering = false
 	if saved.err != nil {
-		m.notify("Could not write recovery file: " + terminalSafe(saved.err.Error()))
+		m.notify(m.tr("Could not write recovery file: ", "복구 파일을 쓰지 못했습니다: ") + terminalSafe(saved.err.Error()))
 		return m, nil, true
 	}
 	if saved.epoch != m.sessionEpoch || !reflect.DeepEqual(saved.chat, m.snapshot()) {
-		m.notify("Recovery file saved. Press F6 again to include newer edits.")
+		m.notify(m.tr("Recovery file saved. Press F6 again to include newer edits.", "복구 파일을 저장했습니다. 이후 수정까지 담으려면 F6을 다시 누르세요."))
 		return m, nil, true
 	}
 	action := m.recoveryAction
@@ -72,7 +72,7 @@ func (m Model) receiveRecovery(saved recoverySaved) (tea.Model, tea.Cmd, bool) {
 	m.recoveryPath = saved.path
 	next, cmd := m.performNavigation(action)
 	model := next.(Model)
-	model.notify("Recovery saved to " + terminalSafe(saved.path))
+	model.notify(model.tr("Recovery saved to ", "복구 파일 저장 위치: ") + terminalSafe(saved.path))
 	return model, cmd, true
 }
 
@@ -100,7 +100,7 @@ func writeRecovery(directory string, chat client.Conversation) (string, error) {
 
 func (m Model) restoreRecovery(arg string) (tea.Model, tea.Cmd) {
 	if m.recovering || m.loadingSession || m.loadingHistory || m.attachmentsPending > 0 || m.editorOpen || m.editingAt >= 0 {
-		m.notify("Finish the current edit or load before restoring a recovery draft.")
+		m.notify(m.tr("Finish the current edit or load before restoring a recovery draft.", "편집이나 불러오기를 마친 뒤 복구 초안을 복원하세요."))
 		return m, nil
 	}
 	path := strings.Trim(arg, "\"")
@@ -117,6 +117,8 @@ func (m Model) restoreRecovery(arg string) (tea.Model, tea.Cmd) {
 		return recoveryDraftLoaded{draft: draft, before: before, epoch: epoch, err: err}
 	}
 }
+
+var errNoRecovery = errors.New("no recovery files found")
 
 func latestRecovery() (string, error) {
 	home, err := os.UserHomeDir()
@@ -140,7 +142,7 @@ func latestRecovery() (string, error) {
 		}
 	}
 	if path == "" {
-		return "", errors.New("no recovery files found")
+		return "", errNoRecovery
 	}
 	return path, nil
 }

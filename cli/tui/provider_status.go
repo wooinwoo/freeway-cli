@@ -323,6 +323,8 @@ func ProviderUsageText(prefs Preferences, provider client.ProviderStatus) string
 	switch {
 	case provider.State == "disconnected":
 		auto = t("Auto unavailable", "Auto 사용 불가")
+	case ProviderUnconnected(provider):
+		auto = t("Auto after connecting", "연결 후 Auto 사용")
 	case !provider.AutoSupported:
 		auto = t("Manual selection only", "모델 직접 선택 전용")
 	case provider.AutoExcluded:
@@ -338,6 +340,11 @@ func ProviderUsageText(prefs Preferences, provider client.ProviderStatus) string
 		details = append(details, fmt.Sprintf(t("Checked %s", "%s 확인"), checked.Local().Format("15:04")))
 	}
 	return strings.Join(details, " · ")
+}
+
+// ProviderUnconnected reports a provider that still needs a key or its CLI, so disconnect and Auto toggles mean nothing yet.
+func ProviderUnconnected(provider client.ProviderStatus) bool {
+	return provider.State == "needs_key" || provider.State == "opencode_not_installed"
 }
 
 func providerStatusHelp(provider client.ProviderStatus) string {
@@ -363,10 +370,10 @@ func (m Model) replyBudgetHint() string {
 		}
 		fit := *model.LocalTokensRemaining - m.nextRequestContext().inputEstimate()
 		if fit <= 0 {
-			return "Local budget estimate · shorten the context or open a new chat"
+			return m.tr("Local budget estimate · shorten the context or open a new chat", "로컬 예산 부족 예상 · 문맥을 줄이거나 새 대화를 여세요")
 		}
 		if fit < m.settings.MaxTokens {
-			return fmt.Sprintf("Local estimate fits up to %d output tokens · /settings %d", fit, fit)
+			return fmt.Sprintf(m.tr("Local estimate fits up to %d output tokens · /settings %d", "로컬 예산상 출력 토큰 %d개까지 가능 · /settings %d"), fit, fit)
 		}
 		break
 	}

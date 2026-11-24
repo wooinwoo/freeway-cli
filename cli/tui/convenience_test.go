@@ -371,3 +371,13 @@ func TestEnglishWorkspaceHasRoleLabelsAndNativeCursor(t *testing.T) {
 		}
 	}
 }
+
+func TestTypingACommandInANewChatDoesNotSaveAnEmptyConversation(t *testing.T) {
+	g := &memoryGateway{}
+	m := connectedFixture(g)
+	m.prompt.SetValue("/sett")
+	m.dirty = true
+	if cmd := m.persist(); cmd != nil || len(g.saved) != 0 {
+		t.Fatal("a pending slash command created an empty saved conversation")
+	}
+}

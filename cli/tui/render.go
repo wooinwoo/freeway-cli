@@ -288,7 +288,7 @@ func (m Model) statusLabel() string {
 		status += m.tr(" · Saved locally", " · 로컬에 저장됨")
 	}
 	if m.nearSaveLimit {
-		status += " · Near 8 MiB save limit"
+		status += m.tr(" · Near 8 MiB save limit", " · 저장 한도 8 MiB에 가까움")
 	}
 	return status
 }

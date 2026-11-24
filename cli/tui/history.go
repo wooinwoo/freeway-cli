@@ -141,7 +141,7 @@ func (m Model) receiveHistoryPage(msg historyPageFetched) (tea.Model, tea.Cmd, b
 	m.historyPage.ready = true
 	m.historyPage.filter = msg.filter
 	if msg.err != nil {
-		m.historyPage.err = "Could not load conversations. Ctrl+R to retry."
+		m.historyPage.err = m.tr("Could not load conversations. Ctrl+R to retry.", "대화를 불러오지 못했습니다. Ctrl+R로 다시 시도하세요.")
 		if msg.more {
 			return m, nil, true
 		}
@@ -169,7 +169,7 @@ func (m Model) receiveHistoryPage(msg historyPageFetched) (tea.Model, tea.Cmd, b
 	}
 	if requestedCursor == msg.page.NextCursor {
 		m.historyPage.cursor = ""
-		m.historyPage.err = "The gateway repeated the cursor. Ctrl+R to refresh."
+		m.historyPage.err = m.tr("The gateway repeated the cursor. Ctrl+R to refresh.", "게이트웨이가 같은 페이지를 반복했습니다. Ctrl+R로 새로고침하세요.")
 	}
 	seen := make(map[string]bool, len(m.history))
 	for _, record := range m.history {

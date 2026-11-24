@@ -158,9 +158,9 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		if save == nil && !m.busy && !m.saving && !m.recovering && m.saveBlocked == "" && !m.modelsFocused && len(m.queue) > 0 && !m.queuePaused {
 			next, cmd := m.startQueued()
-			return next, tea.Batch(tick(), cmd), true
+			return next, tea.Batch(next.(Model).nextTick(), cmd), true
 		}
-		return m, tea.Batch(tick(), save), true
+		return m, tea.Batch(m.nextTick(), save), true
 	case reconnectMsg:
 		if m.ready || m.loadingModels {
 			return m, nil, true
@@ -177,13 +177,17 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case recoverySaved:
 		return m.receiveRecovery(msg)
 	case recoveryDraftLoaded:
+		if errors.Is(msg.err, errNoRecovery) {
+			m.notify(m.tr("No recovery files yet. When a save fails, F6 writes one.", "복구 파일이 없습니다. 저장에 실패하면 F6으로 만들 수 있습니다."))
+			return m, nil, true
+		}
 		if msg.err != nil {
-			m.notify("Could not restore a draft: " + terminalSafe(msg.err.Error()))
+			m.notify(m.tr("Could not restore a draft: ", "초안을 복원하지 못했습니다: ") + terminalSafe(msg.err.Error()))
 			return m, nil, true
 		}
 		current := m.captureDraft()
 		if msg.epoch != m.sessionEpoch || current.Text != msg.before.Text || !slices.Equal(current.Files, msg.before.Files) {
-			m.notify("The draft changed while loading. Press F7 to restore again.")
+			m.notify(m.tr("The draft changed while loading. Press F7 to restore again.", "불러오는 동안 초안이 바뀌었습니다. F7을 다시 눌러 복원하세요."))
 			return m, nil, true
 		}
 		m.recordUndo(current)
@@ -192,7 +196,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.files = append([]client.Attachment(nil), msg.draft.Files...)
 		m.markDraftChanged()
 		m.layout()
-		m.notify("Draft restored from recovery. Ctrl+Z to undo.")
+		m.notify(m.tr("Draft restored from recovery. Ctrl+Z to undo.", "복구 파일에서 초안을 복원했습니다. Ctrl+Z로 되돌립니다."))
 		return m, nil, true
 	case historyLoaded:
 		if msg.epoch != m.sessionEpoch {
@@ -457,7 +461,7 @@ func (m *Model) snapshot() client.Conversation {
 			title = string(runes[:45]) + "…"
 		}
 		if title == "" {
-			title = "New conversation"
+			title = m.tr("New conversation", "새 대화")
 		}
 		chat.Title = title
 	}
@@ -476,7 +480,12 @@ func (m *Model) persist() tea.Cmd {
 	if m.saving {
 		return nil
 	}
-	if len(m.messages) == 0 && m.prompt.Value() == "" && len(m.files) == 0 && len(m.queue) == 0 && m.stash == nil && m.session.ID == "" {
+	// Match snapshot: a half-typed slash command is not a draft worth a new conversation.
+	draft := m.prompt.Value()
+	if m.commandPending() {
+		draft = ""
+	}
+	if len(m.messages) == 0 && draft == "" && len(m.files) == 0 && len(m.queue) == 0 && m.stash == nil && m.session.ID == "" {
 		m.dirty = false
 		return nil
 	}
@@ -489,12 +498,13 @@ func (m *Model) persist() tea.Cmd {
 	snapshot := *m.pendingSave
 	epoch := m.sessionEpoch
 	m.saving = true
+	tooLarge := m.tr("This conversation exceeds the 8 MiB save limit. Press F6 to keep a recovery file.", "대화가 저장 한도 8 MiB를 넘었습니다. F6으로 복구 파일을 남기세요.")
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(m.ctx, 12*time.Second)
 		defer cancel()
 		size, err := snapshot.SaveSize()
 		if size > client.MaxBody {
-			err = &client.GatewayError{Code: "conversation_too_large", Status: 413, Message: "This conversation exceeds the 8 MiB save limit. Press F6 to keep a recovery file."}
+			err = &client.GatewayError{Code: "conversation_too_large", Status: 413, Message: tooLarge}
 		}
 		var chat client.Conversation
 		if err == nil {
@@ -529,7 +539,7 @@ func (m *Model) clearSaveState() {
 
 func (m Model) showHistory(initial bool) (tea.Model, tea.Cmd) {
 	if m.loadingSession {
-		m.notify("Wait for the conversation to finish loading.")
+		m.notify(m.tr("Wait for the conversation to finish loading.", "대화를 다 불러올 때까지 기다리세요."))
 		return m, nil
 	}
 	if m.busy {
@@ -588,7 +598,7 @@ func (m *Model) loadConversation(id string) tea.Cmd {
 
 func (m Model) navigate(action string) (tea.Model, tea.Cmd) {
 	if m.recovering {
-		m.notify("Writing recovery file…")
+		m.notify(m.tr("Writing recovery file…", "복구 파일을 쓰는 중…"))
 		return m, nil
 	}
 	if m.busy {
@@ -612,7 +622,7 @@ func (m Model) navigate(action string) (tea.Model, tea.Cmd) {
 	}
 	if m.saveBlocked != "" {
 		m.recoveryAction = action
-		m.notify(m.saveError + " Press F6 to save a plain-text recovery file and continue.")
+		m.notify(m.saveError + m.tr(" Press F6 to save a plain-text recovery file and continue.", " F6으로 일반 텍스트 복구 파일을 저장한 뒤 계속하세요."))
 		return m, nil
 	}
 	if m.dirty || m.pendingSave != nil {

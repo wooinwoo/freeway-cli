@@ -138,6 +138,10 @@ func (m Model) workspaceView() tea.View {
 			columns, detail = m.tr("CONVERSATION", "대화"), m.tr("UPDATED / PREVIEW", "수정 시간 / 미리보기")
 		case "settings":
 			columns, detail = m.tr("PRESET", "설정"), m.tr("DESCRIPTION", "설명")
+		case "language":
+			columns, detail = m.tr("LANGUAGE", "언어"), m.tr("DESCRIPTION", "설명")
+		case "theme":
+			columns, detail = m.tr("THEME", "테마"), m.tr("DESCRIPTION", "설명")
 		case "context":
 			columns, detail = m.tr("ITEM", "항목"), m.tr("INCLUSION", "포함 여부")
 		case "help":
@@ -197,7 +201,8 @@ func (m Model) workspaceView() tea.View {
 		if m.menu == "context" {
 			help = m.tr("↑↓ inspect · Enter change setting · Esc back", "↑↓ 확인 · Enter 설정 변경 · Esc 뒤로")
 		}
-		footer := padCells(muted.Render(ansi.Truncate(oneLine(m.menuDetail()), max(1, width-12), "…")), max(1, width-12)) + muted.Render(padCells(menuPosition(m), 12))
+		// Keep two cells between the detail and the position counter.
+		footer := padCells(muted.Render(ansi.Truncate(oneLine(m.menuDetail()), max(1, width-14), "…")), max(1, width-12)) + muted.Render(padCells(menuPosition(m), 12))
 		rows := []string{header, title, search, ansi.Truncate(columnLine, width, ""), m.menuItemsView()}
 		if m.menu == "models" {
 			var evidence string

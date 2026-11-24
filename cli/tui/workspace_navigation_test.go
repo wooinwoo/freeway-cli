@@ -604,3 +604,20 @@ func TestFindMatchesWordsSplitByWordWrap(t *testing.T) {
 		}
 	}
 }
+
+func TestEscFromSettingsSubmenuReturnsToSettings(t *testing.T) {
+	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 24})
+	next, _ := m.openMenu("settings")
+	m = next.(Model)
+	next, _ = m.chooseItem(modelItem{ID: "language"})
+	m = update(next.(Model), press(tea.KeyEsc))
+	if !m.modelsFocused || m.menu != "settings" {
+		t.Fatalf("Esc from the language list left settings: focused=%v menu=%q", m.modelsFocused, m.menu)
+	}
+	m = update(m, press(tea.KeyEsc))
+	m = update(m, press(tea.KeyF2))
+	m = update(m, press(tea.KeyEsc))
+	if m.modelsFocused {
+		t.Fatal("a stale parent reopened settings from the model list")
+	}
+}

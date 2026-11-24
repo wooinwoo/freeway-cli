@@ -151,13 +151,13 @@ func (m Model) contextHint() string {
 		}
 	}
 	if excluded > 0 {
-		return fmt.Sprintf("Context · %d earlier files included · %d excluded · F8", included, excluded)
+		return fmt.Sprintf(m.tr("Context · %d earlier files included · %d excluded · F8", "문맥 · 이전 파일 %d개 포함 · %d개 제외 · F8"), included, excluded)
 	}
 	if included > 0 {
-		return fmt.Sprintf("Context · %d earlier attachments will be sent · F8", included)
+		return fmt.Sprintf(m.tr("Context · %d earlier attachments will be sent · F8", "문맥 · 이전 첨부 %d개 전송 예정 · F8"), included)
 	}
 	if len(plan.history) > 0 && (selection.RecentTurns != -1 || !selection.IncludePriorAttachments || len(selection.ExcludedPriorFiles) > 0) {
-		return "Context restricted for this conversation · F8 to review"
+		return m.tr("Context restricted for this conversation · F8 to review", "이 대화의 문맥이 제한됨 · F8로 확인")
 	}
 	return ""
 }
@@ -165,13 +165,13 @@ func (m Model) contextHint() string {
 func (m Model) contextItems() []list.Item {
 	selection := m.contextSelection()
 	plan := m.nextRequestContext()
-	turns := "All earlier turns"
+	turns := m.tr("All earlier turns", "이전 대화 전체")
 	if selection.RecentTurns >= 0 {
-		turns = fmt.Sprintf("Earlier turns · last %d", selection.RecentTurns)
+		turns = fmt.Sprintf(m.tr("Earlier turns · last %d", "이전 대화 · 최근 %d개"), selection.RecentTurns)
 	}
-	attachmentMode := "On"
+	attachmentMode := m.tr("On", "켬")
 	if !selection.IncludePriorAttachments {
-		attachmentMode = "Off"
+		attachmentMode = m.tr("Off", "끔")
 	}
 	totalTurns, includedTurns, earlierFiles := 0, 0, 0
 	for i, message := range plan.history {
@@ -194,27 +194,27 @@ func (m Model) contextItems() []list.Item {
 		draftFiles = len(plan.current.Files)
 	}
 	items := []list.Item{
-		modelItem{ID: "summary", Name: "Next request", Detail: fmt.Sprintf(
-			"%s · %d/%d earlier turns · %d earlier files · %d draft files", m.modelLabel(m.selected), includedTurns, totalTurns, earlierFiles, draftFiles)},
-		modelItem{ID: "turns", Name: turns, Detail: "Enter cycles all, last 8, last 3, and no earlier turns. /context last N sets a custom count."},
-		modelItem{ID: "attachments", Name: "Earlier attachments · " + attachmentMode, Detail: "Enter toggles earlier file contents. Draft attachments stay in the next request."},
+		modelItem{ID: "summary", Name: m.tr("Next request", "다음 요청"), Detail: fmt.Sprintf(
+			m.tr("%s · %d/%d earlier turns · %d earlier files · %d draft files", "%s · 이전 대화 %d/%d개 · 이전 파일 %d개 · 초안 파일 %d개"), m.modelLabel(m.selected), includedTurns, totalTurns, earlierFiles, draftFiles)},
+		modelItem{ID: "turns", Name: turns, Detail: m.tr("Enter cycles all, last 8, last 3, and no earlier turns. /context last N sets a custom count.", "Enter로 전체, 최근 8개, 최근 3개, 이전 대화 없음을 차례로 고릅니다. /context last N으로 개수를 직접 정합니다.")},
+		modelItem{ID: "attachments", Name: m.tr("Earlier attachments · ", "이전 첨부 · ") + attachmentMode, Detail: m.tr("Enter toggles earlier file contents. Draft attachments stay in the next request.", "Enter로 이전 파일 내용을 켜고 끕니다. 초안 첨부는 다음 요청에 그대로 포함됩니다.")},
 	}
 	if len(selection.ExcludedPriorFiles) > 0 {
-		items = append(items, modelItem{ID: "clear-file-exclusions", Name: "Clear file exclusions",
-			Detail: fmt.Sprintf("Enter to clear %d individual file exclusions.", len(selection.ExcludedPriorFiles))})
+		items = append(items, modelItem{ID: "clear-file-exclusions", Name: m.tr("Clear file exclusions", "파일 제외 모두 해제"),
+			Detail: fmt.Sprintf(m.tr("Enter to clear %d individual file exclusions.", "Enter로 파일 제외 %d개를 해제합니다."), len(selection.ExcludedPriorFiles))})
 	}
 	if plan.system != "" {
-		items = append(items, modelItem{ID: "system", Name: "System prompt", Detail: "Included with every request in this conversation."})
+		items = append(items, modelItem{ID: "system", Name: m.tr("System prompt", "시스템 프롬프트"), Detail: m.tr("Included with every request in this conversation.", "이 대화의 모든 요청에 포함됩니다.")})
 	}
 	if plan.current != nil {
 		for _, file := range plan.current.Files {
-			items = append(items, modelItem{ID: "draft-file", Name: file.Path, Detail: "Draft attachment · included"})
+			items = append(items, modelItem{ID: "draft-file", Name: file.Path, Detail: m.tr("Draft attachment · included", "초안 첨부 · 포함")})
 		}
 	}
 	for i := len(plan.history) - 1; i >= 0; i-- {
 		if plan.history[i].Role == "user" {
 			if len(plan.history[i].Files) > 0 {
-				items = append(items, modelItem{ID: "retry", Name: "Retry attachments", Detail: "Alt+R and F5 include the files of the question being retried."})
+				items = append(items, modelItem{ID: "retry", Name: m.tr("Retry attachments", "재시도 첨부"), Detail: m.tr("Alt+R and F5 include the files of the question being retried.", "Alt+R과 F5는 다시 시도하는 질문의 파일도 함께 보냅니다.")})
 			}
 			break
 		}
@@ -225,9 +225,9 @@ func (m Model) contextItems() []list.Item {
 		if !includesModelContext(message) {
 			continue
 		}
-		access := "Included"
+		access := m.tr("Included", "포함")
 		if i < plan.start {
-			access = "Excluded"
+			access = m.tr("Excluded", "제외")
 		}
 		if message.Role == "user" {
 			end := len(message.Content)
@@ -243,7 +243,7 @@ func (m Model) contextItems() []list.Item {
 			} else if end < len(message.Content) {
 				preview = append(preview, '…')
 			}
-			items = append(items, modelItem{ID: "earlier-turn", Name: string(preview), Detail: access + " · earlier question"})
+			items = append(items, modelItem{ID: "earlier-turn", Name: string(preview), Detail: access + m.tr(" · earlier question", " · 이전 질문")})
 		}
 		for _, file := range message.Files {
 			if seenFiles[file.Path] {
@@ -253,16 +253,16 @@ func (m Model) contextItems() []list.Item {
 			row := modelItem{ID: "inactive-file:" + file.Path, Name: file.Path}
 			switch {
 			case i < plan.start:
-				row.Detail = "Excluded · outside selected turns"
+				row.Detail = m.tr("Excluded · outside selected turns", "제외 · 선택한 대화 범위 밖")
 			case !plan.includeAttachments:
-				row.Detail = "Excluded · earlier attachments are off"
+				row.Detail = m.tr("Excluded · earlier attachments are off", "제외 · 이전 첨부 꺼짐")
 			case file.Path == "":
-				row.Name, row.Detail = "Unnamed attachment", "Included · no stored file path"
+				row.Name, row.Detail = m.tr("Unnamed attachment", "이름 없는 첨부"), m.tr("Included · no stored file path", "포함 · 저장된 파일 경로 없음")
 			default:
 				row.ID = priorFileRow + file.Path
-				row.Detail = "Included · Enter to exclude"
+				row.Detail = m.tr("Included · Enter to exclude", "포함 · Enter로 제외")
 				if !plan.includesPriorFile(file.Path) {
-					row.Detail = "Excluded · Enter to include"
+					row.Detail = m.tr("Excluded · Enter to include", "제외 · Enter로 포함")
 				}
 			}
 			items = append(items, row)
@@ -273,16 +273,16 @@ func (m Model) contextItems() []list.Item {
 
 func (m Model) updateContextSelection(selection client.ContextSelection) (tea.Model, tea.Cmd) {
 	if m.loadingSession || m.loadingHistory {
-		m.notify("Wait for the conversation to finish loading.")
+		m.notify(m.tr("Wait for the conversation to finish loading.", "대화를 다 불러올 때까지 기다리세요."))
 		return m, nil
 	}
 	if backend, ok := m.gateway.(interface{ SupportsContextSelection() bool }); m.saveEnabled && ok && !backend.SupportsContextSelection() {
-		m.notify("Reconnect with an updated gateway to save context settings.")
+		m.notify(m.tr("Reconnect with an updated gateway to save context settings.", "문맥 설정을 저장하려면 업데이트된 게이트웨이로 다시 연결하세요."))
 		return m, nil
 	}
 	if backend, ok := m.gateway.(interface{ SupportsContextFileSelection() bool }); m.saveEnabled && ok &&
 		len(selection.ExcludedPriorFiles) > 0 && !backend.SupportsContextFileSelection() {
-		m.notify("Reconnect with an updated gateway to save individual attachment exclusions.")
+		m.notify(m.tr("Reconnect with an updated gateway to save individual attachment exclusions.", "파일별 제외를 저장하려면 업데이트된 게이트웨이로 다시 연결하세요."))
 		return m, nil
 	}
 	m.session.Context = &selection
@@ -292,7 +292,7 @@ func (m Model) updateContextSelection(selection client.ContextSelection) (tea.Mo
 		cmd := m.refreshMenuItems(m.contextItems())
 		return m, tea.Batch(cmd, m.persist())
 	}
-	m.notify("Context updated for this conversation. F8 to review the next request.")
+	m.notify(m.tr("Context updated for this conversation. F8 to review the next request.", "이 대화의 문맥을 바꿨습니다. F8로 다음 요청을 확인하세요."))
 	return m, m.persist()
 }
 
@@ -307,14 +307,14 @@ func (m Model) contextCommand(arg string) (tea.Model, tea.Cmd) {
 	case len(args) == 2 && args[0] == "last":
 		n, err := strconv.Atoi(args[1])
 		if err != nil || n < 0 || n > 198 {
-			m.notify("Enter /context last followed by a number from 0 to 198.")
+			m.notify(m.tr("Enter /context last followed by a number from 0 to 198.", "/context last 뒤에 0부터 198 사이의 숫자를 입력하세요."))
 			return m, nil
 		}
 		selection.RecentTurns = n
 	case len(args) == 2 && args[0] == "attachments" && (args[1] == "on" || args[1] == "off"):
 		selection.IncludePriorAttachments = args[1] == "on"
 	default:
-		m.notify("Use /context, /context all, /context last N, or /context attachments on or off.")
+		m.notify(m.tr("Use /context, /context all, /context last N, or /context attachments on or off.", "/context, /context all, /context last N, /context attachments on 또는 off를 사용하세요."))
 		return m, nil
 	}
 	return m.updateContextSelection(selection)
