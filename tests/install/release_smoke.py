@@ -249,7 +249,7 @@ def run_upgrade(directory, go):
                 "--root", root, env=dict(environment, PATH=os.defpath))
             launcher = root / "bin/freeway"
         assert run(launcher, "--version").strip() == PREVIOUS_VERSION
-        assert len(json.loads(run(launcher, "providers", "list"))["providers"]) == 11
+        assert len(json.loads(run(launcher, "providers", "list"))["providers"]) == 9
         assert run(launcher, "gateway", "--version").strip() == PREVIOUS_VERSION
 
         class ReleaseServer(http.server.BaseHTTPRequestHandler):

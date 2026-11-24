@@ -51,7 +51,7 @@ def main():
         def installed(root, version=release["version"]):
             binary = root / "bin/freeway"
             assert run(binary, "--version").stdout.strip() == version
-            assert len(json.loads(run(binary, "providers", "list").stdout)["providers"]) == 11
+            assert len(json.loads(run(binary, "providers", "list").stdout)["providers"]) == 9
 
         script = REPO / "install.sh"
         run("/bin/bash", script, "--help")

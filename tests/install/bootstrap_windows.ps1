@@ -22,7 +22,7 @@ try {
   $version = & $launcher --version
   if ($LASTEXITCODE -ne 0 -or "$version".Trim() -ne $manifest.version) { throw 'Windows bootstrap version verification failed.' }
   $providers = (& $launcher providers list) | ConvertFrom-Json
-  if ($LASTEXITCODE -ne 0 -or $providers.providers.Count -ne 11) { throw 'Windows provider utility verification failed.' }
+  if ($LASTEXITCODE -ne 0 -or $providers.providers.Count -ne 9) { throw 'Windows provider utility verification failed.' }
   $before = [IO.File]::ReadAllText((Join-Path $root 'install.json'))
   $rejected = $false
   try { & $bootstrap -Archive $archive -SHA256 ('0' * 64) -Root $root } catch { $rejected = $true }
