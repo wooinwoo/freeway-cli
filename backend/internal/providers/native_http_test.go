@@ -42,13 +42,17 @@ func TestNativeHTTPCatalogUsesBearerAndRejectsPaidUnknownAndDisabledModels(t *te
 			t.Errorf("unexpected catalog request: %s / %q", r.URL.Path, r.Header.Get("Authorization"))
 		}
 		fmt.Fprint(w, `{"data":[
-{"id":"free","pricing":{"prompt":"0","completion":"0"},"supported_parameters":["reasoning"],"opencode":{"reasoning_options":[{"type":"effort","values":["low","high"]}]}},
+{"id":"free","pricing":{"prompt":"0","completion":"0"},"architecture":{"modality":"text+image->text+image","input_modalities":["text","image"],"output_modalities":["text","image"]},"supported_parameters":["reasoning"],"opencode":{"reasoning_options":[{"type":"effort","values":["low","high"]}]}},
 {"id":"explicit-paid","isFree":false,"pricing":{"prompt":"0","completion":"0"}},
 {"id":"paid","cost":{"input":1,"output":0}},
 {"id":"unknown"},
 {"id":"deprecated","status":"deprecated","cost":{"input":0,"output":0}},
 {"id":"disabled","disabled":true,"cost":{"input":0,"output":0}},
-{"id":"image","architecture":{"modality":"image->image"},"cost":{"input":0,"output":0}}
+{"id":"image","architecture":{"modality":"image->image"},"cost":{"input":0,"output":0}},
+{"id":"image-only-output","architecture":{"modality":"text+image->image"},"cost":{"input":0,"output":0}},
+{"id":"speech-only-output","architecture":{"input_modalities":["text"],"output_modalities":["audio"]},"cost":{"input":0,"output":0}},
+{"id":"image-only-input","architecture":{"input_modalities":["image"],"output_modalities":["text"]},"cost":{"input":0,"output":0}},
+{"id":"cli-image","modalities":{"input":["text"],"output":["image"]},"cost":{"input":0,"output":0}}
 ]}`)
 	})
 	models, err := a.Models(context.Background(), "example-key")

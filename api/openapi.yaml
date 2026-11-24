@@ -69,8 +69,11 @@
     },
     "/v1/models": {
       "get": {
+        "parameters": [
+          { "name": "refresh", "in": "query", "description": "Set to 1 to rediscover the model catalog with a managed local client key.", "schema": { "type": "integer", "enum": [1] } }
+        ],
         "operationId": "listModels",
-        "description": "Return explicit free and ready flags. Include free/auto only when eligible. The client excludes paid, unavailable, and unknown-status entries.",
+        "description": "List eligible free models. Equivalent provider routes share a model ID and are listed in routeIds. Include free/auto only when eligible. The client excludes unavailable entries.",
         "responses": {
           "200": {
             "description": "Models visible to this user",
@@ -82,6 +85,7 @@
                     "data"
                   ],
                   "properties": {
+                    "refreshed": { "type": "boolean", "description": "True when a managed client requested and completed fresh model discovery." },
                     "data": {
                       "type": "array",
                       "items": {
@@ -99,10 +103,69 @@
         }
       }
     },
+    "/v1/providers": {
+      "get": {
+        "operationId": "listProviders",
+        "description": "Refresh connection and routing status without sending inference. Local request counts cover the current UTC day. Provider allowance is included only when reported by the provider.",
+        "parameters": [
+          { "name": "provider", "in": "query", "description": "Check only this provider ID.", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status of providers available in this gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ProviderStatus" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/local/providers/{id}/management": {
+      "post": {
+        "operationId": "changeLocalProvider",
+        "description": "Change the provider connection owned by the automatically started gateway. Requires its private managed client key.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["action"],
+                "properties": {
+                  "action": { "enum": ["authenticate", "disconnect", "enable", "exclude-auto", "include-auto"] },
+                  "apiKey": { "type": "string", "format": "password", "writeOnly": true },
+                  "confirmFree": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Provider change applied" },
+          "default": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/v1/chat/completions": {
       "post": {
         "operationId": "streamCompletion",
-        "description": "Return OpenAI-shaped SSE data events with actual model/provider, optional usage, and final data: [DONE]. Error events use the Error envelope. The backend owns free-only routing, fallback and quota accounting. Never switch routes after emitting content. HTTP disconnect cancels execution. Conversation saves must remain available while streaming. File attachments arrive as reference text in message content, without UI metadata.",
+        "description": "Return OpenAI-shaped SSE data events with actual model/provider, optional usage, and final data: [DONE]. A grouped model ID may fall back to another eligible provider for that same model before emitting content. Requests using the persistent API key can use provider-specific IDs to select one route. Error events use the Error envelope. The backend owns free-only routing and quota accounting. HTTP disconnect cancels execution. Conversation saves must remain available while streaming. File attachments arrive as reference text in message content, without UI metadata.",
         "requestBody": {
           "required": true,
           "content": {
@@ -381,8 +444,20 @@
           "name": {
             "type": "string"
           },
+          "qualityRank": { "type": "integer", "minimum": 1, "description": "Position within Freeway's curated general model comparison. Omitted when unmeasured." },
+          "codingRank": { "type": "integer", "minimum": 1, "description": "Position within Freeway's Terminal-Bench 4.0 model comparison. Omitted when unmeasured." },
+          "reasoningRank": { "type": "integer", "minimum": 1, "description": "Position within Freeway's HLE-Diamond model comparison. Omitted when unmeasured." },
           "detail": {
             "type": "string"
+          },
+          "routeIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "readyProviders": {
+            "type": "array",
+            "description": "Provider names whose routes pass the current local availability check.",
+            "items": { "type": "string" }
           },
           "free": {
             "type": "boolean"
@@ -395,6 +470,28 @@
             "minimum": 0,
             "description": "Estimated unreserved local token headroom. Input framing and output both consume it."
           }
+        }
+      },
+      "ProviderStatus": {
+        "type": "object",
+        "required": ["id", "name", "keyConfigured", "state", "freeModels"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "keyConfigured": { "type": "boolean" },
+          "catalogChecked": { "type": "boolean" },
+          "keyChecked": { "type": "boolean", "description": "A provider's authenticated key endpoint accepted the configured key." },
+          "scopedCheck": { "type": "boolean", "description": "The gateway can check this provider without discovering other providers." },
+          "state": { "type": "string" },
+          "freeModels": { "type": "integer", "minimum": 0 },
+          "retryAfter": { "type": "integer", "minimum": 0 },
+          "management": { "type": "boolean" },
+          "autoSupported": { "type": "boolean" },
+          "autoExcluded": { "type": "boolean" },
+          "checkedAt": { "type": "string", "format": "date-time" },
+          "localRequests": { "type": "integer", "minimum": 0 },
+          "providerRemaining": { "type": "integer", "minimum": 0 },
+          "cliProfile": { "type": "string", "description": "Opaque local CLI profile identity for managing official CLI tools." }
         }
       },
       "Attachment": {
@@ -465,6 +562,10 @@
           },
           "model": {
             "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "description": "Provider that served this assistant message."
           },
           "error": {
             "type": "string"

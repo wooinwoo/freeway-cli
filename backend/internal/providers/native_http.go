@@ -30,6 +30,38 @@ func NewHTTPAdapter(d Definition, client *http.Client) Adapter {
 
 func (a *httpAdapter) Close() error { return nil }
 
+// OpenRouter's model catalog is public, so it cannot verify the key on its own.
+func (a *httpAdapter) checkOpenRouterKey(ctx context.Context, key string) error {
+	if err := a.validateKey(key); err != nil {
+		return err
+	}
+	verify := *a
+	client := *a.client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	verify.client = &client
+	reply, err := verify.request(ctx, "/key", key, nil)
+	if err != nil {
+		return err
+	}
+	defer reply.Body.Close()
+	if reply.StatusCode != http.StatusOK {
+		return httpStatusError(reply)
+	}
+	var payload struct {
+		Data *struct {
+			Label           string `json:"label"`
+			IsManagementKey bool   `json:"is_management_key"`
+		} `json:"data"`
+	}
+	if json.NewDecoder(io.LimitReader(reply.Body, 32<<10)).Decode(&payload) != nil || payload.Data == nil || payload.Data.Label == "" {
+		return failure("invalid_key_details", http.StatusBadGateway)
+	}
+	if payload.Data.IsManagementKey {
+		return failure("inference_key_required", http.StatusBadRequest)
+	}
+	return nil
+}
+
 func (a *httpAdapter) Models(ctx context.Context, key string) ([]Model, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

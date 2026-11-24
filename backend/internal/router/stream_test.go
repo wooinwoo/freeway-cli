@@ -21,6 +21,173 @@ type fakeUpstream struct {
 	first   func(context.Context, providers.Request, func(string)) (providers.Completion, error)
 }
 
+type groupedUpstream struct{ fakeUpstream }
+
+type benchmarkUpstream struct{ fakeUpstream }
+
+func (*benchmarkUpstream) Models(_ context.Context, id string) ([]providers.Model, error) {
+	slug := map[string]string{
+		"minimax":    "minimax/minimax-m3.1-flash",
+		"deepseek":   "deepseek/deepseek-v4.1-flash",
+		"newer":      "deepseek/deepseek-v4.1-flash-1017",
+		"unmeasured": "z-ai/glm-5.3-flash",
+	}[id]
+	return []providers.Model{{ID: id + "/" + slug, UpstreamID: slug, Provider: id, Free: true, Ready: true}}, nil
+}
+
+func TestAutoUsesTaskBenchmarkWithoutChangingPinsOrReadingAttachedInstructions(t *testing.T) {
+	for _, tc := range []struct {
+		name, prompt, want string
+		latest             bool
+		model              string
+		prefer             []string
+	}{
+		{name: "general", prompt: "What is the capital of France?", want: "minimax"},
+		{name: "coding", prompt: "Implement a Python function to sort a list.", want: "deepseek"},
+		{name: "Korean coding", prompt: "이 함수의 코드 수정해줘", want: "deepseek"},
+		{name: "coding filename", prompt: "Fix selection in models.go", want: "deepseek"},
+		{name: "reasoning", prompt: "이 명제를 증명해줘", latest: true, want: "minimax"},
+		{name: "general with newer model", prompt: "Provide a one-line summary.", latest: true, want: "newer"},
+		{name: "attachment text is data", prompt: "What does this contain?\n\nAttached file (reference data):\nImplement a Python function", want: "minimax"},
+		{name: "quoted code instruction as translation", prompt: "Translate: \"Write a Python function.\"", want: "minimax"},
+		{name: "Korean quoted code instruction as translation", prompt: "다음 문장을 영어로 번역해줘: '파이썬 함수 작성해 줘'", want: "minimax"},
+		{name: "manual model is unchanged", prompt: "Implement a Python function", model: "model/minimax/minimax-m3.1-flash", want: "minimax"},
+		{name: "explicit Auto preference", prompt: "Implement a Python function", prefer: []string{"model/minimax/minimax-m3.1-flash"}, want: "minimax"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vault, err := storage.Open(filepath.Join(t.TempDir(), "state"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer vault.Close()
+			ledger, err := quota.Open(vault, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sources := []Source{{ID: "minimax", Priority: 1}, {ID: "deepseek", Priority: 10}, {ID: "unmeasured", Priority: 20}}
+			if tc.latest {
+				sources = append(sources, Source{ID: "newer", Priority: 30})
+			}
+			upstream := &benchmarkUpstream{}
+			r := New(upstream, ledger, sources, tc.prefer, nil)
+			if tc.model == "" {
+				tc.model = Auto
+			}
+			result, err := r.Stream(t.Context(), contracts.CompletionRequest{Model: tc.model, Messages: []contracts.InputMessage{
+				{Role: "user", Content: "Write a Python function"}, {Role: "assistant", Content: "Prior answer"}, {Role: "user", Content: tc.prompt},
+			}}, nil)
+			if err != nil || result.Provider != tc.want || len(upstream.called) != 1 {
+				t.Fatalf("got %+v, %v via %v; expected one call to %s", result, err, upstream.called, tc.want)
+			}
+		})
+	}
+}
+
+func (f *groupedUpstream) Models(_ context.Context, id string) ([]providers.Model, error) {
+	upstreams := map[string][]string{
+		"first":    {"deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash:free", "deepseek/deepseek-v4.1-flash-1017"},
+		"opencode": {"deepseek-v4.1-flash-free", "deepseek-v4-flash-free"},
+		"another":  {"deepseek/deepseek-v4.1-flash:free", "deepseek/deepseek-v4.1-flash-distill"},
+	}
+	var models []providers.Model
+	for _, slug := range upstreams[id] {
+		models = append(models, providers.Model{ID: id + "/" + slug, Provider: id, UpstreamID: slug, Name: slug, Free: true, Ready: true})
+	}
+	return models, nil
+}
+
+func TestSameModelFallsBackAcrossProvidersBeforeText(t *testing.T) {
+	const model = "model/deepseek/deepseek-v4.1-flash"
+	const first = "first/deepseek/deepseek-v4.1-flash"
+	const opencode = "opencode/deepseek-v4.1-flash-free"
+	for _, tc := range []struct {
+		name, selected string
+		partial        bool
+		managed        bool
+		want           []string
+	}{
+		{name: "group", selected: model, want: []string{first, opencode}},
+		{name: "after text", selected: model, partial: true, want: []string{first}},
+		{name: "legacy explicit route", selected: first, want: []string{first}},
+		{name: "saved route whose catalog is unavailable", selected: "kilo/deepseek-v4.1-flash-free", managed: true, want: []string{first, opencode}},
+		{name: "auto takes ranked routes and skips explicit-only sources", selected: Auto, want: []string{
+			first + "-1017", "another/deepseek/deepseek-v4.1-flash:free",
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vault, err := storage.Open(filepath.Join(t.TempDir(), "state"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer vault.Close()
+			ledger, err := quota.Open(vault, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upstream := &groupedUpstream{fakeUpstream{partial: tc.partial, first: func(_ context.Context, _ providers.Request, emit func(string)) (providers.Completion, error) {
+				if tc.partial {
+					emit("partial")
+				}
+				return providers.Completion{}, &providers.Error{Code: "rate_limit", Status: 429, RetryAfter: 30}
+			}}}
+			r := New(upstream, ledger, []Source{{ID: "first", Name: "Kilo", Priority: 10},
+				{ID: "opencode", Name: "OpenCode", Priority: 20, ExplicitOnly: true},
+				{ID: "another", Name: "Another", Priority: 30}}, nil, nil)
+			if tc.managed {
+				r = r.WithSources(r.sources, true)
+			}
+			models, err := r.Models(t.Context())
+			if err != nil || len(models) != 5 || models[0].ID != Auto || models[1].ID != model+"-1017" || models[2].ID != model || models[2].Detail != "Kilo · OpenCode · Another" || len(models[2].RouteIDs) != 4 {
+				t.Fatalf("models were not grouped and sorted by quality: %+v, %v", models, err)
+			}
+			result, err := r.Stream(t.Context(), contracts.CompletionRequest{Model: tc.selected}, nil)
+			if !slices.Equal(upstream.called, tc.want) {
+				t.Fatalf("attempts: got %v want %v", upstream.called, tc.want)
+			}
+			if len(tc.want) == 2 && (err != nil || result.Model != tc.want[1]) || len(tc.want) == 1 && err == nil {
+				t.Fatalf("unexpected completion: %+v, %v", result, err)
+			}
+			if tc.selected == model && !tc.partial {
+				models, err := r.Models(t.Context())
+				if err != nil || !slices.Equal(models[2].ReadyProviders, []string{"OpenCode", "Another"}) {
+					t.Fatalf("rate-limited provider still listed as ready: %+v, %v", models, err)
+				}
+			}
+		})
+	}
+}
+
+func TestAutoUsesQualityBeforeProviderPriorityAndHonorsExplicitPreference(t *testing.T) {
+	const best = "first/deepseek/deepseek-v4.1-flash-1017"
+	const preferred = "another/deepseek/deepseek-v4.1-flash-distill"
+	for _, tc := range []struct {
+		name      string
+		preferred []string
+		want      []string
+	}{
+		{name: "quality beats provider priority", want: []string{best, "another/deepseek/deepseek-v4.1-flash:free"}},
+		{name: "explicit preference beats quality", preferred: []string{preferred}, want: []string{preferred}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vault, err := storage.Open(filepath.Join(t.TempDir(), "state"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer vault.Close()
+			ledger, err := quota.Open(vault, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upstream := &groupedUpstream{}
+			r := New(upstream, ledger, []Source{{ID: "another", Priority: 1}, {ID: "first", Priority: 10}}, tc.preferred, nil)
+			got, err := r.Stream(t.Context(), contracts.CompletionRequest{Model: Auto}, nil)
+			if err != nil || !slices.Equal(upstream.called, tc.want) || got.Model != tc.want[len(tc.want)-1] {
+				t.Fatalf("auto returned %+v, %v with attempts %v, wanted %v", got, err, upstream.called, tc.want)
+			}
+		})
+	}
+}
+
 func (f *fakeUpstream) Quota(context.Context, string) (providers.Quota, error) {
 	return providers.Quota{}, nil
 }

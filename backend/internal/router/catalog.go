@@ -24,10 +24,12 @@ type Upstream interface {
 }
 
 type Source struct {
-	ID       string
-	Name     string
-	Priority int
-	Limits   quota.Limits
+	ID            string
+	Name          string
+	Priority      int
+	Limits        quota.Limits
+	ExplicitOnly  bool
+	RemoteCatalog bool
 }
 
 type Router struct {
@@ -38,6 +40,7 @@ type Router struct {
 	allowed       map[string]bool
 	active        chan struct{}
 	firstTextWait time.Duration
+	resolveLegacy bool
 	mu            sync.Mutex
 	reload        chan struct{}
 	fresh         time.Time
@@ -56,8 +59,9 @@ type sourceDiscovery struct {
 }
 
 type route struct {
-	source Source
-	model  providers.Model
+	source  Source
+	model   providers.Model
+	groupID string
 }
 
 func New(upstream Upstream, ledger *quota.Ledger, sources []Source, preferred, allowed []string) *Router {
@@ -77,48 +81,144 @@ func New(upstream Upstream, ledger *quota.Ledger, sources []Source, preferred, a
 	return r
 }
 
+// WithSources shares execution capacity and quota policy across gateway views.
+func (r *Router) WithSources(sources []Source, resolveLegacy bool) *Router {
+	return &Router{
+		upstream: r.upstream, ledger: r.ledger, sources: slices.Clone(sources),
+		prefer: r.prefer, allowed: r.allowed, active: r.active, firstTextWait: r.firstTextWait,
+		resolveLegacy: resolveLegacy,
+	}
+}
+
 func (r *Router) Models(ctx context.Context) ([]contracts.Model, error) {
-	catalog, err := r.discover(ctx, false)
+	return r.models(ctx, false)
+}
+
+func (r *Router) RefreshModels(ctx context.Context) ([]contracts.Model, error) {
+	return r.models(ctx, true)
+}
+
+func (r *Router) models(ctx context.Context, refresh bool) ([]contracts.Model, error) {
+	catalog, err := r.discoverCatalog(ctx, refresh, refresh)
 	if err != nil {
 		return nil, err
 	}
 	models := make([]contracts.Model, 0, 1+len(catalog.routes))
+	groups := make(map[string]int, len(catalog.routes))
+	groupProviders := make(map[string]map[string]bool, len(catalog.routes))
 	type capacity struct {
 		ready  bool
 		tokens *int
 	}
 	readiness := make(map[string]capacity, len(r.sources))
-	anyReady := false
-	autoUnbounded := false
-	autoTokens := 0
+	policies := r.connectionPolicies(ctx, catalog.routes)
+	// A nil token estimate means at least one ready route has no local token cap.
+	unbounded := make(map[string]bool, len(catalog.routes))
+	autoReady, autoUnbounded, autoTokens := false, false, 0
 	for _, candidate := range catalog.routes {
+		policy := policies[candidate.source.ID]
+		if !policy.enabled {
+			continue
+		}
 		route, checked := readiness[candidate.source.ID]
 		if !checked {
 			route.ready = r.ledger.Available(candidate.source.ID, candidate.source.Limits, minInputTokens+1) == nil
 			route.tokens = r.ledger.TokensRemaining(candidate.source.ID, candidate.source.Limits)
 			readiness[candidate.source.ID] = route
 		}
-		if route.ready {
-			anyReady = true
+		if route.ready && policy.auto {
+			autoReady = true
 			if route.tokens == nil {
 				autoUnbounded = true
 			} else {
 				autoTokens = max(autoTokens, *route.tokens)
 			}
 		}
-		models = append(models, contracts.Model{ID: candidate.model.ID, Name: candidate.model.Name, Detail: candidate.source.Name, Free: true, Ready: route.ready, LocalTokensRemaining: route.tokens})
+		index, exists := groups[candidate.groupID]
+		if !exists {
+			index = len(models)
+			groups[candidate.groupID] = index
+			groupProviders[candidate.groupID] = make(map[string]bool)
+			rank := modelQualityRank(candidate.groupID)
+			if rank == len(modelQualityOrder) {
+				rank = -1
+			}
+			models = append(models, contracts.Model{
+				ID: candidate.groupID, Name: modelName(candidate), Free: true,
+				QualityRank:   rank + 1,
+				CodingRank:    slices.Index(codingQualityOrder, candidate.groupID) + 1,
+				ReasoningRank: slices.Index(reasoningQualityOrder, candidate.groupID) + 1,
+			})
+		}
+		model := &models[index]
+		model.Ready = model.Ready || route.ready
+		if route.ready && !unbounded[candidate.groupID] {
+			if route.tokens == nil {
+				unbounded[candidate.groupID] = true
+				model.LocalTokensRemaining = nil
+			} else if model.LocalTokensRemaining == nil || *route.tokens > *model.LocalTokensRemaining {
+				tokens := *route.tokens
+				model.LocalTokensRemaining = &tokens
+			}
+		}
+		if candidate.groupID != candidate.model.ID {
+			model.RouteIDs = append(model.RouteIDs, candidate.model.ID)
+		}
+		if seen := groupProviders[candidate.groupID]; !seen[candidate.source.ID] {
+			seen[candidate.source.ID] = true
+			if model.Detail != "" {
+				model.Detail += " · "
+			}
+			model.Detail += candidate.source.Name
+			if route.ready {
+				model.ReadyProviders = append(model.ReadyProviders, candidate.source.Name)
+			}
+		}
 	}
-	if anyReady {
+	slices.SortStableFunc(models, func(a, b contracts.Model) int {
+		x, y := modelQualityRank(a.ID), modelQualityRank(b.ID)
+		if x != y {
+			return x - y
+		}
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	})
+	if autoReady {
 		auto := contracts.Model{ID: Auto, Name: "Auto", Detail: "Available free routes", Free: true, Ready: true}
 		if !autoUnbounded {
 			auto.LocalTokensRemaining = &autoTokens
 		}
 		models = append([]contracts.Model{auto}, models...)
 	}
-	return models, nil
+	return models, ctx.Err()
+}
+
+type connectionPolicy struct {
+	enabled, auto bool
+}
+
+// Check policy against current credentials even when the model catalog is cached.
+func (r *Router) connectionPolicies(ctx context.Context, routes []route) map[string]connectionPolicy {
+	policies := make(map[string]connectionPolicy)
+	for _, candidate := range routes {
+		source := candidate.source
+		if _, checked := policies[source.ID]; checked {
+			continue
+		}
+		current, err := r.upstream.Quota(ctx, source.ID)
+		enabled := err == nil && !current.Disconnected && current.Reason != "needs_key" && current.Reason != "confirm_free_account"
+		policies[source.ID] = connectionPolicy{
+			enabled: enabled,
+			auto:    enabled && !source.ExplicitOnly && !current.AutoExcluded,
+		}
+	}
+	return policies
 }
 
 func (r *Router) discover(ctx context.Context, refresh bool) (catalogSnapshot, error) {
+	return r.discoverCatalog(ctx, refresh, false)
+}
+
+func (r *Router) discoverCatalog(ctx context.Context, refresh, afterPending bool) (catalogSnapshot, error) {
 	for {
 		r.mu.Lock()
 		if !refresh && time.Now().Before(r.fresh) {
@@ -132,7 +232,8 @@ func (r *Router) discover(ctx context.Context, refresh bool) (catalogSnapshot, e
 			case <-ctx.Done():
 				return catalogSnapshot{}, ctx.Err()
 			case <-pending:
-				refresh = false
+				// A catalog that started before account management may omit the changed provider.
+				refresh = afterPending
 				continue
 			}
 		}
@@ -155,27 +256,10 @@ func (r *Router) discover(ctx context.Context, refresh bool) (catalogSnapshot, e
 }
 
 func (r *Router) refresh(ctx context.Context) catalogSnapshot {
-	ctx, cancel := context.WithTimeout(ctx, 7*time.Second)
-	defer cancel()
 	completed := make(chan sourceDiscovery, len(r.sources))
 	for _, source := range r.sources {
 		go func() {
-			models, err := r.upstream.Models(ctx, source.ID)
-			var found []route
-			if err == nil {
-				seen := make(map[string]bool)
-				for _, model := range models {
-					if !model.Free || !model.Ready || model.Provider != source.ID || model.UpstreamID == "" || model.ID != source.ID+"/"+model.UpstreamID || seen[model.ID] {
-						continue
-					}
-					if len(r.allowed) > 0 && !r.allowed[model.ID] {
-						continue
-					}
-					seen[model.ID] = true
-					found = append(found, route{source: source, model: model})
-				}
-			}
-			completed <- sourceDiscovery{id: source.ID, routes: found, err: err}
+			completed <- r.discoverSource(ctx, source)
 		}()
 	}
 	catalog := catalogSnapshot{errors: make(map[string]error, len(r.sources))}
@@ -191,9 +275,36 @@ func (r *Router) refresh(ctx context.Context) catalogSnapshot {
 	return catalog
 }
 
+func (r *Router) discoverSource(ctx context.Context, source Source) sourceDiscovery {
+	timeout := 7 * time.Second
+	if source.ExplicitOnly {
+		// A cold CLI catalog can take longer to start than an HTTP request.
+		timeout = 20 * time.Second
+	}
+	lookup, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	models, err := r.upstream.Models(lookup, source.ID)
+	result := sourceDiscovery{id: source.ID, err: err}
+	if err != nil {
+		return result
+	}
+	seen := make(map[string]bool)
+	for _, model := range models {
+		if !model.Free || !model.Ready || model.Provider != source.ID || model.UpstreamID == "" || model.ID != source.ID+"/"+model.UpstreamID || seen[model.ID] {
+			continue
+		}
+		seen[model.ID] = true
+		group := modelIdentity(model.ID, model.UpstreamID)
+		if len(r.allowed) == 0 || r.allowed[model.ID] || r.allowed[group] {
+			result.routes = append(result.routes, route{source: source, model: model, groupID: group})
+		}
+	}
+	return result
+}
+
 func (r *Router) compare(a, b route) int {
-	x, xPreferred := r.prefer[a.model.ID]
-	y, yPreferred := r.prefer[b.model.ID]
+	x, xPreferred := r.preference(a)
+	y, yPreferred := r.preference(b)
 	switch {
 	case xPreferred && !yPreferred:
 		return -1
@@ -201,9 +312,21 @@ func (r *Router) compare(a, b route) int {
 		return 1
 	case x != y:
 		return x - y
-	case a.source.Priority != b.source.Priority:
-		return a.source.Priority - b.source.Priority
-	default:
-		return strings.Compare(a.model.ID, b.model.ID)
 	}
+	if x, y := modelQualityRank(a.groupID), modelQualityRank(b.groupID); x != y {
+		return x - y
+	}
+	if a.source.Priority != b.source.Priority {
+		return a.source.Priority - b.source.Priority
+	}
+	return strings.Compare(a.model.ID, b.model.ID)
+}
+
+func (r *Router) preference(candidate route) (int, bool) {
+	routeRank, exact := r.prefer[candidate.model.ID]
+	groupRank, grouped := r.prefer[candidate.groupID]
+	if exact && (!grouped || routeRank < groupRank) {
+		return routeRank, true
+	}
+	return groupRank, grouped
 }

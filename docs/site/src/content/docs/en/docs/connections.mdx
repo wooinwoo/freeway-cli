@@ -6,13 +6,21 @@ Each adapter calls one service and reports models, responses, usage, and errors.
 
 ## HTTP providers
 
-In the Freeway chat, press F4 or enter `/providers` to see key setup, eligible free models, and rate limits for the current gateway. Press Ctrl+R to check again after changing credentials.
+In a chat using the automatically started gateway, press F4 and select a provider to replace a key, sign in again with its official CLI, disconnect it or change Auto participation. Press Ctrl+R to recheck and see each provider update as its check finishes.
+
+An Auto-excluded provider remains available for manual selection in F2. Confirming disconnect removes the key stored by Freeway and stops routing even if its environment variable remains set. Official CLI sign-in remains available to the official CLI.
+
+Provider allowance appears when reported by the provider. Local requests are counted by Freeway for the current UTC day.
+
+Older Freeway versions cannot use the provider credential store while a disconnect or Auto exclusion rule is active. Clear those rules in this version before rolling back if the old version needs provider access.
 
 ~~~sh
 freeway providers auth kilo
 freeway providers auth groq --from-env --confirm-free
 freeway providers models kilo
 freeway providers quota all
+freeway providers manage groq exclude-auto
+freeway providers manage groq include-auto
 ~~~
 
 Keys are accepted through hidden input, provider environment variables, or `--stdin`, never command-line arguments. Configuration success does not prove live inference success.
@@ -31,9 +39,15 @@ Keys are accepted through hidden input, provider environment variables, or `--st
 
 A new key clears the old free-account confirmation. Concurrent changes to the same credential return `credential_conflict` instead of restoring an old key. Check the account before retrying.
 
+## OpenRouter browser sign-in
+
+In F4, select OpenRouter and choose **Sign in in your browser**. Approve Freeway in OpenRouter to issue a key. Freeway verifies the key before saving it. On WSL or SSH, you can choose **Sign in with an authorization code** and paste the code shown by OpenRouter.
+
+Canceling approval or rejecting the new key preserves your previous connection. You can review or revoke issued keys in [OpenRouter key settings](https://openrouter.ai/keys).
+
 ## Official CLI providers
 
-In a chat using the automatically started gateway, press F2 and select **OpenCode…**, or type `/opencode`, to browse models through your installed OpenCode CLI. Select a model to use it for the current conversation.
+In a chat using the automatically started gateway, press F4 to check OpenCode's status. Choose a model in the F2 picker, or type `/opencode` to filter the picker to models offered by OpenCode.
 
 ~~~sh
 freeway providers install --only opencode

@@ -2,39 +2,33 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import errno
+import fcntl
 import http.server
 import json
 import os
-import queue
+from pathlib import Path
+import pty
 import select
 import signal
 import struct
 import subprocess
+import termios
 import threading
 import time
-from urllib.parse import parse_qs, urlsplit
 
-if os.name != "nt":
-    import fcntl
-    import pty
-    import termios
-
-MODEL = "fixture/selected"
+MODEL = "model/deepseek/deepseek-v4.1-flash"
+NEXT_MODEL = "model/minimax/minimax-m3.1-flash"
 ACTUAL_MODEL = "fixture/served"
 FIRST = "First fixture prompt"
 SECOND = "Stop this fixture stream"
 PARTIAL = "Visible streaming chunk"
-FOLLOWUP = " and buffered chunk"
-ANSWER = PARTIAL + FOLLOWUP + " and final text."
+ANSWER = PARTIAL + " and final text.\n" + "x" * 106 + "needle across rows"
 STOPPED = "Cancelled partial text"
 DRAFT = "Draft kept across restart"
 CONTINUED = "Resume context verified."
+MCP_QUESTION = "What value does the lookup tool report?"
+MCP_ANSWER = "The MCP lookup produced 42."
 SESSION = "/v1/conversations/fixture-session"
-PRIOR_FILE = "prior-context.txt"
-PRIOR_CONTENT = "QA_CONTEXT_ATTACHMENT"
-REFERENCE_FILE = "keep-context.txt"
-REFERENCE_CONTENT = "QA_RETAINED_ATTACHMENT"
-ROWS, COLUMNS = 24, 80
 
 
 class Terminal:
@@ -42,7 +36,7 @@ class Terminal:
         self.master, slave = pty.openpty()
         self.output = bytearray()
         try:
-            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLUMNS, 0, 0))
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 42, 120, 0, 0))
             self.child = subprocess.Popen(
                 [str(binary), *args], cwd=directory, env=dict(environment, TERM="xterm-256color"),
                 stdin=slave, stdout=slave, stderr=slave, start_new_session=True,
@@ -91,76 +85,23 @@ class Terminal:
         os.close(self.master)
 
 
-class WindowsTerminal:
-    def __init__(self, binary, args, environment, directory):
-        from winpty import PtyProcess
-
-        self.child = PtyProcess.spawn(
-            [str(binary), *args], cwd=str(directory), env=dict(environment, TERM="xterm-256color"),
-            dimensions=(ROWS, COLUMNS),
-        )
-        self.output = bytearray()
-        self.pending = queue.Queue()
-        self.reader = threading.Thread(target=self.read_pty, daemon=True)
-        self.reader.start()
-
-    def read_pty(self):
-        try:
-            while True:
-                data = self.child.read(65536)
-                if data:
-                    self.pending.put(data.encode())
-        except (EOFError, OSError):
-            pass
-
-    def send(self, keys):
-        self.child.write(keys.decode())
-
-    def paste(self, text, submit=False):
-        Terminal.paste(self, text, submit)
-
-    def read(self):
-        try:
-            self.output.extend(self.pending.get(timeout=.15))
-        except queue.Empty:
-            pass
-
-    def wait_text(self, text):
-        deadline = time.monotonic() + 12
-        while text.encode() not in self.output and time.monotonic() < deadline:
-            self.read()
-        assert text.encode() in self.output, f"missing {text!r} in terminal: {bytes(self.output[-1800:])!r}"
-
-    def exit(self):
-        self.send(b"/exit\r")
-        deadline = time.monotonic() + 12
-        while self.child.isalive() and time.monotonic() < deadline:
-            self.read()
-        assert not self.child.isalive() and self.child.exitstatus == 0, bytes(self.output[-5000:])
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        self.child.close(force=True)
-        self.reader.join(timeout=2)
-
-
 @contextmanager
 def gateway():
-    state = {"conversation": None, "requests": [], "errors": [], "loads": 0, "history_queries": [], "prompt_scopes": []}
+    state = {"conversation": None, "requests": [], "errors": [], "loads": 0, "mcp_calls": []}
     lock = threading.Lock()
     finish = threading.Event()
     disconnected = threading.Event()
     draft_saved = threading.Event()
+    first_save_pending = threading.Event()
+    release_first_save = threading.Event()
     closing = threading.Event()
+    state["outage_detail"] = ""
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def reply(self, value, status=200):
             body = json.dumps(value).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
-            self.send_header("X-Freeway-Features", "idempotent-saves, context-selection, context-file-selection, history-pages, prompt-history")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -176,50 +117,39 @@ def gateway():
         def do_GET(self):
             if not self.authorized():
                 return
-            url = urlsplit(self.path)
-            if url.path == "/v1/status":
-                self.reply({"status": "ok"})
-                return
-            if url.path == "/v1/models":
-                self.reply({"data": [
+            if self.path == "/v1/models":
+                with lock:
+                    outage_detail = state["outage_detail"]
+                models = [
                     {"id": "free/auto", "name": "Auto", "free": True, "ready": True},
-                    {"id": MODEL, "name": "Fixture Choice", "free": True, "ready": True},
+                    {"id": MODEL, "name": "Fixture Choice", "detail": "Kilo · OpenCode" + outage_detail, "free": True, "ready": True,
+                     "qualityRank": 1, "codingRank": 2, "reasoningRank": 1},
                     {"id": "fixture/paid", "name": "Paid route", "free": False, "ready": True},
-                ]})
+                ]
+                if not outage_detail:
+                    models.insert(2, {"id": NEXT_MODEL, "name": "Fixture Coding", "free": True, "ready": True,
+                                      "qualityRank": 2, "codingRank": 1, "reasoningRank": 2})
+                self.reply({"data": models})
                 return
             with lock:
                 chat = state["conversation"]
-                query = {key: values[0] for key, values in parse_qs(url.query).items()}
-                if url.path == SESSION and chat:
+                if self.path == SESSION and chat:
                     state["loads"] += 1
                     response = chat
-                elif url.path == "/v1/conversations":
-                    state["history_queries"].append(query)
-                    rows = [] if not chat else [dict(
+                elif self.path == "/v1/conversations":
+                    response = {"data": [] if not chat else [dict(
                         id=chat["id"], title=chat["title"], model=chat["model"],
                         updatedAt=datetime.now(timezone.utc).isoformat(),
                         workspace=chat["workspace"], messageCount=len(chat["messages"]),
-                    )]
-                    if chat and not query.get("mode"):
-                        for number in range(54):
-                            title = {49: "Second-page marker", 53: "QA retro archive result"}.get(number, f"Saved plan {number:03}")
-                            rows.append({"id": f"plan-{number:03}", "title": title, "workspace": chat["workspace"]})
-                        keyword = query.get("q", "").lower()
-                        rows = [row for row in rows if keyword in row["title"].lower()]
-                    start, limit = int(query.get("cursor", "0")), int(query.get("limit", len(rows) or 1))
-                    end = start + limit
-                    response = {"data": rows[start:end]}
-                    if end < len(rows):
-                        response["nextCursor"] = str(end)
-                elif url.path == "/v1/prompts":
-                    workspace = query.get("workspace", "")
-                    state["prompt_scopes"].append(workspace)
-                    response = {"data": ["Current project prompt" if workspace else "Other project prompt"], "incomplete": False}
+                    )]}
                 else:
                     response = None
             self.reply(response or {}, 200 if response is not None else 404)
 
         def do_POST(self):
+            if self.path == "/mcp-fixture":
+                self.mcp()
+                return
             if not self.authorized():
                 return
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -229,6 +159,33 @@ def gateway():
                 self.chat(body)
             else:
                 self.reply({}, 404)
+
+        def mcp(self):
+            if self.headers.get("Authorization"):
+                with lock:
+                    state["errors"].append("model gateway key reached MCP")
+                self.reply({}, 403)
+                return
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if "id" not in body:
+                self.send_response(202)
+                self.end_headers()
+                return
+            method = body["method"]
+            if method == "initialize":
+                result = {"protocolVersion": "2025-11-25", "capabilities": {"tools": {}},
+                          "serverInfo": {"name": "lookup-fixture", "version": "1"}}
+            elif method == "tools/list":
+                result = {"tools": [{"name": "fixture_lookup", "description": "Look up a fixture value.",
+                          "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}]}
+            elif method == "tools/call":
+                with lock:
+                    state["mcp_calls"].append(body["params"])
+                result = {"content": [{"type": "text", "text": "lookup value: 42"}]}
+            else:
+                self.reply({}, 400)
+                return
+            self.reply({"jsonrpc": "2.0", "id": body["id"], "result": result})
 
         def do_PUT(self):
             if not self.authorized():
@@ -240,8 +197,6 @@ def gateway():
 
         def save(self, body, creating=False):
             with lock:
-                if not self.headers.get("Idempotency-Key"):
-                    state["errors"].append("missing save key")
                 previous = state["conversation"]
                 valid = previous is None if creating else (
                     previous is not None and body.get("id") == previous["id"]
@@ -257,17 +212,16 @@ def gateway():
                 else:
                     state["errors"].append("unexpected conversation revision")
             status = (201 if creating else 200) if valid else 409
+            if creating and valid:
+                first_save_pending.set()
+                if not release_first_save.wait(15) or closing.is_set():
+                    return
             self.reply(body if valid else {"error": {"code": "chat_conflict"}}, status)
 
         def chat(self, body):
             with lock:
                 state["requests"].append(body)
-            prompt = body["messages"][-1]["content"].split("\n\nAttached file (reference data):", 1)[0]
-            if prompt == FIRST and body["max_tokens"] > 128:
-                self.reply({"error": {
-                    "code": "local_token_budget", "message": "Fixture reply limit", "maxOutputTokens": 128,
-                }}, 429)
-                return
+            prompt = body["messages"][-1]["content"]
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
@@ -291,12 +245,20 @@ def gateway():
                 return
             if prompt == FIRST:
                 delta(PARTIAL)
-                delta(FOLLOWUP)
                 if not finish.wait(15) or closing.is_set():
                     return
-                delta(ANSWER[len(PARTIAL + FOLLOWUP):])
+                delta(ANSWER[len(PARTIAL):])
             elif prompt == DRAFT:
                 delta(CONTINUED)
+            elif prompt.startswith("Question:\n" + MCP_QUESTION):
+                if "Tool catalog (JSON):" in prompt and "fixture_lookup" in prompt and FIRST not in prompt:
+                    delta(json.dumps({"tool": 1, "arguments": {"query": "fixed value"}}))
+                elif "MCP result (JSON):" in prompt and "lookup value: 42" in prompt:
+                    delta(MCP_ANSWER)
+                else:
+                    with lock:
+                        state["errors"].append("MCP request lacked the expected tool catalog or result")
+                    return
             else:
                 with lock:
                     state["errors"].append(f"unexpected test prompt: {prompt!r}")
@@ -311,49 +273,98 @@ def gateway():
         thread = threading.Thread(target=server.serve_forever)
         thread.start()
         try:
-            yield f"http://127.0.0.1:{server.server_port}", state, lock, finish, disconnected, draft_saved
+            yield f"http://127.0.0.1:{server.server_port}", state, lock, finish, disconnected, draft_saved, first_save_pending, release_first_save
         finally:
             closing.set()
             finish.set()
+            release_first_save.set()
             server.shutdown()
             thread.join(timeout=5)
 
 
 def connected_smoke(program, environment, base):
-    terminal_type = WindowsTerminal if os.name == "nt" else Terminal
-    (base / PRIOR_FILE).write_text(PRIOR_CONTENT, encoding="utf-8")
-    (base / REFERENCE_FILE).write_text(REFERENCE_CONTENT, encoding="utf-8")
-    with gateway() as (url, state, lock, finish, disconnected, draft_saved):
-        connected = dict(environment, FREEWAY_URL=url, FREEWAY_API_KEY="fixture-key")
-        with terminal_type(program, [], connected, base) as terminal:
+    with gateway() as (url, state, lock, finish, disconnected, draft_saved, first_save_pending, release_first_save):
+        connected = dict(environment, FREEWAY_URL=url, FREEWAY_API_KEY="fixture-key", NO_COLOR="", COLORTERM="truecolor")
+        with Terminal(program, [], connected, base) as terminal:
+            terminal.wait_text("Language / 언어")
+            terminal.send(b"\r")
+            terminal.wait_text("Choose a color theme")
+            terminal.send(b"\r")
             terminal.wait_text("Ready")
             terminal.send(b"/model\r")
             terminal.wait_text("Fixture Choice")
+            terminal.output.clear()
+            terminal.send(b"\x14")  # Ctrl+T switches the active comparison immediately.
+            terminal.wait_text("Coding")
+            terminal.send(b"\x1b[B")
+            terminal.wait_text("Terminal-Bench 4.0")
+            terminal.output.clear()
+            terminal.send(b"\x14")
+            terminal.wait_text("HLE-Diamond")
+            terminal.output.clear()
+            terminal.send(b"\x14")
+            terminal.wait_text("Intelligence Index")
+            terminal.send(b"\x1b[A\x1b[A")  # Back to Auto, then explicitly select Fixture Choice.
             terminal.send(b"\x1b[B\r")  # Select Fixture Choice below Auto.
-            terminal.wait_text("Choice selected")
-            terminal.send(f"/attach {PRIOR_FILE}\r".encode())
-            terminal.wait_text("@" + PRIOR_FILE)
-            terminal.send(f"/attach {REFERENCE_FILE}\r".encode())
-            terminal.wait_text("@" + REFERENCE_FILE)
             terminal.paste(FIRST, submit=True)
-            terminal.wait_text("retry with up to 128")
-            terminal.send(b"\x1b[15~")  # F5 retries with the gateway's suggested output limit.
+            assert first_save_pending.wait(10), "the first question did not wait for its initial save"
+            terminal.send(f"/model {NEXT_MODEL}\r".encode())
+            terminal.wait_text("Next question · Fixture Coding")
+            release_first_save.set()
             terminal.wait_text(PARTIAL)
-            terminal.wait_text("fixture · served")
-            terminal.wait_text("buffered chunk")
             finish.set()
             terminal.wait_text("Response complete")
-            terminal.send(b"\x1b[19~")
-            terminal.wait_text("Request context")
-            terminal.wait_text("All earlier turns")
-            terminal.send(b"\r")
-            terminal.wait_text("last 8")
-            terminal.paste(PRIOR_FILE)
-            terminal.wait_text("Included · Enter to exclude")
-            terminal.send(b"\r")
-            terminal.wait_text("Excluded · Enter to include")
-            terminal.send(b"\x1b[19~")
+            terminal.output.clear()
+            terminal.send(b"/find needle across rows\r")
+            terminal.wait_text("1/1")
+            terminal.output.clear()
+            terminal.send(b"\x1b")
+            terminal.wait_text("Response complete")
+            preferences = Path(connected["XDG_CONFIG_HOME"]) / "freeway" / "preferences.json"
+            terminal.output.clear()
+            terminal.send(b"/theme\r")
+            terminal.wait_text("Enter save")
+            terminal.output.clear()
+            terminal.send(b"\x1b[B")
+            terminal.wait_text("\x1b]11;#111813\x07")
+            assert json.loads(preferences.read_text())["theme"] == "system"
+            terminal.output.clear()
+            terminal.send(b"\x1b[B")
+            terminal.wait_text("\x1b]11;#f5faf6\x07")
+            terminal.output.clear()
+            terminal.send(b"\x1b")
+            terminal.wait_text("\x1b]111\x07")
+            assert json.loads(preferences.read_text())["theme"] == "system"
+            terminal.output.clear()
+            terminal.send(b"/theme\r")
+            terminal.wait_text("Enter save")
+            terminal.send(b"\x1b[B\r")
+            terminal.wait_text("Preference saved")
+            assert json.loads(preferences.read_text())["theme"] == "dark"
+            with lock:
+                state["outage_detail"] = " · Outage fixture"
+            terminal.output.clear()
+            terminal.send(b"\x1bOQ")  # F2 checks the current catalog.
+            terminal.wait_text("Outage fixture")
+            terminal.send(b"\x1b")
+            terminal.wait_text("Selected model unavailable")
             terminal.paste(SECOND, submit=True)
+            terminal.wait_text(SECOND)
+            with lock:
+                state["outage_detail"] = " · Still unavailable"
+            terminal.output.clear()
+            terminal.send(b"\x1bOQ")
+            terminal.wait_text("Still unavailable")
+            with lock:
+                state["outage_detail"] = ""
+            terminal.send(b"\x12")  # Ctrl+R rechecks all routes without choosing another model.
+            terminal.wait_text("Fixture Coding")
+            with lock:
+                assert len(state["requests"]) == 1, "an unavailable model caused an inference request"
+            terminal.output.clear()
+            terminal.send(b"\x1b")
+            terminal.wait_text(SECOND)
+            terminal.send(b"\r")
             terminal.wait_text(STOPPED)
             terminal.paste(DRAFT)
             terminal.wait_text(DRAFT)
@@ -369,26 +380,19 @@ def connected_smoke(program, environment, base):
         with lock:
             saved = state["conversation"]
             assert saved["workspace"] == str(base)
-            assert saved["model"] == MODEL and saved["revision"] > 1
-            assert saved["context"] == {"recentTurns": 8, "includePriorAttachments": True, "excludedPriorFiles": [PRIOR_FILE]}
+            assert saved["model"] == NEXT_MODEL and saved["revision"] > 1
             replies = [(m["content"], m["status"]) for m in saved["messages"] if m["role"] == "assistant"]
             assert replies == [(ANSWER, "done"), (STOPPED, "stopped")], replies
-            assert saved["messages"][1]["model"] == ACTUAL_MODEL
+            assert (saved["messages"][1]["model"], saved["messages"][1]["provider"]) == (ACTUAL_MODEL, "fixture")
             assert saved["stash"]["text"] == DRAFT
-            assert not state["history_queries"], "starting a fresh session should skip history"
             loads_before = state["loads"]
 
-        with terminal_type(program, ["resume", saved["id"]], connected, base) as terminal:
-            terminal.wait_text(ANSWER)
+        with Terminal(program, ["resume", saved["id"]], connected, base) as terminal:
+            terminal.wait_text(ANSWER.splitlines()[0])
+            terminal.wait_text("across rows")
+            terminal.wait_text("fixture · served")  # The reply header names the route that answered.
             terminal.wait_text(STOPPED)
             terminal.wait_text("Ready")
-            terminal.send(b"\x1b[19~")
-            terminal.wait_text("Request context")
-            terminal.paste(PRIOR_FILE)
-            terminal.wait_text("Excluded · Enter to include")
-            terminal.send(b"\x1b[19~")
-            terminal.send(b"/context attachments off\r")
-            terminal.wait_text("Context updated for this conversation")
             terminal.send(b"\x13")
             terminal.wait_text(DRAFT)
             terminal.send(b"\r")
@@ -396,22 +400,11 @@ def connected_smoke(program, environment, base):
             terminal.wait_text("Response complete")
             terminal.exit()
 
-        with terminal_type(program, ["continue"], connected, base) as terminal:
-            terminal.wait_text(CONTINUED)
-            terminal.wait_text("Ready")
-            terminal.exit()
-
         with lock:
             assert not state["errors"], state["errors"]
             assert state["loads"] > loads_before
             sent = state["requests"]
-            assert len(sent) == 4 and all(r["model"] == MODEL and r["stream"] for r in sent), sent
-            assert [r["max_tokens"] for r in sent] == [4096, 128, 4096, 4096], sent
-            assert all(PRIOR_CONTENT in r["messages"][-1]["content"] for r in sent[:2]), sent[:2]
-            assert all(REFERENCE_CONTENT in r["messages"][-1]["content"] for r in sent[:2]), sent[:2]
-            assert all(PRIOR_FILE not in m["content"] and PRIOR_CONTENT not in m["content"]
-                       for r in sent[2:] for m in r["messages"]), sent[2:]
-            assert REFERENCE_CONTENT in sent[2]["messages"][0]["content"], sent[2]
+            assert [r["model"] for r in sent] == [MODEL, NEXT_MODEL, NEXT_MODEL] and all(r["stream"] for r in sent), sent
             assert sent[-1]["messages"] == [
                 {"role": "user", "content": FIRST},
                 {"role": "assistant", "content": ANSWER},
@@ -420,37 +413,25 @@ def connected_smoke(program, environment, base):
             ], sent[-1]
             final = state["conversation"]["messages"][-1]
             assert (final["content"], final["status"], final["model"]) == (CONTINUED, "done", ACTUAL_MODEL)
-            assert not state["prompt_scopes"], "saved prompts should load on demand"
 
-        with terminal_type(program, ["resume"], connected, base) as terminal:
-            terminal.wait_text("Saved plan 000")
-            terminal.paste("Retro archive")
-            terminal.wait_text("QA retro archive result")
+        mcp_config = preferences.parent / "mcp-servers.json"
+        mcp_config.write_text(json.dumps([{"endpoint": url + "/mcp-fixture"}]))
+        with Terminal(program, ["resume", saved["id"]], connected, base) as terminal:
+            terminal.wait_text("Ready")
+            terminal.paste("/mcp-ask " + MCP_QUESTION, submit=True)
+            terminal.wait_text("Approve MCP tool call")
+            terminal.wait_text('"fixed value"')
+            terminal.send(b"\r\x1b")
+            terminal.wait_text("MCP call canceled")
+            with lock:
+                assert not state["mcp_calls"]
             terminal.output.clear()
-            terminal.send(b"\x15")  # Ctrl+U clears the search before browsing the next page.
-            terminal.wait_text("Saved plan 000")
-            terminal.send(b"\x1b[F")
-            terminal.wait_text("Load more conversations")
-            terminal.send(b"\r")
-            terminal.wait_text("Second-page marker")
-            terminal.output.clear()
-            terminal.send(b"\x1b")
-            terminal.wait_text("Ctrl+R prompts")
-            terminal.send(b"\x12")
-            terminal.wait_text("Current project prompt")
-            terminal.send(b"\x01")
-            terminal.wait_text("Other project prompt")
-            terminal.output.clear()
-            terminal.send(b"\x1b")
-            terminal.wait_text("Ctrl+R prompts")
+            terminal.paste("/mcp-ask " + MCP_QUESTION, submit=True)
+            terminal.wait_text("F8 run tool")
+            terminal.send(b"\x1b[19~")
+            terminal.wait_text(MCP_ANSWER)
             terminal.exit()
-
         with lock:
-            assert state["history_queries"][:2] == [
-                {"workspace": str(base), "mode": "lookup", "q": saved["id"], "limit": "50"},
-                {"workspace": str(base), "mode": "latest", "limit": "1"},
-            ], state["history_queries"]
-            assert any(q.get("cursor") == "50" for q in state["history_queries"]), state["history_queries"]
-            assert any(q.get("q") == "Retro archive" for q in state["history_queries"]), state["history_queries"]
-            assert state["prompt_scopes"] == [str(base), ""], state["prompt_scopes"]
-    print("Connected TUI (80x24): retry, SSE, per-file context, restart, history paging and project prompt search passed.")
+            assert state["mcp_calls"] == [{"name": "fixture_lookup", "arguments": {"query": "fixed value"}}]
+            assert not state["errors"], state["errors"]
+    print("Connected TUI: verified ranking, model selection during save, route recovery, streaming, draft restoration, and approved MCP answers.")

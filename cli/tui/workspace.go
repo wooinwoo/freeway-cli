@@ -15,13 +15,15 @@ import (
 
 const latestButtonLabel = " ↓ Jump to latest "
 
+func (m Model) latestLabel() string { return m.tr(latestButtonLabel, " ↓ 최신 메시지로 ") }
+
 func (m Model) showLatestButton() bool {
 	return m.usable() && !m.modelsFocused && m.find == nil && len(m.messages) > 0 && !m.chat.AtBottom()
 }
 
 func (m Model) latestButtonPosition() (x, y int) {
 	// Leave one border cell and the right corner at the end of the composer.
-	return m.width - 4 - ansi.StringWidth(latestButtonLabel), 3 + m.chat.Height()
+	return m.width - 4 - ansi.StringWidth(m.latestLabel()), 3 + m.chat.Height()
 }
 
 func padCells(text string, width int) string {
@@ -31,7 +33,7 @@ func padCells(text string, width int) string {
 
 func (m Model) workspaceView() tea.View {
 	if !m.usable() {
-		view := tea.NewView(lipgloss.NewStyle().MaxWidth(max(1, m.width)).MaxHeight(max(1, m.height)).Render("Resize to at least 44×12. Ctrl+C to quit."))
+		view := tea.NewView(lipgloss.NewStyle().MaxWidth(max(1, m.width)).MaxHeight(max(1, m.height)).Render(m.tr("Resize to at least 44×12. Ctrl+C to quit.", "44×12 이상으로 늘리세요. Ctrl+C로 종료합니다.")))
 		view.AltScreen = true
 		return view
 	}
@@ -39,135 +41,183 @@ func (m Model) workspaceView() tea.View {
 	width := m.width - 4
 	accent := lipgloss.NewStyle().Foreground(c.accent)
 	muted := lipgloss.NewStyle().Foreground(c.muted)
-	brand := accent.Bold(true).Render("↗ freeway") + muted.Render("  /  AI workspace")
+	brand := accent.Bold(true).Render("↗ freeway") + muted.Render(m.tr("  /  AI workspace", "  /  AI 작업 공간"))
 	if m.projectLabel != "" {
 		brand = accent.Bold(true).Render("↗ freeway") + muted.Render("  /  "+terminalSafe(m.projectLabel))
 	}
 	title := m.session.Title
 	if title == "" {
-		title = "New conversation"
+		title = m.tr("New conversation", "새 대화")
 	}
 	title = terminalSafe(title)
 	if width >= 70 {
 		caption := ansi.Truncate(title, min(36, width/3), "…")
 		brand = padCells(brand, width-ansi.StringWidth(caption)) + muted.Render(caption)
 	}
-	model := lipgloss.NewStyle().Foreground(c.text).Render(ansi.Truncate(m.modelLabel(), max(10, width-16), "…")) + accent.Bold(true).Render("  FREE")
+	modelID := m.selected
+	if m.busy && !m.modelsFocused && m.responseTarget.model != "" {
+		modelID = m.responseTarget.model
+	}
+	model := lipgloss.NewStyle().Foreground(c.text).Render(ansi.Truncate(m.modelLabel(modelID), max(10, width-16), "…")) + accent.Bold(true).Render(m.tr("  FREE", "  무료"))
 	if m.modelsFocused {
 		model += muted.Render("  ·  " + m.menuTitle())
 	} else if m.busy {
-		model += muted.Render("  ·  generating")
+		if modelID != m.selected {
+			next := m.tr(" · Next ", " · 다음 ")
+			currentWidth := (width - ansi.StringWidth(next)) / 2
+			text := lipgloss.NewStyle().Foreground(c.text)
+			model = text.Render(ansi.Truncate(m.modelLabel(modelID), currentWidth, "…")) + muted.Render(next) +
+				text.Render(ansi.Truncate(m.modelLabel(m.selected), width-currentWidth-ansi.StringWidth(next), "…"))
+		} else {
+			model += muted.Render(m.tr("  ·  generating", "  ·  응답 생성 중"))
+		}
 	}
-	header := lipgloss.JoinVertical(lipgloss.Left, ansi.Truncate(brand, width, "…"), ansi.Truncate(model, width, "…"), "")
+	header := lipgloss.JoinVertical(lipgloss.Left, ansi.Truncate(brand, width, "…"), ansi.Truncate(model, width, "…"), muted.Render(ansi.Truncate(terminalSafe(m.providerSummary()), width, "…")))
 	body := m.chat.View()
-	if len(m.messages) == 0 && (!m.modelsFocused || m.inlineFilePicker()) {
+	if len(m.messages) == 0 && (!m.modelsFocused || m.inlineFilePicker() || m.themePicker()) {
 		body = m.welcomeView(width, m.chat.Height())
 	}
 	composer := m.composerView(width)
-	help := "Enter send · Ctrl+R prompts · F3 find · F4 providers · F8 context · ? help"
+	if m.themePicker() {
+		rows := []string{header, body}
+		if m.height-3-m.chat.Height()-m.models.list.Height()-2 >= lipgloss.Height(composer) {
+			rows = append(rows, composer)
+		}
+		hint := m.tr("↑↓ preview · Enter save · Esc cancel", "↑↓ 미리보기 · Enter 저장 · Esc 취소")
+		items := lipgloss.NewStyle().Height(m.models.list.Height()).MaxHeight(m.models.list.Height()).Render(m.menuItemsView())
+		rows = append(rows, accent.Bold(true).Render(m.menuTitle()), items, muted.Render(ansi.Truncate(hint, width, "…")))
+		screen := lipgloss.NewStyle().Width(m.width).MaxHeight(m.height).Padding(0, 2).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+		view := tea.NewView(screen)
+		view.AltScreen, view.MouseMode = true, tea.MouseModeCellMotion
+		return view
+	}
+	help := m.tr("Enter send · Ctrl+R prompts · F3 find · F4 providers · F8 context · ? help", "Enter 보내기 · Ctrl+R 기록 · F3 찾기 · F4 공급처 · F8 문맥 · ? 도움말")
 	if width < 76 {
-		help = "↑↓ history · F4 providers · F8 context · ? help"
+		help = m.tr("↑↓ history · F4 providers · F8 context · ? help", "↑↓ 기록 · F4 공급처 · F8 문맥 · ? 도움말")
 	}
 	if m.commandPending() {
-		help = "↑↓ choose command · Tab complete · Enter run"
+		help = m.tr("↑↓ choose command · Tab complete · Enter run", "↑↓ 명령 선택 · Tab 완성 · Enter 실행")
 	}
 	if m.busy {
-		help = "Tab queue follow-up · Up take back · Esc stop · F1 help"
+		help = m.tr("Tab queue follow-up · Up take back · Esc stop · F1 help", "Tab 후속 질문 예약 · ↑ 되돌리기 · Esc 중지 · F1 도움말")
 	}
 	if m.inlineFilePicker() {
 		query := m.menuQuery
 		if query == "" {
-			query = "Type a project path…"
+			query = m.tr("Type a project path…", "프로젝트 경로를 입력하세요…")
 		}
-		label := "File @"
-		search := accent.Bold(true).Render(label) + ansi.Truncate(terminalSafe(query), width-len(label), "…")
+		label := m.tr("File @", "파일 @")
+		labelWidth := ansi.StringWidth(label)
+		search := accent.Bold(true).Render(label) + ansi.Truncate(terminalSafe(query), width-labelWidth, "…")
 		items := lipgloss.NewStyle().Height(m.models.list.Height()).MaxHeight(m.models.list.Height()).Render(m.menuItemsView())
-		context := muted.Render(ansi.Truncate("↑↓ choose · Enter/Tab attach · Esc keep typing", width, ""))
+		context := muted.Render(ansi.Truncate(m.tr("↑↓ choose · Enter/Tab attach · Esc keep typing", "↑↓ 선택 · Enter/Tab 첨부 · Esc 돌아가기"), width, ""))
 		screen := lipgloss.NewStyle().Width(m.width).Padding(0, 2).Render(lipgloss.JoinVertical(lipgloss.Left, header, body, composer, search, items, context))
 		view := tea.NewView(screen)
 		view.AltScreen, view.MouseMode = true, tea.MouseModeCellMotion
-		view.Cursor = tea.NewCursor(2+min(width-1, len(label)+ansi.StringWidth(m.menuQuery)), 3+m.chat.Height()+lipgloss.Height(composer))
+		view.Cursor = tea.NewCursor(2+min(width-1, labelWidth+ansi.StringWidth(m.menuQuery)), 3+m.chat.Height()+lipgloss.Height(composer))
 		return view
 	}
 	if m.modelsFocused {
 		query := m.menuQuery
 		if query == "" {
-			query = "Type to search…"
+			query = m.tr("Type to search…", "입력해서 검색…")
 		}
 		title := accent.Bold(true).Render(m.menuTitle())
-		columns := "MODEL"
-		detail := "CONNECTION / DESCRIPTION"
+		columns := m.tr("MODEL", "모델")
+		detail := m.tr("CONNECTION / DESCRIPTION", "공급처 / 설명")
 		switch m.menu {
-		case openCodePicker:
-			columns, detail = "MODEL", "CONNECTION"
 		case "providers":
-			columns, detail = "PROVIDER", "KEY / AVAILABILITY"
+			columns, detail = m.tr("PROVIDER", "공급처"), m.tr("KEY / AVAILABILITY", "인증 / 사용 가능 여부")
 		case "files":
-			columns, detail = "FILE", "PROJECT CONTEXT"
+			columns, detail = m.tr("FILE", "파일"), m.tr("PROJECT CONTEXT", "프로젝트 경로")
 		case "prompts":
-			columns, detail = "PROMPT", "FULL TEXT"
+			columns, detail = m.tr("PROMPT", "질문"), m.tr("FULL TEXT", "전체 내용")
 		case "queue":
-			columns, detail = "FOLLOW-UP", "ACTION"
+			columns, detail = m.tr("FOLLOW-UP", "후속 질문"), m.tr("ACTION", "동작")
 		case "history":
-			columns, detail = "CONVERSATION", "UPDATED / PREVIEW"
+			columns, detail = m.tr("CONVERSATION", "대화"), m.tr("UPDATED / PREVIEW", "수정 시간 / 미리보기")
 		case "settings":
-			columns, detail = "PRESET", "DESCRIPTION"
+			columns, detail = m.tr("PRESET", "설정"), m.tr("DESCRIPTION", "설명")
 		case "context":
-			columns, detail = "ITEM", "INCLUSION"
+			columns, detail = m.tr("ITEM", "항목"), m.tr("INCLUSION", "포함 여부")
 		case "help":
-			columns, detail = "KEY / COMMAND", "ACTION"
+			columns, detail = m.tr("KEY / COMMAND", "키 / 명령"), m.tr("ACTION", "동작")
 		}
 		nameWidth := menuNameWidth(width)
 		columnLine := muted.Render(padCells("    "+columns, nameWidth+6) + "  " + detail)
 		search := muted.Render("⌕ ") + lipgloss.NewStyle().Foreground(c.text).Render(ansi.Truncate(terminalSafe(query), width-2, "…"))
-		help = "↑↓ move · Enter select · type to search · Esc back"
+		help = m.tr("↑↓ move · Enter select · type to search · Esc back", "↑↓ 이동 · Enter 선택 · 입력해서 검색 · Esc 뒤로")
 		if m.menuQuickSelect() {
-			help = "↑↓ move · Enter select · 1–9 quick select · Esc back"
+			help = m.tr("↑↓ move · Enter select · 1–9 quick select · Esc back", "↑↓ 이동 · Enter 선택 · 1–9 빠른 선택 · Esc 뒤로")
 		}
 		if m.menu == "models" {
-			help = "F4 providers · ↑↓ move · Enter select · Esc back"
+			help = m.tr("Ctrl+T ranking · Enter select · Esc back", "Ctrl+T 순위 · Enter 선택 · Esc 뒤로")
+			if m.gateway != nil {
+				help = m.tr("Ctrl+R refresh · Ctrl+T ranking · F4 providers · Enter select", "Ctrl+R 갱신 · Ctrl+T 순위 · F4 공급처 · Enter 선택")
+				if width < 62 {
+					help = m.tr("Ctrl+R refresh · Ctrl+T rank · F4", "Ctrl+R 갱신 · Ctrl+T 순위 · F4")
+				}
+			}
 		}
 		if m.menu == "providers" {
-			help = "Ctrl+R refresh · ↑↓ move · type to filter · Esc back"
-		}
-		if m.menu == openCodePicker {
-			help = "Enter select · Ctrl+R refresh · Esc back"
+			help = m.tr("F2 models · Ctrl+R refresh · Esc back", "F2 모델 · Ctrl+R 새로고침 · Esc 뒤로")
+			if m.providerSetup != "" {
+				help = m.tr("Enter manage · F2 models · Ctrl+R refresh · Esc back", "Enter 관리 · F2 모델 · Ctrl+R 새로고침 · Esc 뒤로")
+				if m.busy {
+					help = m.tr("Esc back, then Esc to stop the reply", "Esc로 채팅 복귀 · 다시 Esc로 응답 중지")
+				}
+			}
 		}
 		if m.menu == "history" {
-			scope := "this project"
+			scope := m.tr("this project", "현재 프로젝트")
 			if m.allSessions {
-				scope = "all projects"
+				scope = m.tr("all projects", "모든 프로젝트")
 			}
-			help = "Enter resume · Ctrl+A " + scope + " · type to search · Esc back"
+			help = m.tr("Enter resume · Ctrl+A ", "Enter 이어서 · Ctrl+A ") + scope + m.tr(" · type to search · Esc back", " · 입력해서 검색 · Esc 뒤로")
 			if m.historyPage.paged {
-				help = "Enter open · Ctrl+A " + scope + " · Ctrl+R refresh · Esc"
+				help = m.tr("Enter open · Ctrl+A ", "Enter 열기 · Ctrl+A ") + scope + m.tr(" · Ctrl+R refresh · Esc", " · Ctrl+R 새로고침 · Esc")
 				if m.historyPage.cursor != "" {
-					help = "Enter open · Ctrl+A " + scope + " · End more · Esc"
+					help = m.tr("Enter open · Ctrl+A ", "Enter 열기 · Ctrl+A ") + scope + m.tr(" · End more · Esc", " · End 더 보기 · Esc")
 				}
 			}
 		}
 		if m.menu == "prompts" {
-			scope := "this project"
+			scope := m.tr("this project", "현재 프로젝트")
 			if m.allPrompts {
-				scope = "all projects"
+				scope = m.tr("all projects", "모든 프로젝트")
 			}
-			help = "Enter restore · Esc back"
+			help = m.tr("Enter restore · Esc back", "Enter 복원 · Esc 뒤로")
 			if _, ok := m.gateway.(scopedPromptGateway); ok {
-				help = "Enter restore · Ctrl+A " + scope + " · Esc"
+				help = m.tr("Enter restore · Ctrl+A ", "Enter 복원 · Ctrl+A ") + scope + " · Esc"
 			}
 			if m.promptsIncomplete && !m.promptsLoading {
-				help = "Some saved prompts unavailable · Ctrl+R retry · Esc"
+				help = m.tr("Some saved prompts unavailable · Ctrl+R retry · Esc", "일부 저장된 질문을 읽지 못함 · Ctrl+R 다시 시도 · Esc")
 			}
 		}
 		if m.menu == "context" {
-			help = "↑↓ inspect · Enter change setting · Esc back"
+			help = m.tr("↑↓ inspect · Enter change setting · Esc back", "↑↓ 확인 · Enter 설정 변경 · Esc 뒤로")
 		}
 		footer := padCells(muted.Render(ansi.Truncate(oneLine(m.menuDetail()), max(1, width-12), "…")), max(1, width-12)) + muted.Render(padCells(menuPosition(m), 12))
 		rows := []string{header, title, search, ansi.Truncate(columnLine, width, ""), m.menuItemsView()}
-		if height := m.promptPreviewHeight(); height > 0 {
-			preview := []string{accent.Render("Prompt preview")}
+		if m.menu == "models" {
+			var evidence string
+			if item, ok := m.models.list.SelectedItem().(modelItem); ok && item.ID != "free/auto" {
+				evidence = m.rankingEvidence(item)
+			}
+			rows = append(rows, muted.Render(padCells(evidence, width)))
+		}
+		if height := m.menuPreviewHeight(); height > 0 {
+			label := m.tr("Prompt preview", "질문 미리보기")
+			if m.menu == "history" {
+				label = m.tr("Last saved question", "마지막으로 저장한 질문")
+			}
+			preview := []string{accent.Render(label)}
 			if item, ok := m.models.list.SelectedItem().(modelItem); ok {
-				preview = append(preview, strings.Split(ansi.Hardwrap(terminalSafe(item.Detail), max(1, width-2), true), "\n")...)
+				text := item.Detail
+				if m.menu == "history" {
+					text = m.historyPreview(item.ID)
+				}
+				preview = append(preview, strings.Split(ansi.Hardwrap(terminalSafe(text), max(1, width-2), true), "\n")...)
 			}
 			rows = append(rows, muted.Height(height).MaxHeight(height).Render(strings.Join(preview[:min(height, len(preview))], "\n")))
 		}
@@ -181,7 +231,7 @@ func (m Model) workspaceView() tea.View {
 	}
 	status := m.statusLabel()
 	if m.gateway == nil {
-		status = "Preview · Not sent"
+		status = m.tr("Preview · Not sent", "미리보기 · 전송 안 함")
 	}
 	if m.toast != "" && time.Now().Before(m.toastUntil) {
 		status = m.toast
@@ -221,9 +271,9 @@ func (m Model) welcomeView(width, height int) string {
 	c := grooveColors()
 	accent := lipgloss.NewStyle().Foreground(c.accent)
 	muted := lipgloss.NewStyle().Foreground(c.muted)
-	lines := []string{accent.Bold(true).Render("↗"), lipgloss.NewStyle().Foreground(c.text).Bold(true).Render("What would you like to make?"), "", muted.Render("Think, build, and find answers with free AI."), "", accent.Render("/models") + muted.Render("  choose a model     ") + accent.Render("/history") + muted.Render("  pick up where you left off")}
+	lines := []string{accent.Bold(true).Render("↗"), lipgloss.NewStyle().Foreground(c.text).Bold(true).Render(m.tr("What would you like to make?", "무엇을 만들어 볼까요?")), "", muted.Render(m.tr("Think, build, and find answers with free AI.", "무료 AI로 생각하고 만들고 답을 찾아보세요.")), "", accent.Render("/models") + muted.Render(m.tr("  choose a model     ", "  모델 선택     ")) + accent.Render("/history") + muted.Render(m.tr("  pick up where you left off", "  이전 대화 이어서"))}
 	if width < 65 {
-		lines = []string{accent.Bold(true).Render("↗ freeway"), lipgloss.NewStyle().Foreground(c.text).Bold(true).Render("What would you like to make?"), "", muted.Render("/models choose · /history resume")}
+		lines = []string{accent.Bold(true).Render("↗ freeway"), lipgloss.NewStyle().Foreground(c.text).Bold(true).Render(m.tr("What would you like to make?", "무엇을 만들어 볼까요?")), "", muted.Render(m.tr("/models choose · /history resume", "/models 모델 선택 · /history 대화 기록"))}
 	}
 	for i, line := range lines {
 		line = ansi.Truncate(line, width, "…")
@@ -239,18 +289,18 @@ func (m Model) composerView(width int) string {
 	border := lipgloss.NewStyle().Foreground(c.border)
 	muted := lipgloss.NewStyle().Foreground(c.muted)
 	title := lipgloss.NewStyle().Foreground(c.userAccent).Bold(true)
-	label := " Message "
+	label := m.tr(" Message ", " 메시지 ")
 	if m.busy {
-		label = " Next message · Esc to stop response "
+		label = m.tr(" Next message · Esc to stop response ", " 다음 메시지 · Esc로 응답 중지 ")
 	}
 	if m.commandPending() {
-		label = " Command "
+		label = m.tr(" Command ", " 명령 ")
 	}
 	button, buttonWidth := "", 0
 	rightBorder := "╮"
 	if m.showLatestButton() {
-		button = lipgloss.NewStyle().Foreground(c.active).Background(c.selected).Bold(true).Render(latestButtonLabel)
-		buttonWidth = ansi.StringWidth(latestButtonLabel)
+		button = lipgloss.NewStyle().Foreground(c.active).Background(c.selected).Bold(true).Render(m.latestLabel())
+		buttonWidth = ansi.StringWidth(m.latestLabel())
 		rightBorder = "─╮"
 		label = ansi.Truncate(label, width-5-buttonWidth, "…")
 	}
@@ -276,52 +326,62 @@ func menuNameWidth(width int) int { return min(38, max(14, (width-8)*44/100)) }
 
 func oneLine(text string) string { return strings.Join(strings.Fields(terminalSafe(text)), " ") }
 
-func (m Model) promptPreviewHeight() int {
-	if m.menu == "prompts" && m.height >= 18 {
+func (m Model) menuPreviewHeight() int {
+	if (m.menu == "prompts" || m.menu == "history") && m.height >= 18 {
 		return 4
 	}
 	return 0
+}
+
+func (m Model) historyPreview(id string) string {
+	for _, chat := range m.history {
+		if chat.ID == id {
+			return chat.Preview
+		}
+	}
+	return ""
 }
 
 func (m Model) menuItemsView() string {
 	if len(m.models.list.Items()) > 0 {
 		return m.models.View()
 	}
-	message := "No matches. Try another search."
+	message := m.tr("No matches. Try another search.", "검색 결과가 없습니다. 다른 검색어를 입력하세요.")
+	if m.menu == "models" && m.gateway != nil {
+		switch {
+		case m.loadingModels:
+			message = m.tr("Loading models…", "모델 불러오는 중…")
+		case len(m.availableModels) == 0:
+			message = m.tr("No models available · F4 providers", "사용 가능한 모델 없음 · F4 공급처")
+		}
+	}
 	if m.menu == "history" {
 		switch {
 		case m.historyPage.loading:
-			message = "Searching saved conversations…"
+			message = m.tr("Searching saved conversations…", "저장된 대화 검색 중…")
 		case m.historyPage.err != "":
 			message = m.historyPage.err
 		case m.menuQuery == "":
-			message = "No saved conversations in this scope."
+			message = m.tr("No saved conversations in this scope.", "이 범위에 저장된 대화가 없습니다.")
 		}
 	}
 	if m.menu == "prompts" {
 		switch {
 		case m.promptsLoading:
-			message = "Loading saved prompts…"
+			message = m.tr("Loading saved prompts…", "저장된 질문 불러오는 중…")
 		case m.promptsIncomplete:
-			message = "Saved prompts could not be read. Ctrl+R to retry."
+			message = m.tr("Saved prompts could not be read. Ctrl+R to retry.", "저장된 질문을 읽지 못했습니다. Ctrl+R로 다시 시도하세요.")
 		case m.menuQuery == "":
-			message = "No saved prompts in this scope."
+			message = m.tr("No saved prompts in this scope.", "이 범위에 저장된 질문이 없습니다.")
 		}
 	}
 	if m.menu == "files" && m.filesLoading {
-		message = "Scanning project files…"
+		message = m.tr("Scanning project files…", "프로젝트 파일 검색 중…")
 	}
 	if m.menu == "providers" && m.menuQuery == "" {
 		message = m.menuDetail()
 		if message == "" {
-			message = "No providers enabled in this gateway."
-		}
-	}
-	if m.menu == openCodePicker && m.menuQuery == "" {
-		if m.openCodeLoading {
-			message = "Loading OpenCode models…"
-		} else if m.openCodeError != "" {
-			message = m.openCodeError
+			message = m.tr("No providers enabled in this gateway.", "이 게이트웨이에 설정된 공급처가 없습니다.")
 		}
 	}
 	style := lipgloss.NewStyle().Foreground(grooveColors().muted)
@@ -380,11 +440,8 @@ func (m *Model) applyMenuFilter() tea.Cmd {
 }
 
 func (m *Model) selectMenuItem(id string) {
-	if m.menu == "models" && isOpenCodeModel(id) {
-		id = openCodePicker
-	}
 	for i, item := range m.models.list.Items() {
-		if item.(modelItem).ID == id {
+		if row, ok := item.(modelItem); ok && row.ID == id {
 			m.models.list.Select(i)
 			return
 		}
@@ -419,6 +476,9 @@ func (m Model) appendMenuQuery(text string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) menuKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
+	if m.themePicker() {
+		return m, nil, false
+	}
 	name := msg.String()
 	if name == "ctrl+u" {
 		m.menuQuery = ""

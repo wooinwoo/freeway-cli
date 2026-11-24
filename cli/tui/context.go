@@ -86,6 +86,10 @@ func (p requestContext) visit(visit func(client.Message)) {
 		if !includesModelContext(message) {
 			continue
 		}
+		if message.Role == "assistant" && strings.HasPrefix(message.Model, "mcp/") {
+			// Generated images stay local. The model only learns that one exists.
+			message = client.Message{Role: "assistant", Content: "An image was generated and saved locally."}
+		}
 		message.Files = p.priorFiles(message.Files)
 		visit(message)
 	}
@@ -191,7 +195,7 @@ func (m Model) contextItems() []list.Item {
 	}
 	items := []list.Item{
 		modelItem{ID: "summary", Name: "Next request", Detail: fmt.Sprintf(
-			"%s · %d/%d earlier turns · %d earlier files · %d draft files", m.modelLabel(), includedTurns, totalTurns, earlierFiles, draftFiles)},
+			"%s · %d/%d earlier turns · %d earlier files · %d draft files", m.modelLabel(m.selected), includedTurns, totalTurns, earlierFiles, draftFiles)},
 		modelItem{ID: "turns", Name: turns, Detail: "Enter cycles all, last 8, last 3, and no earlier turns. /context last N sets a custom count."},
 		modelItem{ID: "attachments", Name: "Earlier attachments · " + attachmentMode, Detail: "Enter toggles earlier file contents. Draft attachments stay in the next request."},
 	}

@@ -1,33 +1,26 @@
 #!/usr/bin/env python3
-"""Exercise an installed native client with isolated data and a local gateway fixture."""
+"""Exercise a built Linux/macOS client archive with isolated data and a local gateway fixture."""
 import argparse
 import hashlib
 import http.server
 import json
 import os
 from pathlib import Path
-from gateway_scenario import Terminal, WindowsTerminal, connected_smoke
+from gateway_scenario import Terminal, connected_smoke
+from image_scenario import image_smoke
+from provider_scenario import openrouter_login_smoke, provider_smoke
 import subprocess
 import tarfile
 import tempfile
 import threading
-import zipfile
+import urllib.request
 
 
 def preview(binary, environment, directory):
-    terminal_type = WindowsTerminal if os.name == "nt" else Terminal
-    recovery = Path(environment["HOME"]) / ".freeway" / "recovery"
-    recovery.mkdir(parents=True)
-    (recovery / "conversation-fixture.json").write_text(json.dumps({
-        "draft": "Recovered fixture draft",
-        "draftFiles": [{"path": "recovered.md", "content": "fixture attachment"}],
-    }), encoding="utf-8")
-    with terminal_type(binary, ["--preview"], environment, directory) as terminal:
+    with Terminal(binary, ["--preview"], environment, directory) as terminal:
         terminal.wait_text("freeway")
-        terminal.send(b"\x1b[18~")  # F7 restores the latest recovery draft.
-        terminal.wait_text("Recovered fixture draft")
-        terminal.wait_text("recovered.md")
-        terminal.send(b"\x1a")  # Ctrl+Z restores the previous empty composer.
+        terminal.send(b"/reconnect\r")
+        terminal.wait_text("Start freeway without --preview")
         terminal.exit()
 
 
@@ -40,57 +33,103 @@ def main():
     with tempfile.TemporaryDirectory(prefix="freeway-native-smoke-") as temporary:
         base = Path(temporary).resolve()
         package = base / "package"
-        windows = os.name == "nt"
-        executable = "freeway.exe" if windows else "freeway"
-        if windows:
-            with zipfile.ZipFile(archive) as source:
-                source.extract(executable, package)
-                source.extract("manifest.json", package)
-        else:
-            with tarfile.open(archive, "r:gz") as source:
-                names = source.getnames()
-                assert not any(name.endswith((".js", ".mjs")) or "node_modules" in name or "POC" in name for name in names)
-                source.extractall(package, filter="data")
+        with tarfile.open(archive, "r:gz") as source:
+            names = source.getnames()
+            assert not any(name.endswith((".js", ".mjs")) or "node_modules" in name or "POC" in name for name in names)
+            source.extractall(package, filter="data")
         version = json.loads((package / "manifest.json").read_text())["version"]
-        program = base / "app" / "bin" / executable
-        environment = dict(os.environ, HOME=str(base / "home"), USERPROFILE=str(base / "home"), PATH="/nonexistent")
+        program = base / "app" / "bin" / "freeway"
+        config = base / "config"
+        environment = dict(os.environ, HOME=str(base / "home"), XDG_CONFIG_HOME=str(config), PATH="/nonexistent", LC_ALL="C")
         for key in list(environment):
             if key.startswith("FREEWAY_"):
                 del environment[key]
 
         def run(binary, *arguments, success=True, env=None):
-            result = subprocess.run([str(binary), *arguments], cwd=base, env=env or environment, encoding="utf-8", capture_output=True, timeout=20)
+            result = subprocess.run([str(binary), *arguments], cwd=base, env=env or environment, text=True, capture_output=True, timeout=20)
             if success:
                 assert result.returncode == 0, (arguments, result.stdout, result.stderr)
             else:
                 assert result.returncode != 0, arguments
             return result
 
-        if windows:
-            architecture = archive.stem.rsplit("_", 1)[-1]
-            setup = archive.with_name(f"Freeway-Setup-{'x64' if architecture == 'amd64' else architecture}.exe")
-            body = setup.read_bytes()
-            damaged = base / "damaged-setup.exe"
-            damaged.write_bytes(body[:-1] + bytes([body[-1] ^ 1]))
-            corrupt_root = base / "damaged setup target"
-            run(damaged, "--quiet", "--root", str(corrupt_root), success=False)
-            assert not (corrupt_root / "install.json").exists()
-            assert run(setup, "--quiet", "--root", str(base / "app")).stdout.strip() == version
-            assert run(setup, "--quiet", "--root", str(base / "app")).stdout.strip() == version
-        else:
-            run(package / executable, "install", "--archive", str(archive), "--sha256", expected, "--root", str(base / "app"))
+        run(package / "freeway", "install", "--archive", str(archive), "--sha256", expected, "--root", str(base / "app"))
         assert run(program, "--version").stdout.strip() == version
+        preferences = config / "freeway" / "preferences.json"
+        assert not preferences.exists()
+        with Terminal(program, [], environment, base) as terminal:
+            terminal.wait_text("Language / 언어")
+            terminal.send(b"j\r")
+            terminal.wait_text("색상 테마 선택")
+            terminal.output.clear()
+            terminal.send(b"\x1b")
+            terminal.wait_text("Language / 언어")
+            terminal.send(b"\x03")
+            assert terminal.child.wait(timeout=10) == 0
+        assert not preferences.exists()
+
+        appearance_env = dict(environment, XDG_CONFIG_HOME=str(base / "appearance-config"), NO_COLOR="", COLORTERM="truecolor")
+        install = ["install", "--archive", str(archive), "--sha256", expected, "--root", str(base / "app-interactive")]
+        with Terminal(package / "freeway", install, appearance_env, base) as terminal:
+            terminal.wait_text("Language / 언어")
+            terminal.send(b"j\r")
+            terminal.wait_text("색상 테마 선택")
+            for color in ("#111813", "#f5faf6"):
+                terminal.output.clear()
+                terminal.send(b"j")
+                terminal.wait_text(f"\x1b]11;{color}\x07")
+            terminal.send(b"j\r")
+            assert terminal.child.wait(timeout=10) == 0
+        saved_path = base / "appearance-config" / "freeway" / "preferences.json"
+        assert json.loads(saved_path.read_text()) == {"language": "ko", "theme": "indigo"}
+        with Terminal(package / "freeway", install, appearance_env, base) as terminal:
+            assert terminal.child.wait(timeout=10) == 0
+        assert json.loads(saved_path.read_text()) == {"language": "ko", "theme": "indigo"}
+        with Terminal(base / "app-interactive" / "bin" / "freeway", ["--preview"], appearance_env, base) as terminal:
+            terminal.wait_text("무엇을 만들어 볼까요?")
+            terminal.exit()
+
+        offline = dict(
+            appearance_env,
+            FREEWAY_GATEWAY_HOME=str(base / "offline-gateway"),
+            FREEWAY_PROVIDER_HOME=str(base / "offline-providers"),
+            FREEWAY_GATEWAY_PROVIDERS="groq",
+            GROQ_API_KEY="",
+        )
+        info = json.loads(run(program, "gateway", "connect", env=offline).stdout)
+        request = urllib.request.Request(
+            info["url"] + "/v1/conversations",
+            json.dumps({
+                "title": "Offline conversation", "workspace": str(base), "model": "free/auto",
+                "settings": {"maxTokens": 4096, "temperature": 0.6},
+                "messages": [], "draft": "Offline draft restored", "draftFiles": [], "queued": [], "stash": None,
+            }).encode(),
+            {"Authorization": "Bearer " + info["apiKey"], "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            assert response.status == 201
+        with Terminal(program, [], offline, base) as terminal:
+            terminal.wait_text("저장한 대화 열기")
+            terminal.send(b"kk\r")
+            terminal.wait_text("Offline conversation")
+            terminal.send(b"\r")
+            terminal.wait_text("Offline draft restored")
+            terminal.send(b"\x03")
+            terminal.send(b"\x03")
+            assert terminal.child.wait(timeout=10) == 0
+
         assert "Node.js or POC runtime is required" in run(program, "--help").stdout
+        image_smoke(program, appearance_env, base)
+        provider_smoke(program, appearance_env, base)
+        openrouter_login_smoke(program, appearance_env, base)
         run(program, "providers", "--help")
         preview(program, environment, base)
         connected_smoke(program, environment, base)
-        if windows:
-            return  # Windows installer and launcher lifecycles are covered by release_smoke.py.
         requests = []
 
         class Gateway(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path == "/v1/status":
+                if self.path == "/v1/status":  # The client probes gateway features first; this fixture is a legacy gateway.
                     self.send_response(404)
                     self.end_headers()
                     return
@@ -129,7 +168,7 @@ def main():
         (active / "freeway-providers").write_bytes(b"damaged")
         run(program, "--version", success=False)
         marker = base / "home" / ".freeway" / "accounts.json"
-        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.parent.mkdir(parents=True)
         marker.write_text("preserve user data")
         run(program, "uninstall")
         assert marker.read_text() == "preserve user data"

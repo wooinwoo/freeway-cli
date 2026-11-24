@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -13,25 +14,33 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/atotto/clipboard"
 	"github.com/wooinwoo/freeway-cli/cli/client"
+	"github.com/wooinwoo/freeway-cli/cli/imagegen"
 )
 
-type command struct{ Name, Description string }
+type command struct{ Name, Description, Korean string }
 
 var commands = []command{
-	{"/model", "Choose a model"}, {"/history", "Search and resume conversations"}, {"/new", "New conversation"},
-	{"/providers", "Check provider connections and free models"},
-	{"/context", "Review or limit what the next request sends"},
-	{"/opencode", "Choose an OpenCode model for this chat"},
-	{"/continue", "Continue the latest session in this project"},
-	{"/find", "Find text in this conversation"},
-	{"/retry", "Regenerate the last response"}, {"/retry-shorter", "Retry with a shorter reply"}, {"/copy", "Copy the last response"}, {"/code", "Copy the last code block"},
-	{"/export", "Export conversation to Markdown"}, {"/settings", "Response length"},
-	{"/auto", "Choose a free model automatically"}, {"/reconnect", "Reconnect"}, {"/save", "Save now"},
-	{"/recover", "Save a plain-text recovery file and continue after a failed save"},
-	{"/restore", "Recover a draft from the latest backup or a given JSON path"},
-	{"/help", "Keyboard shortcuts and commands"}, {"/exit", "Save and quit"},
-	{"/attach", "Attach a project text file"}, {"/detach", "Remove attached files"}, {"/queue", "Review queued follow-ups"},
-	{"/editor", "Edit the draft in VISUAL or EDITOR"}, {"/prompts", "Search prompt history"}, {"/fork", "Continue in a new conversation"}, {"/rename", "Rename this conversation"}, {"/resume", "Open a saved conversation"}, {"/clear", "Start a new conversation"},
+	{"/model", "Choose a model", "모델 선택"}, {"/history", "Search and resume conversations", "대화 검색 및 이어서 시작"}, {"/new", "New conversation", "새 대화"},
+	{"/providers", "Check provider connections and free models", "공급처 연결 및 무료 모델 확인"},
+	{"/context", "Review or limit what the next request sends", "다음 요청에 보낼 문맥 확인 및 제한"},
+	{"/opencode", "Filter models by OpenCode", "OpenCode 모델 검색"},
+	{"/continue", "Continue the latest session in this project", "현재 프로젝트의 최근 대화 이어서"},
+	{"/find", "Find text in this conversation", "현재 대화에서 검색"},
+	{"/retry", "Regenerate the last response", "마지막 응답 다시 생성"}, {"/retry-shorter", "Retry with a shorter reply", "더 짧은 응답으로 다시 시도"}, {"/copy", "Copy the last response", "마지막 응답 복사"}, {"/code", "Copy the last code block", "마지막 코드 블록 복사"},
+	{"/export", "Export conversation to Markdown", "대화를 Markdown으로 내보내기"}, {"/settings", "Preferences and response length", "화면 설정 및 응답 길이"},
+	{"/language", "Change interface language", "표시 언어 변경"}, {"/theme", "Change terminal colors", "색상 테마 변경"},
+	{"/auto", "Choose a free model automatically", "무료 모델 자동 선택"}, {"/reconnect", "Reconnect", "다시 연결"}, {"/save", "Save now", "즉시 저장"},
+	{"/recover", "Save a plain-text recovery file and continue after a failed save", "저장 실패 뒤 일반 텍스트 복구 파일을 저장하고 계속"},
+	{"/restore", "Recover a draft from the latest backup or a given JSON path", "최근 백업이나 지정한 JSON 경로에서 초안 복구"},
+	{"/image", "Generate an image from text", "텍스트로 이미지 생성"},
+	{"/image-setup", "Connect an MCP image tool", "MCP 이미지 도구 연결"},
+	{"/mcp", "Manage MCP server connections", "MCP 서버 연결 관리"},
+	{"/mcp-ask", "Send a question and tool summaries to the selected model", "질문과 도구 요약을 선택한 모델에 보내기"},
+	{"/image-open", "Open the latest generated image", "최근 생성 이미지 열기"},
+	{"/image-path", "Copy the latest image path", "최근 이미지 경로 복사"},
+	{"/help", "Keyboard shortcuts and commands", "단축키와 명령"}, {"/exit", "Save and quit", "저장하고 종료"},
+	{"/attach", "Attach a project text file", "프로젝트의 텍스트 파일 첨부"}, {"/detach", "Remove attached files", "첨부 파일 제거"}, {"/queue", "Review queued follow-ups", "예약한 후속 질문 확인"},
+	{"/editor", "Edit the draft in VISUAL or EDITOR", "VISUAL 또는 EDITOR에서 초안 편집"}, {"/prompts", "Search prompt history", "질문 기록 검색"}, {"/fork", "Continue in a new conversation", "현재 대화를 분기"}, {"/rename", "Rename this conversation", "현재 대화 이름 변경"}, {"/resume", "Open a saved conversation", "저장된 대화 열기"}, {"/clear", "Start a new conversation", "새 대화 시작"},
 }
 
 type tickMsg time.Time
@@ -69,6 +78,14 @@ func (m Model) commandSuggestion() command {
 
 func (m Model) shortcut(key tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	keyName := key.String()
+	if keyName == "f2" || keyName == "alt+p" {
+		next, cmd := m.openModels()
+		return next, cmd, true
+	}
+	if keyName == "f9" && !m.modelsFocused {
+		next, cmd := m.setupImage()
+		return next, cmd, true
+	}
 	if keyName == "f8" {
 		if m.modelsFocused && m.menu == "context" {
 			next, cmd := m.changeFocus(false)
@@ -87,8 +104,12 @@ func (m Model) shortcut(key tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return next, cmd, true
 	}
 	if m.modelsFocused {
-		if keyName == "ctrl+r" && m.menu == openCodePicker {
-			next, cmd := m.showOpenCode()
+		if keyName == "ctrl+r" && m.menu == "models" && m.gateway != nil {
+			next, cmd := m.refreshModelPicker(false)
+			return next, cmd, true
+		}
+		if keyName == "ctrl+t" && m.menu == "models" {
+			next, cmd := m.changeModelRanking()
 			return next, cmd, true
 		}
 		if keyName == "ctrl+a" && m.menu == "history" {
@@ -171,12 +192,6 @@ func (m Model) shortcut(key tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return next, cmd, true
 	case "f1":
 		next, cmd := m.openMenu("help")
-		return next, cmd, true
-	case "f2":
-		next, cmd := m.changeFocus(true)
-		return next, cmd, true
-	case "alt+p":
-		next, cmd := m.changeFocus(true)
 		return next, cmd, true
 	case "ctrl+g":
 		next, cmd := m.openEditor()
@@ -301,14 +316,24 @@ func newMessage(role, text string) client.Message {
 
 func (m Model) submit() (tea.Model, tea.Cmd) {
 	if m.attachmentsPending > 0 {
-		m.notify("Attaching files. Your question has not been sent yet.")
+		m.notify(m.tr("Attaching files. Your question has not been sent yet.", "파일을 첨부하고 있습니다. 질문은 전송 전입니다."))
 		return m, nil
 	}
 	text := strings.TrimSpace(m.prompt.Value())
 	if text == "" {
 		return m, nil
 	}
-	if strings.HasPrefix(text, "/") {
+	imagePrompt, imageRequest := imagegen.Prompt(text, m.selected == "free/auto")
+	mcpPrompt, mcpRequest := mcpQuestion(text)
+	if imageRequest && m.busy {
+		m.notify(m.tr("Wait for the current response. Your image prompt is kept.", "현재 응답이 끝날 때까지 기다리세요. 이미지 요청은 보존했습니다."))
+		return m, nil
+	}
+	if mcpRequest && m.busy {
+		m.notify(m.tr("Wait for the current response. Your MCP question is kept.", "현재 응답이 끝날 때까지 기다리세요. MCP 질문은 보존했습니다."))
+		return m, nil
+	}
+	if strings.HasPrefix(text, "/") && !imageRequest && !mcpRequest {
 		parts := strings.SplitN(text, " ", 2)
 		name := parts[0]
 		arg := ""
@@ -326,7 +351,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 			}
 		}
 		if !known {
-			m.notify("Unknown command. Open /help to see available commands.")
+			m.notify(m.tr("Unknown command. Open /help to see available commands.", "알 수 없는 명령입니다. /help에서 명령을 확인하세요."))
 			return m, nil
 		}
 		m.prompt.Reset()
@@ -335,19 +360,33 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		return m.execute(name, arg)
 	}
 	if m.loadingSession || m.loadingHistory {
-		m.notify("Loading conversations. Your draft is safe.")
+		m.notify(m.tr("Loading conversations. Your draft is safe.", "대화를 불러오는 중입니다. 초안은 보존됩니다."))
 		return m, nil
 	}
-	if m.gateway != nil && !m.ready && !isOpenCodeModel(m.selected) {
-		m.notify("Checking your connection again. Your draft is safe.")
+	if mcpRequest {
+		if issue := m.validateMCPQuestion(mcpPrompt, m.files); issue != "" {
+			m.notify(issue)
+			return m, nil
+		}
+	}
+	if imageRequest {
+		if _, issue := m.validateImageRequest(imagePrompt, m.files); issue != "" {
+			m.notify(issue)
+			return m, nil
+		}
+	} else if m.gateway != nil && !m.ready {
+		m.notify(m.tr("Checking your connection again. Your draft is safe.", "연결을 다시 확인하고 있습니다. 초안은 보존됩니다."))
 		if m.loadingModels {
 			return m, nil
 		}
 		m.loadingModels = true
 		return m, m.loadModels()
+	} else if issue := m.textRouteIssue(); issue != "" {
+		m.notify(issue)
+		return m, nil
 	}
 	if len(m.messages) > 194 {
-		m.notify("This conversation is getting long. Press Alt+N to start a new one.")
+		m.notify(m.tr("This conversation is getting long. Press Alt+N to start a new one.", "대화가 길어졌습니다. Alt+N으로 새 대화를 시작하세요."))
 		return m, nil
 	}
 	if m.editingAt >= 0 {
@@ -371,28 +410,53 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 
 func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 	if (m.loadingSession || m.loadingHistory) && name != "/help" {
-		m.notify("Loading conversations. Your work is safe.")
+		m.notify(m.tr("Loading conversations. Your work is safe.", "대화를 불러오는 중입니다. 작업 내용은 보존됩니다."))
 		return m, nil
 	}
 	switch name {
+	case "/image":
+		m.prompt.SetValue("/image ")
+		m.prompt.CursorEnd()
+		m.layout()
+		return m, nil
+	case "/image-setup":
+		return m.setupImage()
+	case "/mcp":
+		return m.openMCPManager("mcp", "manage")
+	case "/mcp-ask":
+		m.prompt.SetValue("/mcp-ask ")
+		m.prompt.CursorEnd()
+		m.layout()
+		m.notify(m.tr("Your question and saved tool summaries are shared with the selected model.", "질문과 저장된 MCP 도구 요약을 선택한 모델에 보냅니다."))
+		return m, nil
+	case "/image-open":
+		return m.latestImage(false)
+	case "/image-path":
+		return m.latestImage(true)
 	case "/model", "/models":
 		if arg != "" {
 			for _, model := range m.availableModels {
-				if model.ID == arg {
-					m.selected = arg
+				if model.ID == arg || slices.Contains(model.RouteIDs, arg) {
+					m.selected, m.listedSelection = model.ID, model.ID
 					m.dirty = true
-					m.notify(model.Name + " selected")
+					m.showModelSelection(model.Name)
 					return m, m.persist()
 				}
 			}
-			m.notify("Choose an available model from the list.")
+			m.notify(m.tr("Choose an available model from the list.", "목록에서 사용할 수 있는 모델을 선택하세요."))
 		}
-		return m.changeFocus(true)
+		return m.openModels()
 	case "/auto":
 		m.selected = "free/auto"
 		m.dirty = true
 		m.notice = ""
-		m.notify("Auto will find an available free connection.")
+		if issue := m.textRouteIssue(); issue != "" {
+			m.notify(issue)
+		} else if m.busy {
+			m.showModelSelection(m.modelLabel(m.selected))
+		} else {
+			m.notify(m.tr("Auto will find an available free connection.", "자동으로 사용 가능한 무료 연결을 찾습니다."))
+		}
 		m.renderMessages()
 		return m, m.persist()
 	case "/providers":
@@ -400,7 +464,10 @@ func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 	case "/context":
 		return m.contextCommand(arg)
 	case "/opencode":
-		return m.showOpenCode()
+		next, cmd := m.openModels()
+		m = next.(Model)
+		m.menuQuery, m.menuSearching = "OpenCode", true
+		return m, tea.Batch(cmd, m.applyMenuFilter())
 	case "/history":
 		return m.showHistory(false)
 	case "/find":
@@ -430,6 +497,8 @@ func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 			return m, m.persist()
 		}
 		return m.openMenu("settings")
+	case "/language", "/theme":
+		return m.openMenu(strings.TrimPrefix(name, "/"))
 	case "/help":
 		return m.openMenu("help")
 	case "/export":
@@ -448,13 +517,10 @@ func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 		return m.restoreRecovery(arg)
 	case "/reconnect":
 		if m.gateway == nil {
-			m.notify("Reconnect is available in connected mode.")
+			m.notify(m.tr("Start freeway without --preview to connect.", "연결하려면 --preview 옵션을 빼고 Freeway를 실행하세요."))
 			return m, nil
 		}
-		m.reconnectAttempts = 0
-		m.loadingModels = true
-		m.status = "Connecting"
-		return m, m.refreshModels(true)
+		return m.refreshModelPicker(true)
 	case "/exit":
 		return m.navigate("quit")
 	case "/exit!":
@@ -483,7 +549,7 @@ func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 		}
 		m.markDraftChanged()
 		m.layout()
-		m.notify("Attachments updated.")
+		m.notify(m.tr("Attachments updated.", "첨부를 갱신했습니다."))
 		return m, nil
 	case "/queue":
 		return m.reviewQueue(arg)
@@ -491,12 +557,12 @@ func (m Model) execute(name, arg string) (tea.Model, tea.Cmd) {
 		return m.navigate("fork")
 	case "/rename":
 		if arg == "" {
-			m.notify("Usage: /rename Your conversation title")
+			m.notify(m.tr("Usage: /rename Your conversation title", "사용법 /rename 새 대화 제목"))
 			return m, nil
 		}
 		runes := []rune(arg)
 		if len(runes) > 120 {
-			m.notify("Use a title of 120 characters or fewer.")
+			m.notify(m.tr("Use a title of 120 characters or fewer.", "제목은 120자 이내로 입력하세요."))
 			return m, nil
 		}
 		m.session.Title = arg
@@ -534,11 +600,11 @@ func (m Model) retryShorter() (tea.Model, tea.Cmd) {
 
 func (m Model) retryWithSettings(settings client.Settings) (tea.Model, tea.Cmd) {
 	if m.loadingSession || m.loadingHistory {
-		m.notify("Wait for the conversation to finish loading before retrying.")
+		m.notify(m.tr("Wait for the conversation to finish loading before retrying.", "대화를 다 불러온 뒤 다시 시도하세요."))
 		return m, nil
 	}
 	if m.busy {
-		m.notify("Press Esc to stop the current response first.")
+		m.notify(m.tr("Press Esc to stop the current response first.", "먼저 Esc로 현재 응답을 중지하세요."))
 		return m, nil
 	}
 	last := len(m.messages) - 1
@@ -546,11 +612,27 @@ func (m Model) retryWithSettings(settings client.Settings) (tea.Model, tea.Cmd) 
 		last--
 	}
 	if last < 0 {
-		m.notify("There is no question to regenerate yet.")
+		m.notify(m.tr("There is no question to regenerate yet.", "다시 보낼 질문이 없습니다."))
 		return m, nil
 	}
 	if m.gateway == nil {
-		m.notify("Preview mode does not send requests.")
+		m.notify(m.tr("Preview mode does not send requests.", "미리보기에서는 요청을 전송하지 않습니다."))
+		return m, nil
+	}
+	question := m.messages[last]
+	if prompt, asksMCP := mcpQuestion(question.Content); asksMCP {
+		if issue := m.validateMCPQuestion(prompt, question.Files); issue != "" {
+			m.notify(issue)
+			return m, nil
+		}
+	}
+	if prompt, image := imagegen.Prompt(question.Content, m.selected == "free/auto"); image {
+		if _, issue := m.validateImageRequest(prompt, question.Files); issue != "" {
+			m.notify(issue)
+			return m, nil
+		}
+	} else if issue := m.textRouteIssue(); issue != "" {
+		m.notify(issue)
 		return m, nil
 	}
 	m.messages = append([]client.Message(nil), m.messages[:last+1]...)
@@ -571,9 +653,9 @@ func (m Model) copyAnswer(codeOnly bool) (tea.Model, tea.Cmd) {
 	}
 	if content == "" {
 		if codeOnly {
-			m.notify("There is no code block to copy yet.")
+			m.notify(m.tr("There is no code block to copy yet.", "복사할 코드 블록이 없습니다."))
 		} else {
-			m.notify("There is no response to copy yet.")
+			m.notify(m.tr("There is no response to copy yet.", "복사할 응답이 없습니다."))
 		}
 		return m, nil
 	}
@@ -583,9 +665,9 @@ func (m Model) copyAnswer(codeOnly bool) (tea.Model, tea.Cmd) {
 	}
 	return m, func() tea.Msg {
 		err := write(content)
-		label := "Response copied."
+		label := m.tr("Response copied.", "응답을 복사했습니다.")
 		if codeOnly {
-			label = "Code copied."
+			label = m.tr("Code copied.", "코드를 복사했습니다.")
 		}
 		return actionResult{text: label, err: err}
 	}
@@ -621,7 +703,7 @@ func lastCode(text string) string {
 
 func (m Model) export(name string) (tea.Model, tea.Cmd) {
 	if len(m.messages) == 0 && m.prompt.Value() == "" && len(m.files) == 0 && len(m.queue) == 0 && m.stash == nil {
-		m.notify("There is no conversation to export yet.")
+		m.notify(m.tr("There is no conversation to export yet.", "내보낼 대화가 없습니다."))
 		return m, nil
 	}
 	if name == "" {
@@ -673,13 +755,13 @@ func (m Model) export(name string) (tea.Model, tea.Cmd) {
 		if err == nil {
 			err = closeErr
 		}
-		return actionResult{text: "Exported to " + path, err: err}
+		return actionResult{text: fmt.Sprintf(m.tr("Exported to %s", "대화를 내보냈습니다. %s"), path), err: err}
 	}
 }
 
 func (m Model) openMenu(kind string) (tea.Model, tea.Cmd) {
 	if m.busy && kind == "history" {
-		m.notify("Press Esc to stop the response before opening this menu.")
+		m.notify(m.tr("Press Esc to stop the response before opening this menu.", "Esc로 응답을 중지한 뒤 이 메뉴를 여세요."))
 		return m, nil
 	}
 	m.menu = kind
@@ -688,39 +770,71 @@ func (m Model) openMenu(kind string) (tea.Model, tea.Cmd) {
 	case "context":
 		items = m.contextItems()
 	case "settings":
-		for _, n := range []int{4096, 8192, 16384} {
-			items = append(items, modelItem{ID: fmt.Sprint(n), Name: fmt.Sprintf("Response length · %s", map[int]string{4096: "Standard", 8192: "Long", 16384: "Extended"}[n]), Detail: fmt.Sprintf("Up to %s output tokens", fmt.Sprint(n))})
+		items = append(items, modelItem{ID: "language", Name: m.tr("Language", "표시 언어")}, modelItem{ID: "theme", Name: m.tr("Color theme", "색상 테마")})
+		lengths := []string{m.tr("Standard", "표준"), m.tr("Long", "길게"), m.tr("Extended", "더 길게")}
+		for i, n := range []int{4096, 8192, 16384} {
+			items = append(items, modelItem{ID: fmt.Sprint(n), Name: fmt.Sprintf(m.tr("Response length · %s", "응답 길이 · %s"), lengths[i]), Detail: fmt.Sprintf(m.tr("Up to %d output tokens", "최대 출력 %d토큰"), n)})
 		}
+	case "language":
+		for _, option := range languageOptions() {
+			items = append(items, modelItem{ID: option.ID, Name: option.Label})
+		}
+	case "theme":
+		for _, option := range m.prefs.themeOptions() {
+			items = append(items, modelItem{ID: option.ID, Name: option.Label})
+		}
+	case "queue-clear":
+		items = append(items, modelItem{ID: "back", Name: m.tr("Keep queued prompts", "예약 유지")}, modelItem{
+			ID: "clear", Name: m.tr("Clear queue", "예약 비우기"),
+			Detail: m.tr("Remove queued prompts and their attachments", "예약한 질문과 첨부를 삭제"),
+		})
 	case "help":
 		for _, entry := range []command{
-			{"Enter / Ctrl+J", "Send / newline · Shift+Enter and Alt+Enter also work"},
-			{"↑↓ / Ctrl+P·N", "Move within multiline input; recall history at edges"},
-			{"Ctrl+R", "Search saved prompt history"},
-			{"F3 / /find", "Find a prompt or reply in the current conversation"},
-			{"F4 / /providers", "Check provider keys, models and usage limits"},
-			{"F5", "Retry the last question with a shorter reply"},
-			{"F6 / F7", "Save a recovery file / restore a draft"},
-			{"F8 / /context", "Review earlier turns and attachments sent to the model"},
-			{"Alt+H / Alt+N", "Resume a saved session / start a new one"},
-			{"Alt+P / Alt+R", "Choose a model / regenerate response"},
-			{"Ctrl+S / Ctrl+G", "Stash or restore draft / open external editor"},
-			{"Ctrl+U·K·W / Ctrl+Y", "Delete to line edge or previous word / yank deleted text"},
-			{"Ctrl+Z / Ctrl+Shift+Z", "Undo / redo input changes"},
-			{"Tab / ↑ while running", "Queue follow-up / take queued message back"},
-			{"@ / /attach", "Select a project file to include in the prompt"},
-			{"Esc Esc", "Clear draft; on empty input, edit last prompt in a fork"},
-			{"Ctrl+C", "Stop response; clear draft; press twice on empty input to quit"},
-			{"Ctrl+L / PgUp·PgDn", "Redraw / scroll conversation"},
-			{"/copy / /code", "Copy response / copy code block"},
-			{"Shift+drag", "Select text in the terminal"},
+			{"Enter / Ctrl+J", "Send / newline · Shift+Enter and Alt+Enter also work", "보내기 / 줄바꿈 · Shift+Enter와 Alt+Enter도 가능"},
+			{"↑↓ / Ctrl+P·N", "Move within multiline input; recall history at edges", "줄 사이 이동 · 입력의 처음과 끝에서 기록 탐색"},
+			{"Ctrl+R", "Search saved prompt history", "저장된 질문 기록 검색"},
+			{"F3 / /find", "Find a prompt or reply in the current conversation", "현재 대화에서 질문과 응답 검색"},
+			{"F4 / /providers", "Check provider keys, models and usage limits", "공급처 연결, 모델 및 할당량 확인"},
+			{"F5", "Retry the last question with a shorter reply", "더 짧은 응답으로 마지막 질문 다시 시도"},
+			{"F6 / F7", "Save a recovery file / restore a draft", "복구 파일 저장 / 초안 복원"},
+			{"F8 / /context", "Review earlier turns and attachments sent to the model", "모델에 보낼 이전 대화와 첨부 확인"},
+			{"F9 / /image-setup", "Connect an image tool and keep the draft", "초안을 보존하고 이미지 도구 연결"},
+			{"Alt+H / Alt+N", "Resume a saved session / start a new one", "저장된 대화 이어서 / 새 대화 시작"},
+			{"Alt+P / Alt+R", "Choose a model / regenerate response", "모델 선택 / 응답 다시 생성"},
+			{"Ctrl+S / Ctrl+G", "Stash or restore draft / open external editor", "초안 보관 또는 복원 / 외부 편집기 열기"},
+			{"Ctrl+U·K·W / Ctrl+Y", "Delete to line edge or previous word / yank deleted text", "줄 끝 또는 단어까지 삭제 / 삭제한 텍스트 붙여넣기"},
+			{"Ctrl+Z / Ctrl+Shift+Z", "Undo / redo input changes", "입력 되돌리기 / 다시 적용"},
+			{"Tab / ↑ while running", "Queue follow-up / take queued message back", "후속 질문 예약 / 예약 되돌리기"},
+			{"@ / /attach", "Select a project file to include in the prompt", "질문에 첨부할 프로젝트 파일 선택"},
+			{"Esc Esc", "Clear draft; on empty input, edit last prompt in a fork", "초안 비우기 · 입력이 비어 있으면 이전 질문 편집"},
+			{"Ctrl+C", "Stop response; clear draft; press twice on empty input to quit", "응답 중지 · 초안 비우기 · 빈 입력에서 두 번 눌러 종료"},
+			{"Ctrl+L / PgUp·PgDn", "Redraw / scroll conversation", "화면 다시 그리기 / 대화 스크롤"},
+			{"/copy / /code", "Copy response / copy code block", "응답 복사 / 코드 블록 복사"},
+			{"Shift+drag", "Select text in the terminal", "터미널에서 텍스트 선택"},
 		} {
-			items = append(items, modelItem{ID: "help", Name: entry.Name, Detail: entry.Description})
+			items = append(items, modelItem{ID: "help", Name: entry.Name, Detail: m.tr(entry.Description, entry.Korean)})
 		}
 		for _, c := range commands {
-			items = append(items, modelItem{ID: c.Name, Name: c.Name, Detail: c.Description})
+			items = append(items, modelItem{ID: c.Name, Name: c.Name, Detail: m.tr(c.Description, c.Korean)})
 		}
 	case "history":
 		items = m.historyItems()
+	}
+	if kind == "language" || kind == "theme" {
+		selected := 0
+		for i, item := range items {
+			entry := item.(modelItem)
+			if kind == "language" && entry.ID == m.prefs.Language || kind == "theme" && entry.ID == m.prefs.Theme {
+				entry.Detail = m.tr("Current", "현재 설정")
+				items[i], selected = entry, i
+				break
+			}
+		}
+		m.models.list.SetItems(items)
+		next, cmd := m.changeFocus(true)
+		m = next.(Model)
+		m.models.list.Select(selected)
+		return m, cmd
 	}
 	m.models.list.SetItems(items)
 	return m.changeFocus(true)
@@ -731,11 +845,8 @@ func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 	if kind == "context" {
 		return m.chooseContext(item)
 	}
-	if kind == "models" && item.ID == openCodePicker {
-		return m.showOpenCode()
-	}
 	if kind == "providers" {
-		return m, nil
+		return m.connectProvider(item.ID)
 	}
 	if kind == "files" {
 		query := m.fileSelection
@@ -747,7 +858,7 @@ func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 		m.recordUndo(draft)
 		if m.stash == nil && (draft.Text != "" || len(draft.Files) > 0) {
 			m.stash = &draft
-			m.notify("Prompt loaded. Ctrl+S restores your previous draft.")
+			m.notify(m.tr("Prompt loaded. Ctrl+S restores your previous draft.", "질문을 불러왔습니다. Ctrl+S로 이전 초안을 복원할 수 있습니다."))
 		}
 		m.prompt.SetValue(item.Detail)
 		m.prompt.MoveToEnd()
@@ -776,6 +887,17 @@ func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m.changeFocus(false)
 	}
+	if kind == "queue-clear" {
+		if item.ID != "clear" {
+			return m.changeFocus(false)
+		}
+		m.queue = nil
+		m.dirty = true
+		m.notify(m.tr("Queue cleared.", "예약을 비웠습니다."))
+		next, cmd := m.changeFocus(false)
+		m = next.(Model)
+		return m, tea.Batch(cmd, m.persist())
+	}
 	if kind == "help" {
 		if !strings.HasPrefix(item.ID, "/") {
 			m.notify(item.Detail)
@@ -795,9 +917,12 @@ func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 		return next.(Model).navigate("open:" + item.ID)
 	}
 	if kind == "settings" {
+		if item.ID == "language" || item.ID == "theme" {
+			return m.openMenu(item.ID)
+		}
 		fmt.Sscan(item.ID, &m.settings.MaxTokens)
 		m.dirty = true
-		m.notify(item.Name + " selected.")
+		m.notify(item.Name + m.tr(" selected.", " 선택됨"))
 		next, cmd := m.changeFocus(false)
 		model := next.(Model)
 		if model.busy {
@@ -805,13 +930,26 @@ func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 		}
 		return model, tea.Batch(cmd, model.persist())
 	}
-	m.selected = item.ID
+	if kind == "language" || kind == "theme" {
+		if kind == "language" {
+			m.prefs.Language = item.ID
+		} else {
+			m.prefs.Theme = item.ID
+		}
+		next, cmd := m.changeFocus(false)
+		m = next.(Model)
+		m.applyPreferences()
+		if err := m.prefs.Save(); err != nil {
+			m.notify(m.tr("Preference applied for this session. Could not save it.", "이번 실행에 설정을 적용했습니다. 설정 파일은 저장하지 못했습니다."))
+		} else {
+			m.notify(m.tr("Preference saved.", "설정을 저장했습니다."))
+		}
+		return m, cmd
+	}
+	m.selected, m.listedSelection = item.ID, item.ID
 	m.dirty = true
 	m.notice = ""
-	if kind == openCodePicker && !m.busy {
-		m.status = "Ready · OpenCode"
-	}
-	m.notify(item.Name + " selected")
+	m.showModelSelection(item.Name)
 	m.renderMessages()
 	next, cmd := m.changeFocus(false)
 	model := next.(Model)
@@ -821,50 +959,59 @@ func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 	return model, tea.Batch(cmd, model.persist())
 }
 
+func (m *Model) showModelSelection(name string) {
+	if m.busy {
+		m.notify(fmt.Sprintf(m.tr("Next question · %s", "다음 질문 모델 · %s"), name))
+		return
+	}
+	m.notify(name + m.tr(" selected", " 선택됨"))
+}
+
 func (m Model) menuTitle() string {
 	switch m.menu {
-	case openCodePicker:
-		return "OpenCode models"
 	case "providers":
-		return "Gateway providers"
+		return m.tr("Gateway providers", "게이트웨이 공급처")
 	case "files":
-		return "Project files"
+		return m.tr("Project files", "프로젝트 파일")
 	case "prompts":
-		return "Prompt history · Ctrl+R for next match"
+		return m.tr("Prompt history · Ctrl+R for next match", "질문 기록 · Ctrl+R 다음 결과")
 	case "queue":
-		return "Queued follow-ups · Enter to take back"
+		return m.tr("Queued follow-ups · Enter to take back", "예약된 후속 질문 · Enter로 되돌리기")
+	case "queue-clear":
+		return m.tr("Clear queued prompts?", "예약한 질문을 비울까요?")
 	case "history":
-		return "Conversations"
+		return m.tr("Conversations", "대화 기록")
 	case "help":
-		return "Keyboard shortcuts"
+		return m.tr("Keyboard shortcuts", "단축키")
 	case "settings":
-		return "Response settings"
+		return m.tr("Settings", "설정")
+	case "language":
+		return m.tr("Language", "표시 언어")
+	case "theme":
+		return m.tr("Color theme", "색상 테마")
 	case "context":
-		return "Request context"
+		return m.tr("Request context", "요청 문맥")
 	}
-	return "Models"
+	return m.rankingTitle()
 }
 func (m Model) menuDetail() string {
-	if m.menu == openCodePicker {
-		if m.openCodeLoading {
-			return "Loading OpenCode models…"
-		}
-		if m.openCodeError != "" {
-			return m.openCodeError
-		}
-		if item, ok := m.models.list.SelectedItem().(modelItem); ok {
-			return item.ID
-		}
-	}
 	if m.menu == "providers" {
-		if m.providersLoading {
-			return "Checking provider connections…"
+		item, selected := m.models.list.SelectedItem().(modelItem)
+		if m.providersLoading && (!selected || m.providerChecksPending == nil || m.providerChecksPending[item.ID]) {
+			return m.tr("Checking provider connections…", "공급처 연결 확인 중…")
 		}
 		if m.providersError != "" {
 			return m.providersError
 		}
-		if item, ok := m.models.list.SelectedItem().(modelItem); ok {
-			return providerStatusHelp(m.providers[item.ID])
+		if selected {
+			provider := m.providers[item.ID]
+			if provider.State == "status_check_failed" {
+				return m.tr("Check failed · Ctrl+R to retry", "상태 확인 실패 · Ctrl+R 다시 시도")
+			}
+			if m.providerSetup != "" && provider.Management {
+				return ProviderUsageText(m.prefs, provider)
+			}
+			return providerStatusHelp(provider)
 		}
 		return ""
 	}
@@ -879,11 +1026,27 @@ func (m Model) menuDetail() string {
 			if item.ID == historyMoreID {
 				return item.Detail
 			}
+			if preview := m.historyPreview(item.ID); preview != "" && m.menuPreviewHeight() == 0 {
+				return preview
+			}
 			return item.ID + " · " + item.Detail
 		}
 	}
-	if item, ok := m.models.list.SelectedItem().(modelItem); ok && item.Detail != "" {
-		return terminalSafe(item.Detail)
+	if m.menu == "models" && m.gateway != nil && len(m.availableModels) > 0 {
+		switch {
+		case m.loadingModels:
+			return m.tr("Checking models…", "모델 확인 중…")
+		case !m.ready:
+			return m.tr("Model check failed · Ctrl+R", "모델 확인 실패 · Ctrl+R")
+		}
 	}
-	return m.modelLabel() + " · current"
+	if item, ok := m.models.list.SelectedItem().(modelItem); ok {
+		if m.menu == "models" && len(item.ReadyProviders) > 0 {
+			return strings.Join(item.ReadyProviders, " · ")
+		}
+		if item.Detail != "" {
+			return terminalSafe(item.Detail)
+		}
+	}
+	return m.modelLabel(m.selected) + m.tr(" · current", " · 현재 선택")
 }

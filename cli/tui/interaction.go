@@ -15,6 +15,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"github.com/wooinwoo/freeway-cli/cli/client"
+	"github.com/wooinwoo/freeway-cli/cli/imagegen"
 )
 
 type draftState struct {
@@ -93,7 +94,7 @@ func (m Model) undoInput(redo bool) (tea.Model, tea.Cmd) {
 		source, target = &m.redoDrafts, &m.undoDrafts
 	}
 	if len(*source) == 0 {
-		m.notify("Nothing to undo.")
+		m.notify(m.tr("Nothing to undo.", "되돌릴 내용이 없습니다."))
 		return m, nil
 	}
 	*target = append(*target, m.captureDraft())
@@ -202,7 +203,7 @@ func (m Model) killInput(key string) (tea.Model, tea.Cmd) {
 }
 func (m Model) yank(cycle bool) (tea.Model, tea.Cmd) {
 	if len(m.killRing) == 0 {
-		m.notify("Nothing deleted yet. /copy copies the last response.")
+		m.notify(m.tr("Nothing deleted yet. /copy copies the last response.", "복원할 삭제 내용이 없습니다. /copy로 마지막 응답을 복사할 수 있습니다."))
 		return m, nil
 	}
 	d := m.captureDraft()
@@ -230,19 +231,19 @@ func (m Model) yank(cycle bool) (tea.Model, tea.Cmd) {
 }
 func (m Model) stashDraft() (tea.Model, tea.Cmd) {
 	if m.attachmentsPending > 0 || m.loadingSession || m.loadingHistory {
-		m.notify("Wait for the current load before stashing your draft.")
+		m.notify(m.tr("Wait for the current load before stashing your draft.", "불러오기가 끝난 뒤 초안을 보관하세요."))
 		return m, nil
 	}
 	current := m.captureDraft()
 	if current.Text == "" && len(current.Files) == 0 {
 		if m.stash == nil {
-			m.notify("No stashed draft.")
+			m.notify(m.tr("No stashed draft.", "보관된 초안이 없습니다."))
 			return m, nil
 		}
 		m.recordUndo(current)
 		m.restoreDraft(*m.stash)
 		m.stash = nil
-		m.notify("Draft restored.")
+		m.notify(m.tr("Draft restored.", "초안을 복원했습니다."))
 		return m, nil
 	}
 	m.recordUndo(current)
@@ -250,14 +251,14 @@ func (m Model) stashDraft() (tea.Model, tea.Cmd) {
 		old := *m.stash
 		m.stash = &current
 		m.restoreDraft(old)
-		m.notify("Drafts swapped.")
+		m.notify(m.tr("Drafts swapped.", "초안을 교환했습니다."))
 	} else {
 		m.stash = &current
 		m.prompt.Reset()
 		m.files = nil
 		m.markDraftChanged()
 		m.layout()
-		m.notify("Draft stashed. Ctrl+S to restore.")
+		m.notify(m.tr("Draft stashed. Ctrl+S to restore.", "초안을 보관했습니다. Ctrl+S로 복원합니다."))
 	}
 	return m, nil
 }
@@ -296,30 +297,33 @@ func (m Model) promptItems() []list.Item {
 
 func (m Model) queuePrompt() (tea.Model, tea.Cmd) {
 	if m.attachmentsPending > 0 {
-		m.notify("Wait for the selected files to finish attaching before queueing.")
+		m.notify(m.tr("Wait for the selected files to finish attaching before queueing.", "파일 첨부가 끝난 뒤 예약하세요."))
 		return m, nil
 	}
 	text := strings.TrimSpace(m.prompt.Value())
 	if text == "" {
-		m.notify("Write a follow-up, then press Tab to queue it.")
+		m.notify(m.tr("Write a follow-up, then press Tab to queue it.", "후속 질문을 쓴 뒤 Tab으로 예약하세요."))
 		return m, nil
 	}
 	if strings.HasPrefix(text, "/") {
-		m.notify("Run commands directly. Tab queues follow-up messages.")
+		m.notify(m.tr("Run commands directly. Tab queues follow-up messages.", "명령은 직접 실행하세요. Tab은 후속 질문을 예약합니다."))
 		return m, nil
 	}
 	if len(m.queue) >= 20 {
-		m.notify("The queue is full. Use /queue to review it.")
+		m.notify(m.tr("The queue is full. Use /queue to review it.", "예약 목록이 가득 찼습니다. /queue로 확인하세요."))
 		return m, nil
 	}
 	m.queue = append(m.queue, client.PendingPrompt{Text: text, Files: append([]client.Attachment(nil), m.files...)})
 	m.rememberPrompt(text, m.files)
 	m.prompt.Reset()
 	m.files = nil
-	m.queuePaused = false
 	m.markDraftChanged()
 	m.layout()
-	m.notify(fmt.Sprintf("Queued %d follow-up(s). Up takes the latest one back.", len(m.queue)))
+	if m.queuePaused {
+		m.notify(m.tr("Queued while paused. Use /queue resume to send.", "일시정지 상태로 예약했습니다. /queue resume으로 이어서 보낼 수 있습니다."))
+	} else {
+		m.notify(fmt.Sprintf(m.tr("Queued %d follow-up(s). Up takes the latest one back.", "후속 질문 %d개를 예약했습니다. ↑로 최근 질문을 되돌립니다."), len(m.queue)))
+	}
 	return m, nil
 }
 func (m *Model) takeQueued() bool {
@@ -331,7 +335,7 @@ func (m *Model) takeQueued() bool {
 	m.queue = m.queue[:len(m.queue)-1]
 	d := m.captureDraft()
 	m.recordUndo(d)
-	if d.Text != "" {
+	if d.Text != "" || len(d.Files) > 0 {
 		m.stash = &d
 	}
 	m.prompt.SetValue(item.Text)
@@ -339,7 +343,7 @@ func (m *Model) takeQueued() bool {
 	m.files = append([]client.Attachment(nil), item.Files...)
 	m.markDraftChanged()
 	m.layout()
-	m.notify("Follow-up removed from queue. Edit it and press Tab to queue again.")
+	m.notify(m.tr("Follow-up removed from queue. Edit it and press Tab to queue again.", "후속 질문을 되돌렸습니다. 편집한 뒤 Tab으로 다시 예약할 수 있습니다."))
 	return true
 }
 func (m Model) startQueued() (tea.Model, tea.Cmd) {
@@ -349,10 +353,31 @@ func (m Model) startQueued() (tea.Model, tea.Cmd) {
 	if len(m.messages) > 194 {
 		m.queuePaused = true
 		m.dirty = true
-		m.notify("Conversation is full. Start a new conversation before sending queued follow-ups.")
+		m.notify(m.tr("Conversation is full. Start a new conversation before sending queued follow-ups.", "대화가 가득 찼습니다. 후속 질문은 새 대화에서 보내세요."))
 		return m, nil
 	}
 	item := m.queue[0]
+	if question, asksMCP := mcpQuestion(item.Text); asksMCP {
+		if issue := m.validateMCPQuestion(question, item.Files); issue != "" {
+			m.queuePaused = true
+			m.dirty = true
+			m.notify(issue)
+			return m, nil
+		}
+	}
+	if prompt, image := imagegen.Prompt(item.Text, m.selected == "free/auto"); image {
+		if _, issue := m.validateImageRequest(prompt, item.Files); issue != "" {
+			m.queuePaused = true
+			m.dirty = true
+			m.notify(issue)
+			return m, nil
+		}
+	} else if issue := m.textRouteIssue(); issue != "" {
+		m.queuePaused = true
+		m.dirty = true
+		m.notify(m.tr("Queue paused · /queue resume · ", "예약 일시정지 · /queue resume · ") + issue)
+		return m, nil
+	}
 	m.queue = m.queue[1:]
 	m.messages = append(m.messages, newMessage("user", item.Text))
 	m.messages[len(m.messages)-1].Files = append([]client.Attachment(nil), item.Files...)
@@ -366,11 +391,16 @@ func (m Model) handleInterrupt() (tea.Model, tea.Cmd) {
 	}
 	if m.busy {
 		m.queuePaused = true
+		mcpRunning := m.mcpRunning
 		m.stopResponse()
 		m.status = "Stopped"
 		m.dirty = true
 		m.renderMessages()
-		m.notify("Stopped. Queued messages are paused; /queue to review.")
+		if mcpRunning {
+			m.notify(m.mcpInterruptNotice())
+		} else {
+			m.notify(m.tr("Stopped. Queued messages are paused; /queue to review.", "응답을 중지하고 예약을 일시정지했습니다. /queue로 확인하세요."))
+		}
 		return m, m.persist()
 	}
 	if m.prompt.Value() != "" || len(m.files) > 0 {
@@ -384,14 +414,14 @@ func (m Model) handleInterrupt() (tea.Model, tea.Cmd) {
 		m.markDraftChanged()
 		m.layout()
 		m.lastInterrupt = time.Now()
-		m.notify("Input cleared. Ctrl+S restores it; Ctrl+C again quits.")
+		m.notify(m.tr("Input cleared. Ctrl+S restores it; Ctrl+C again quits.", "입력창을 비웠습니다. Ctrl+S로 복원하거나 Ctrl+C를 다시 눌러 종료하세요."))
 		return m, nil
 	}
 	if !m.lastInterrupt.IsZero() && time.Since(m.lastInterrupt) < 2*time.Second {
 		return m.navigate("quit")
 	}
 	m.lastInterrupt = time.Now()
-	m.notify("Press Ctrl+C again to save and quit.")
+	m.notify(m.tr("Press Ctrl+C again to save and quit.", "Ctrl+C를 다시 눌러 저장하고 종료하세요."))
 	return m, nil
 }
 func (m Model) doubleEscape() (tea.Model, tea.Cmd) {
@@ -405,7 +435,7 @@ func (m Model) doubleEscape() (tea.Model, tea.Cmd) {
 		m.editingAt = -1
 		m.markDraftChanged()
 		m.layout()
-		m.notify("Draft cleared. Up recalls it; Ctrl+S restores it.")
+		m.notify(m.tr("Draft cleared. Up recalls it; Ctrl+S restores it.", "입력창을 비웠습니다. ↑ 또는 Ctrl+S로 초안을 복원하세요."))
 		return m, nil
 	}
 	for i := len(m.messages) - 1; i >= 0; i-- {
@@ -416,11 +446,11 @@ func (m Model) doubleEscape() (tea.Model, tea.Cmd) {
 			m.files = append([]client.Attachment(nil), m.messages[i].Files...)
 			m.markDraftChanged()
 			m.layout()
-			m.notify("Editing a previous prompt. Enter creates a fork; Esc keeps the original.")
+			m.notify(m.tr("Editing a previous prompt. Enter creates a fork; Esc keeps the original.", "이전 질문을 편집합니다. Enter로 대화를 분기하고 Esc로 원래 질문을 유지합니다."))
 			return m, nil
 		}
 	}
-	m.notify("No previous prompt to edit.")
+	m.notify(m.tr("No previous prompt to edit.", "편집할 이전 질문이 없습니다."))
 	return m, nil
 }
 
@@ -467,11 +497,11 @@ func (m *Model) loadPrompts() tea.Cmd {
 }
 func (m Model) openEditor() (tea.Model, tea.Cmd) {
 	if m.loadingSession || m.loadingHistory {
-		m.notify("Wait for the conversation to load before opening the editor.")
+		m.notify(m.tr("Wait for the conversation to load before opening the editor.", "대화를 다 불러온 뒤 편집기를 여세요."))
 		return m, nil
 	}
 	if m.editorOpen {
-		m.notify("The external editor is already open.")
+		m.notify(m.tr("The external editor is already open.", "외부 편집기가 이미 열려 있습니다."))
 		return m, nil
 	}
 	file, err := os.CreateTemp("", "freeway-prompt-*.md")
@@ -511,6 +541,7 @@ func (m Model) openEditor() (tea.Model, tea.Cmd) {
 	} else {
 		command = exec.Command("sh", "-c", editor+" \"$1\"", "freeway-editor", path)
 	}
+	command.Env = imagegen.WithoutTokenEnv()
 	epoch := m.sessionEpoch
 	m.editorOpen = true
 	finished := func(runErr error) tea.Msg {
@@ -545,6 +576,7 @@ func projectContext(dir string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "git", "-C", dir, "branch", "--show-current")
+		cmd.Env = imagegen.WithoutTokenEnv()
 		if output, err := cmd.Output(); err == nil && strings.TrimSpace(string(output)) != "" {
 			label += " · " + strings.TrimSpace(string(output))
 		}

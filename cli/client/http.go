@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -18,34 +19,51 @@ import (
 )
 
 const MaxBody = 8 * 1024 * 1024
+const CatalogTimeout = 25 * time.Second
 
 type Model struct {
-	ID                   string `json:"id"`
-	Name                 string `json:"name"`
-	Detail               string `json:"detail,omitempty"`
-	Free                 bool   `json:"free"`
-	Ready                bool   `json:"ready"`
-	LocalTokensRemaining *int   `json:"localTokensRemaining,omitempty"`
+	ID                   string   `json:"id"`
+	Name                 string   `json:"name"`
+	Detail               string   `json:"detail,omitempty"`
+	RouteIDs             []string `json:"routeIds,omitempty"`
+	ReadyProviders       []string `json:"readyProviders,omitempty"`
+	QualityRank          int      `json:"qualityRank,omitempty"`
+	CodingRank           int      `json:"codingRank,omitempty"`
+	ReasoningRank        int      `json:"reasoningRank,omitempty"`
+	Free                 bool     `json:"free"`
+	Ready                bool     `json:"ready"`
+	LocalTokensRemaining *int     `json:"localTokensRemaining,omitempty"`
 }
 
 type ProviderStatus struct {
 	ID                   string `json:"id"`
 	Name                 string `json:"name"`
 	KeyConfigured        bool   `json:"keyConfigured"`
+	CatalogChecked       bool   `json:"catalogChecked,omitempty"`
+	KeyChecked           bool   `json:"keyChecked,omitempty"`
+	ScopedCheck          bool   `json:"scopedCheck,omitempty"`
 	State                string `json:"state"`
 	FreeModels           int    `json:"freeModels"`
 	RetryAfter           int    `json:"retryAfter,omitempty"`
+	Management           bool   `json:"management,omitempty"`
+	AutoSupported        bool   `json:"autoSupported,omitempty"`
+	AutoExcluded         bool   `json:"autoExcluded,omitempty"`
+	CheckedAt            string `json:"checkedAt,omitempty"`
+	LocalRequests        int    `json:"localRequests,omitempty"`
+	ProviderRemaining    *int   `json:"providerRemaining,omitempty"`
+	CLIProfile           string `json:"cliProfile,omitempty"`
 	LocalTokensRemaining *int   `json:"localTokensRemaining,omitempty"`
 }
 
 type Message struct {
-	ID      string       `json:"id,omitempty"`
-	Role    string       `json:"role"`
-	Content string       `json:"content"`
-	Status  string       `json:"status,omitempty"`
-	Model   string       `json:"model,omitempty"`
-	Error   string       `json:"error,omitempty"`
-	Files   []Attachment `json:"files,omitempty"`
+	ID       string       `json:"id,omitempty"`
+	Role     string       `json:"role"`
+	Content  string       `json:"content"`
+	Status   string       `json:"status,omitempty"`
+	Model    string       `json:"model,omitempty"`
+	Provider string       `json:"provider,omitempty"`
+	Error    string       `json:"error,omitempty"`
+	Files    []Attachment `json:"files,omitempty"`
 }
 
 type Event struct {
@@ -210,7 +228,13 @@ func (c *HTTP) request(ctx context.Context, method, path string, body any, saveK
 }
 
 func (c *HTTP) json(ctx context.Context, method, path string, body, out any, saveKey string) error {
-	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	timeout := 12 * time.Second
+	if path == "/v1/models?refresh=1" {
+		timeout = 45 * time.Second
+	} else if path == "/v1/models" || path == "/v1/providers" || strings.HasPrefix(path, "/v1/providers?") {
+		timeout = CatalogTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	resp, err := c.request(ctx, method, path, body, saveKey)
 	if err != nil {
@@ -228,37 +252,46 @@ func (c *HTTP) json(ctx context.Context, method, path string, body, out any, sav
 }
 
 func (c *HTTP) Models(ctx context.Context) ([]Model, error) {
-	models, err := c.readyModels(ctx, "/v1/models")
-	if err == nil && len(models) == 0 {
-		err = &GatewayError{Message: "No free models are ready. Press F4 to check providers.", Code: "no_free_models", Status: 503}
-	}
-	return models, err
+	return c.models(ctx, false)
 }
 
-func (c *HTTP) CanOpenCode() bool {
+func (c *HTTP) RefreshModels(ctx context.Context) ([]Model, error) {
+	return c.models(ctx, c.isManaged())
+}
+
+// isManaged follows the supervised endpoint, whose handle changes after a reconnect.
+func (c *HTTP) isManaged() bool {
 	active := c.endpoint()
-	return active != nil && active.managed && active.features.Load()&featureOpenCode != 0
+	return active != nil && active.managed
 }
 
-func (c *HTTP) OpenCodeModels(ctx context.Context) ([]Model, error) {
-	if !c.CanOpenCode() {
-		return nil, openCodeRequiresLocal()
+func (c *HTTP) models(ctx context.Context, refresh bool) ([]Model, error) {
+	path := "/v1/models"
+	if refresh {
+		path += "?refresh=1"
 	}
-	return c.readyModels(ctx, "/v1/local/opencode/models")
-}
-
-func (c *HTTP) readyModels(ctx context.Context, endpoint string) ([]Model, error) {
 	var result struct {
-		Data []Model `json:"data"`
+		Data      []Model `json:"data"`
+		Refreshed bool    `json:"refreshed"`
 	}
-	if err := c.json(ctx, "GET", endpoint, nil, &result, ""); err != nil {
+	if err := c.json(ctx, "GET", path, nil, &result, ""); err != nil {
 		return nil, err
+	}
+	if refresh && !result.Refreshed {
+		// A gateway from before the update can still be serving other windows.
+		if _, err := c.ProviderStatuses(ctx); err != nil {
+			return nil, err
+		}
+		return c.Models(ctx)
 	}
 	models := []Model{}
 	for _, model := range result.Data {
 		if model.Free && model.Ready {
 			models = append(models, model)
 		}
+	}
+	if len(models) == 0 {
+		return models, &GatewayError{Message: "No free models are ready. Press F4 to check providers.", Code: "no_free_models", Status: 503}
 	}
 	return models, nil
 }
@@ -268,11 +301,57 @@ func openCodeRequiresLocal() error {
 }
 
 func (c *HTTP) ProviderStatuses(ctx context.Context) ([]ProviderStatus, error) {
+	return c.providerStatuses(ctx, "")
+}
+
+func (c *HTTP) ProviderStatus(ctx context.Context, id string) (ProviderStatus, error) {
+	if id == "" {
+		return ProviderStatus{}, errors.New("provider ID is required")
+	}
+	statuses, err := c.providerStatuses(ctx, "?provider="+url.QueryEscape(id))
+	if err != nil {
+		return ProviderStatus{}, err
+	}
+	// Older gateways ignore the query parameter and return the full list.
+	for _, status := range statuses {
+		if status.ID == id {
+			return status, nil
+		}
+	}
+	return ProviderStatus{}, &GatewayError{Code: "unknown_provider", Status: http.StatusNotFound, Message: "This provider is disabled in the gateway."}
+}
+
+func (c *HTTP) providerStatuses(ctx context.Context, query string) ([]ProviderStatus, error) {
 	var result struct {
 		Data []ProviderStatus `json:"data"`
 	}
-	err := c.json(ctx, "GET", "/v1/providers", nil, &result, "")
+	err := c.json(ctx, "GET", "/v1/providers"+query, nil, &result, "")
 	return result.Data, err
+}
+
+func (c *HTTP) ChangeProvider(ctx context.Context, id, action, key string, confirmFree bool) error {
+	if !c.isManaged() {
+		return &GatewayError{Message: "Provider management requires the local Freeway client.", Code: "local_client_required", Status: 403}
+	}
+	if id == "" || strings.ContainsAny(id, "/\\?#") {
+		return errors.New("invalid provider ID")
+	}
+	body := struct {
+		Action      string `json:"action"`
+		APIKey      string `json:"apiKey,omitempty"`
+		ConfirmFree bool   `json:"confirmFree,omitempty"`
+	}{Action: action, APIKey: key, ConfirmFree: confirmFree}
+	ctx, cancel := context.WithTimeout(ctx, CatalogTimeout)
+	defer cancel()
+	response, err := c.request(ctx, http.MethodPost, "/v1/local/providers/"+url.PathEscape(id)+"/management", body, "")
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		return errors.New("gateway did not confirm the provider change")
+	}
+	return nil
 }
 
 func (c *HTTP) Conversations(ctx context.Context) ([]ConversationSummary, error) {
@@ -308,6 +387,16 @@ func (c *HTTP) SaveConversation(ctx context.Context, chat Conversation) (Convers
 	keySupported := c.supportsSaveKeys()
 	var result Conversation
 	err := c.json(ctx, method, path, chat.wire(), &result, chat.SaveKey)
+	var rejected *GatewayError
+	if errors.As(err, &rejected) && rejected.Status == http.StatusBadRequest && rejected.Code == "invalid_request" &&
+		slices.ContainsFunc(chat.Messages, func(message Message) bool { return message.Provider != "" }) {
+		// Older v1 gateways reject unknown fields before changing the conversation.
+		chat.Messages = slices.Clone(chat.Messages)
+		for i := range chat.Messages {
+			chat.Messages[i].Provider = ""
+		}
+		err = c.json(ctx, method, path, chat.wire(), &result, chat.SaveKey)
+	}
 	if err == nil && (result.ID == "" || result.Revision < 1 || (chat.ID != "" && result.ID != chat.ID)) {
 		err = errors.New("gateway returned an invalid conversation identity")
 	}
@@ -443,14 +532,10 @@ func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []
 		MaxTokens   int      `json:"max_tokens"`
 		Temperature float64  `json:"temperature"`
 	}{model, prompts, true, settings.MaxTokens, settings.Temperature}
-	endpoint := "/v1/chat/completions"
-	if strings.HasPrefix(model, "opencode/") {
-		if !c.CanOpenCode() {
-			return openCodeRequiresLocal()
-		}
-		endpoint = "/v1/local/opencode/chat/completions"
+	if strings.HasPrefix(model, "opencode/") && !c.isManaged() {
+		return openCodeRequiresLocal()
 	}
-	resp, err := c.request(ctx, "POST", endpoint, body, "")
+	resp, err := c.request(ctx, "POST", "/v1/chat/completions", body, "")
 	if err != nil {
 		return err
 	}

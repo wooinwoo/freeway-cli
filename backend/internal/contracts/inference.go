@@ -9,22 +9,43 @@ import (
 )
 
 type Model struct {
-	ID                   string `json:"id"`
-	Name                 string `json:"name"`
-	Detail               string `json:"detail,omitempty"`
-	Free                 bool   `json:"free"`
-	Ready                bool   `json:"ready"`
-	LocalTokensRemaining *int   `json:"localTokensRemaining,omitempty"`
+	ID                   string   `json:"id"`
+	Name                 string   `json:"name"`
+	Detail               string   `json:"detail,omitempty"`
+	RouteIDs             []string `json:"routeIds,omitempty"`
+	ReadyProviders       []string `json:"readyProviders,omitempty"`
+	QualityRank          int      `json:"qualityRank,omitempty"`
+	CodingRank           int      `json:"codingRank,omitempty"`
+	ReasoningRank        int      `json:"reasoningRank,omitempty"`
+	Free                 bool     `json:"free"`
+	Ready                bool     `json:"ready"`
+	LocalTokensRemaining *int     `json:"localTokensRemaining,omitempty"`
 }
 
 type ProviderStatus struct {
 	ID                   string `json:"id"`
 	Name                 string `json:"name"`
 	KeyConfigured        bool   `json:"keyConfigured"`
+	CatalogChecked       bool   `json:"catalogChecked,omitempty"`
+	KeyChecked           bool   `json:"keyChecked,omitempty"`
+	ScopedCheck          bool   `json:"scopedCheck,omitempty"`
 	State                string `json:"state"`
 	FreeModels           int    `json:"freeModels"`
 	RetryAfter           int    `json:"retryAfter,omitempty"`
+	Management           bool   `json:"management,omitempty"`
+	AutoSupported        bool   `json:"autoSupported,omitempty"`
+	AutoExcluded         bool   `json:"autoExcluded,omitempty"`
+	CheckedAt            string `json:"checkedAt,omitempty"`
+	LocalRequests        int    `json:"localRequests,omitempty"`
+	ProviderRemaining    *int   `json:"providerRemaining,omitempty"`
+	CLIProfile           string `json:"cliProfile,omitempty"`
 	LocalTokensRemaining *int   `json:"localTokensRemaining,omitempty"`
+}
+
+type ProviderChange struct {
+	Action      string `json:"action"`
+	APIKey      string `json:"apiKey,omitempty"`
+	ConfirmFree bool   `json:"confirmFree,omitempty"`
 }
 
 type InputMessage struct {

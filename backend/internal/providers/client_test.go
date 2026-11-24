@@ -121,6 +121,140 @@ func clientError(t *testing.T, err error, code string) *Error {
 	}
 	return typed
 }
+func TestRejectedReplacementKeyPreservesExistingCredential(t *testing.T) {
+	old := Credential{Key: "original-fixture-key", AutoExcluded: true}
+	store := &clientCredentials{values: map[string]Credential{"kilo": old}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	client, err := New(Config{HTTPClient: server.Client(), Credentials: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	definition := client.definitions["kilo"]
+	definition.BaseURL = server.URL
+	client.adapters["kilo"] = NewHTTPAdapter(definition, server.Client())
+	_, err = client.Authenticate(t.Context(), "kilo", AuthOptions{Key: "rejected-fixture-key"})
+	saved, readErr := store.Load(t.Context(), "kilo")
+	if err == nil || readErr != nil || saved != old {
+		t.Fatalf("replacement failure changed the saved credential or was not reported: %v", err)
+	}
+}
+
+func TestOpenRouterChecksKeyBeforeReadingPublicCatalog(t *testing.T) {
+	const id = "openrouter"
+	old := Credential{Key: "existing-fixture-key", AutoExcluded: true}
+	store := &clientCredentials{values: map[string]Credential{id: old}}
+	var catalog atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/key":
+			if r.Header.Get("Authorization") != "Bearer valid-inference-key" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_, _ = io.WriteString(w, `{"data":{"label":"Freeway fixture","is_management_key":false}}`)
+		case "/models":
+			catalog.Add(1)
+			_, _ = io.WriteString(w, `{"data":[{"id":"example/text:free"}]}`)
+		default:
+			t.Error("credential check should not run inference")
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+	client, err := New(Config{HTTPClient: server.Client(), Credentials: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	definition := client.definitions[id]
+	definition.BaseURL = server.URL
+	client.adapters[id] = NewHTTPAdapter(definition, server.Client())
+	ctx := t.Context()
+	if _, err := client.Authenticate(ctx, id, AuthOptions{Key: "invalid-inference-key"}); err == nil || catalog.Load() != 0 {
+		t.Fatal("the public model list was used to accept an invalid key")
+	}
+	if saved, err := store.Load(ctx, id); err != nil || saved != old {
+		t.Fatal("a rejected key overwrote the previous connection")
+	}
+	status, err := client.Authenticate(ctx, id, AuthOptions{Key: "valid-inference-key"})
+	if err != nil || !status.Ready || status.ModelCount != 1 || catalog.Load() != 1 {
+		t.Fatalf("valid key was not connected: %+v %v", status, err)
+	}
+	if saved, err := store.Load(ctx, id); err != nil || saved.Key != "valid-inference-key" || !saved.AutoExcluded {
+		t.Fatal("the valid key did not replace the right connection")
+	}
+}
+
+func TestManageConnectionRespectsEnvironmentAndRetainsAutoPolicy(t *testing.T) {
+	const id = "groq"
+	ctx := t.Context()
+	t.Setenv("GROQ_API_KEY", "fixture-environment-key")
+	dir := filepath.Join(t.TempDir(), "auth")
+	store, err := NewFileCredentials(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(ctx, id, Credential{Key: "fixture-key", FreeConfirmed: true}); err != nil {
+		t.Fatal(err)
+	}
+	c, err := New(Config{Credentials: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	for _, action := range []string{"exclude-auto", "disconnect"} {
+		if err := c.Manage(ctx, id, action); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reopened, err := NewFileCredentials(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := reopened.Load(ctx, id)
+	if err != nil || value.Key != "" || value.FreeConfirmed || !value.Disconnected || !value.AutoExcluded {
+		t.Fatal("disconnect did not remove the key and persist both controls")
+	}
+	vault, _, err := reopened.(*fileCredentials).read()
+	if err != nil || vault.Version != 2 {
+		t.Fatal("active provider policy would be ignored by an older binary")
+	}
+	status, err := c.Quota(ctx, id)
+	if err != nil || status.KeyConfigured || status.Reason != "disconnected" {
+		t.Fatal("environment key silently bypassed disconnect")
+	}
+	_, err = c.Models(ctx, id)
+	clientError(t, err, "disconnected")
+	_, err = c.Stream(ctx, Request{Provider: id, Messages: []Message{{Role: "user", Content: "fixture"}}}, nil)
+	clientError(t, err, "disconnected")
+	_, err = c.Authenticate(ctx, id, AuthOptions{Key: "unconfirmed-fixture-key", RequireReady: true})
+	clientError(t, err, "confirm_free_account")
+	if after, err := reopened.Load(ctx, id); err != nil || after != value {
+		t.Fatal("a rejected key change mutated connection state")
+	}
+	auth, err := c.Authenticate(ctx, id, AuthOptions{Key: "new-fixture-key", ConfirmFree: true})
+	if err != nil || !auth.Ready {
+		t.Fatalf("explicit reconnect failed: %+v %v", auth, err)
+	}
+	value, err = reopened.Load(ctx, id)
+	if err != nil || value.Key != "new-fixture-key" || !value.FreeConfirmed || value.Disconnected || !value.AutoExcluded {
+		t.Fatal("reconnect did not update the key or preserve Auto policy")
+	}
+	_, err = c.Stream(ctx, Request{Provider: id, Automatic: true, Messages: []Message{{Role: "user", Content: "fixture"}}}, nil)
+	clientError(t, err, "excluded_from_auto")
+	if err := c.Manage(ctx, id, "include-auto"); err != nil {
+		t.Fatal(err)
+	}
+	vault, _, err = reopened.(*fileCredentials).read()
+	if err != nil || vault.Version != 1 {
+		t.Fatal("clearing the last rule should restore rollback compatibility")
+	}
+}
+
 func TestNativeClientListsProvidersWithoutNodeOrNetwork(t *testing.T) {
 	t.Setenv("PATH", "")
 	f := newClientFixture(t, nil, clientReply)

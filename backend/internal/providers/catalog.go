@@ -26,6 +26,15 @@ var definitions = []Definition{
 	{Provider: Provider{ID: "novita", Name: "Novita", Env: "NOVITA_API_KEY"}, BaseURL: "https://api.novita.ai/openai", Proof: "allowlist", Seed: []string{"apodex/apodex-1.1-mini"}, NeedsConfirmation: true, Priority: 100},
 }
 
+func IsProvider(id string) bool {
+	for _, definition := range definitions {
+		if definition.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // Definitions returns independent copies of the supported vendor definitions.
 func Definitions() []Definition {
 	out := make([]Definition, len(definitions))
@@ -81,10 +90,8 @@ func NormalizeModel(d Definition, raw map[string]any) (Model, bool) {
 	if id == "" || raw["isFree"] == false || raw["disabled"] == true || raw["status"] == "deprecated" {
 		return Model{}, false
 	}
-	if architecture, ok := raw["architecture"].(map[string]any); ok {
-		if modality, ok := architecture["modality"].(string); ok && !strings.Contains(modality, "text") {
-			return Model{}, false
-		}
+	if !supportsTextChat(raw) {
+		return Model{}, false
 	}
 	free := false
 	switch d.Proof {
@@ -162,4 +169,38 @@ func NormalizeModel(d Definition, raw map[string]any) (Model, bool) {
 		}
 	}
 	return m, true
+}
+
+func supportsTextChat(raw map[string]any) bool {
+	architecture, _ := raw["architecture"].(map[string]any)
+	modalities, _ := raw["modalities"].(map[string]any)
+	for _, value := range []any{architecture["input_modalities"], architecture["output_modalities"], modalities["input"], modalities["output"]} {
+		if types, ok := value.([]any); ok {
+			text := false
+			for _, modality := range types {
+				if modality == "text" || modality == "text/plain" {
+					text = true
+					break
+				}
+			}
+			if !text {
+				return false
+			}
+		}
+	}
+	legacy, _ := architecture["modality"].(string)
+	if legacy == "" {
+		return true
+	}
+	input, output, split := strings.Cut(legacy, "->")
+	return legacyTextModality(input) && (!split || legacyTextModality(output))
+}
+
+func legacyTextModality(value string) bool {
+	for _, modality := range strings.FieldsFunc(value, func(r rune) bool { return r == '+' || r == ',' || r == ' ' }) {
+		if modality == "text" || modality == "text/plain" {
+			return true
+		}
+	}
+	return false
 }

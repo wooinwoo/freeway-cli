@@ -5,47 +5,125 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/wooinwoo/freeway-cli/backend/internal/contracts"
+	"github.com/wooinwoo/freeway-cli/backend/internal/providers"
 )
 
 func (s *server) models(w http.ResponseWriter, r *http.Request) {
-	models, err := s.inference.Models(r.Context())
+	load := s.inference.Models
+	refreshed := false
+	if r.URL.Query().Get("refresh") == "1" && s.manageProvider != nil {
+		if refresher, ok := s.inference.(interface {
+			RefreshModels(context.Context) ([]contracts.Model, error)
+		}); ok {
+			load = refresher.RefreshModels
+			refreshed = true
+		}
+	}
+	models, err := load(r.Context())
 	if err != nil {
 		writeProblem(w, publicError(err, problem(http.StatusServiceUnavailable, "catalog_unavailable", "Unable to refresh the gateway model catalog.")))
 		return
 	}
 	if s.modelPrefix != "" {
-		models = slices.DeleteFunc(slices.Clone(models), func(model contracts.Model) bool {
-			return !strings.HasPrefix(model.ID, s.modelPrefix)
-		})
+		var routes []contracts.Model
+		for _, model := range models {
+			if strings.HasPrefix(model.ID, s.modelPrefix) {
+				routes = append(routes, model)
+			}
+			for _, id := range model.RouteIDs {
+				if strings.HasPrefix(id, s.modelPrefix) {
+					route := model
+					route.ID, route.RouteIDs = id, nil
+					routes = append(routes, route)
+				}
+			}
+		}
+		models = routes
 	}
 	if models == nil {
 		models = []contracts.Model{}
 	}
 	writeJSON(w, http.StatusOK, struct {
-		Data []contracts.Model `json:"data"`
-	}{models})
+		Data      []contracts.Model `json:"data"`
+		Refreshed bool              `json:"refreshed,omitempty"`
+	}{models, refreshed})
 }
 
 func (s *server) providerStatuses(w http.ResponseWriter, r *http.Request) {
-	statuses, err := s.inference.ProviderStatuses(r.Context())
+	id := r.URL.Query().Get("provider")
+	var statuses []contracts.ProviderStatus
+	var err error
+	checker, scopedCheck := s.inference.(interface {
+		ProviderStatus(context.Context, string) (contracts.ProviderStatus, error)
+	})
+	if id != "" && scopedCheck {
+		var status contracts.ProviderStatus
+		status, err = checker.ProviderStatus(r.Context(), id)
+		statuses = []contracts.ProviderStatus{status}
+	} else {
+		statuses, err = s.inference.ProviderStatuses(r.Context())
+		if err == nil && id != "" {
+			var match []contracts.ProviderStatus
+			for _, status := range statuses {
+				if status.ID == id {
+					match = []contracts.ProviderStatus{status}
+					break
+				}
+			}
+			if len(match) == 0 {
+				err = &providers.Error{Code: "unknown_provider", Status: http.StatusNotFound}
+			}
+			statuses = match
+		}
+	}
 	if err != nil {
+		var providerError *providers.Error
+		if errors.As(err, &providerError) && providerError.Code == "unknown_provider" {
+			writeProblem(w, problem(http.StatusNotFound, "unknown_provider", "This provider is disabled in the gateway."))
+			return
+		}
 		writeProblem(w, problem(http.StatusServiceUnavailable, "provider_status_unavailable", "Unable to check provider connections. Try again."))
 		return
 	}
 	if statuses == nil {
 		statuses = []contracts.ProviderStatus{}
 	}
+	for i := range statuses {
+		statuses[i].ScopedCheck = scopedCheck
+		if s.manageProvider == nil {
+			statuses[i].Management = false
+		} else if statuses[i].ID == "opencode" || statuses[i].ID == "cline" {
+			statuses[i].CLIProfile = s.cliProfile
+		}
+	}
 	writeJSON(w, http.StatusOK, struct {
 		Data []contracts.ProviderStatus `json:"data"`
 	}{statuses})
+}
+
+func (s *server) changeProvider(w http.ResponseWriter, r *http.Request) {
+	var change contracts.ProviderChange
+	if !decode(w, r, &change, "action") {
+		return
+	}
+	if err := s.manageProvider(r.Context(), r.PathValue("id"), change); err != nil {
+		var providerError *providers.Error
+		if errors.As(err, &providerError) {
+			writeProblem(w, problem(providerError.Status, providerError.Code, "Could not change this provider connection."))
+			return
+		}
+		writeProblem(w, problem(http.StatusServiceUnavailable, "provider_management_unavailable", "Could not change this provider connection."))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type deltaChoice struct {

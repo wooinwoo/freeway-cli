@@ -28,6 +28,7 @@ const usage = `Usage: freeway-providers COMMAND [PROVIDER|all] [options]
   install|update|check [--root PATH] [--api-only|--only opencode|cline]
   list
   auth [PROVIDER|all] [--stdin|--from-env|--login] [--confirm-free]
+  manage PROVIDER disconnect|enable|exclude-auto|include-auto
   status|models|quota [PROVIDER|all]
   select PROVIDER MODEL_ID
   probe PROVIDER [--model MODEL_ID] [--reasoning-effort VALUE]
@@ -39,6 +40,7 @@ API keys are accepted through hidden terminal input, environment variables, or s
 
 type options struct {
 	command, id, root, only, model, effort  string
+	action                                  string
 	apiOnly, stdin, fromEnv, login, confirm bool
 	timeout, maxTokens                      int
 	positionals                             []string
@@ -81,7 +83,7 @@ func parse(args []string) (options, error) {
 		o.command = "help"
 		return o, nil
 	}
-	commands := map[string]bool{"install": true, "update": true, "check": true, "list": true, "auth": true, "status": true, "models": true, "quota": true, "select": true, "probe": true, "ask": true}
+	commands := map[string]bool{"install": true, "update": true, "check": true, "list": true, "auth": true, "manage": true, "status": true, "models": true, "quota": true, "select": true, "probe": true, "ask": true}
 	if !commands[o.command] {
 		return o, errors.New("unknown command; use --help")
 	}
@@ -96,6 +98,12 @@ func parse(args []string) (options, error) {
 		}
 		o.positionals = args
 		args = nil
+	}
+	if o.command == "manage" {
+		if o.id == "all" || len(args) != 1 {
+			return o, errors.New("manage requires one provider and an action")
+		}
+		o.action, args = args[0], nil
 	}
 	f := flag.NewFlagSet(o.command, flag.ContinueOnError)
 	f.SetOutput(io.Discard)
@@ -203,7 +211,7 @@ func run(args []string) (int, error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if o.command == "list" {
-		return 0, encode(map[string]any{"ok": true, "providers": providers.Definitions()})
+		return 0, encode(map[string]any{"ok": true, "providers": providers.Definitions(), "cliProfile": providers.CLIProfile()})
 	}
 	if o.command == "install" || o.command == "update" || o.command == "check" {
 		var tools []string
@@ -249,6 +257,8 @@ func run(args []string) (int, error) {
 			if !auth.Ready {
 				ok = false
 			}
+		case "manage":
+			err = client.Manage(ctx, d.ID, o.action)
 		case "status", "quota":
 			result["quota"], err = client.Quota(ctx, d.ID)
 		case "models":
@@ -371,7 +381,7 @@ func authenticate(ctx context.Context, client *providers.Client, store providers
 	} else if o.stdin {
 		return providers.AuthResult{}, &providers.Error{Code: "cli_login_required", Status: 409}
 	}
-	return client.Authenticate(ctx, d.ID, providers.AuthOptions{Key: key, ConfirmFree: o.confirm})
+	return client.Authenticate(ctx, d.ID, providers.AuthOptions{Key: key, ConfirmFree: o.confirm, ResumeCLI: o.login})
 }
 
 // Closing stdin interrupts pipe reads; terminal reads may still need the context select.

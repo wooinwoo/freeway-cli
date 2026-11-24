@@ -95,7 +95,7 @@ func indexProjectFiles(root string) ([]list.Item, error) {
 
 func (m Model) openFiles(query fileQuery) (tea.Model, tea.Cmd) {
 	if m.loadingSession || m.loadingHistory {
-		m.notify("Wait for the conversation to load before browsing files.")
+		m.notify(m.tr("Wait for the conversation to load before browsing files.", "대화를 다 불러온 뒤 파일을 탐색하세요."))
 		return m, nil
 	}
 	m.menu = "files"
@@ -174,17 +174,17 @@ func readProjectAttachment(root, path string) (client.Attachment, error) {
 
 func (m Model) attachPath(path string, query fileQuery) (tea.Model, tea.Cmd) {
 	if m.loadingSession || m.loadingHistory {
-		m.notify("Wait for the conversation to load before choosing files.")
+		m.notify(m.tr("Wait for the conversation to load before choosing files.", "대화를 다 불러온 뒤 파일을 선택하세요."))
 		return m, nil
 	}
 	if len(m.files) >= 5 {
-		m.notify("Attach up to five text files per prompt.")
+		m.notify(m.tr("Attach up to five text files per prompt.", "질문에 텍스트 파일을 최대 5개까지 첨부할 수 있습니다."))
 		return m, nil
 	}
 	epoch := m.sessionEpoch
 	root := m.workdir
 	m.attachmentsPending++
-	m.notify("Attaching " + path + "…")
+	m.notify(fmt.Sprintf(m.tr("Attaching %s…", "첨부 중… %s"), path))
 	return m, func() tea.Msg {
 		file, err := readProjectAttachment(root, path)
 		return fileAttached{file: file, epoch: epoch, err: err, query: query}
@@ -199,30 +199,22 @@ func (m Model) reviewQueue(action string) (tea.Model, tea.Cmd) {
 		if !m.busy {
 			return m.startQueued()
 		}
-		m.notify("Queued messages will continue after this response.")
+		m.notify(m.tr("Queued messages will continue after this response.", "이번 응답 후 예약한 질문을 이어서 보냅니다."))
 		return m, nil
 	case "pause":
 		m.queuePaused = true
 		m.dirty = true
-		m.notify("Follow-up queue paused.")
+		m.notify(m.tr("Follow-up queue paused.", "후속 질문 예약을 일시정지했습니다."))
 		return m, nil
 	case "clear":
 		if len(m.queue) > 0 {
-			parts := []string{}
-			for _, item := range m.queue {
-				parts = append(parts, item.Text)
-			}
-			saved := draftState{Text: strings.Join(parts, "\n\n")}
-			m.stash = &saved
+			return m.openMenu("queue-clear")
 		}
-		m.queue = nil
-		m.dirty = true
-		m.layout()
-		m.notify("Queue cleared. Ctrl+S can restore its text.")
+		m.notify(m.tr("No follow-ups queued.", "예약한 질문이 없습니다."))
 		return m, nil
 	}
 	if len(m.queue) == 0 {
-		m.notify("No follow-ups queued. Tab queues a draft while responding.")
+		m.notify(m.tr("No follow-ups queued. Tab queues a draft while responding.", "예약한 질문이 없습니다. 응답 중 Tab으로 초안을 예약할 수 있습니다."))
 		return m, nil
 	}
 	items := []list.Item{}
@@ -240,11 +232,11 @@ func (m Model) composerExtraRows(width int) []string {
 		rows = append(rows, "Editing previous prompt · Enter forks · Esc cancels")
 	}
 	if len(m.queue) > 0 {
-		state := "waiting"
+		state := m.tr("waiting", "대기")
 		if m.queuePaused {
-			state = "paused"
+			state = m.tr("paused", "일시정지")
 		}
-		rows = append(rows, fmt.Sprintf("Queued %d · %s · Up to edit · /queue", len(m.queue), state))
+		rows = append(rows, fmt.Sprintf(m.tr("Queued %d · %s · Up to edit · /queue", "예약 %d개 · %s · ↑ 편집 · /queue"), len(m.queue), state))
 	}
 	if len(m.files) > 0 {
 		names := []string{}
@@ -261,7 +253,7 @@ func (m Model) composerExtraRows(width int) []string {
 			if i == m.commandIndex {
 				marker = "› "
 			}
-			rows = append(rows, marker+item.Name+"  "+item.Description)
+			rows = append(rows, marker+item.Name+"  "+m.tr(item.Description, item.Korean))
 		}
 	}
 	if hint := m.replyBudgetHint(); hint != "" {

@@ -79,12 +79,12 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if msg.epoch != m.sessionEpoch {
 			if msg.err == nil {
 				m.stash = &draftState{Text: msg.text}
-				m.notify("Editor draft kept in stash. Ctrl+S restores it.")
+				m.notify(m.tr("Editor draft kept in stash. Ctrl+S restores it.", "편집한 초안을 보관했습니다. Ctrl+S로 복원할 수 있습니다."))
 			}
 			return m, nil, true
 		}
 		if msg.err != nil {
-			m.notify("Editor did not finish: " + msg.err.Error())
+			m.notify(m.tr("Editor did not finish: ", "편집기를 완료하지 못했습니다. ") + msg.err.Error())
 			return m, nil, true
 		}
 		m.recordUndo(m.captureDraft())
@@ -92,7 +92,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.prompt.MoveToEnd()
 		m.markDraftChanged()
 		m.layout()
-		m.notify("Draft updated from editor. Enter to send.")
+		m.notify(m.tr("Draft updated from editor. Enter to send.", "편집기의 초안을 불러왔습니다. Enter로 보내세요."))
 		return m, nil, true
 	case filesIndexed:
 		if msg.epoch != m.fileEpoch {
@@ -112,7 +112,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		m.attachmentsPending = max(0, m.attachmentsPending-1)
 		if msg.err != nil {
-			m.notify("Could not attach file: " + msg.err.Error())
+			m.notify(m.tr("Could not attach file: ", "파일을 첨부하지 못했습니다. ") + msg.err.Error())
 			return m, nil, true
 		}
 		m.recordUndo(m.captureDraft())
@@ -126,7 +126,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		if !found {
 			if len(m.files) >= 5 {
-				m.notify("Attach up to five text files per prompt.")
+				m.notify(m.tr("Attach up to five text files per prompt.", "질문에 텍스트 파일을 최대 5개까지 첨부할 수 있습니다."))
 				return m, nil, true
 			}
 			m.files = append(m.files, msg.file)
@@ -142,10 +142,10 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		m.markDraftChanged()
 		m.layout()
-		m.notify("Attached " + msg.file.Path + ". /detach removes attachments.")
+		m.notify(fmt.Sprintf(m.tr("Attached %s. /detach removes attachments.", "첨부 완료 · %s · /detach로 제거"), msg.file.Path))
 		return m, nil, true
 	case tickMsg:
-		if m.gateway != nil && !m.modelsStarted && m.startupDone && !m.loadingHistory && !m.loadingSession && !m.modelsFocused {
+		if m.gateway != nil && !m.modelsStarted && m.startupDone && !m.loadingHistory && !m.loadingSession {
 			m.modelsStarted = true
 			return m, tea.Batch(tick(), m.loadModels()), true
 		}
@@ -169,7 +169,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return m, m.loadModels(), true
 	case actionResult:
 		if msg.err != nil {
-			m.notify("Could not complete the action: " + msg.err.Error())
+			m.notify(m.tr("Could not complete the action: ", "작업을 완료하지 못했습니다. ") + msg.err.Error())
 		} else {
 			m.notify(msg.text)
 		}
@@ -201,7 +201,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.loadingHistory = false
 		m.startupDone = true
 		if msg.err != nil {
-			m.notify("Could not load conversations. Press Alt+H to try again.")
+			m.notify(m.tr("Could not load conversations. Press Alt+H to try again.", "대화를 불러오지 못했습니다. Alt+H로 다시 시도하세요."))
 			return m, nil, true
 		}
 		m.historyPage = historyPager{paged: msg.paged, ready: msg.paged, cursor: msg.cursor, lookup: msg.lookup, sequence: m.historyPage.sequence + 1}
@@ -231,7 +231,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			if len(matches) > 1 {
 				m.history = matches
 			} else {
-				m.notify("No matching session. Choose another saved conversation.")
+				m.notify(m.tr("No matching session. Choose another saved conversation.", "일치하는 세션이 없습니다. 다른 대화를 선택하세요."))
 			}
 		}
 		if msg.initial {
@@ -249,14 +249,14 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 				if len(matches) > 0 {
 					m.history = matches
 				} else {
-					m.notify("No matching session. Choose a saved conversation from the list.")
+					m.notify(m.tr("No matching session. Choose a saved conversation from the list.", "일치하는 세션이 없습니다. 목록에서 저장된 대화를 선택하세요."))
 				}
 				next, cmd := m.openMenu("history")
 				return next, cmd, true
 			}
 			if m.startMode == "resume" {
 				if len(m.history) == 0 && !msg.paged {
-					m.notify("No saved sessions here. Start a conversation, or use freeway resume --all.")
+					m.notify(m.tr("No saved sessions here. Start a conversation, or use freeway resume --all.", "저장된 세션이 없습니다. 새 대화를 시작하거나 freeway resume --all로 확인하세요."))
 					return m, nil, true
 				}
 				next, cmd := m.openMenu("history")
@@ -265,11 +265,11 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			if latest, ok := client.LatestConversation(m.history, m.workdir, m.allSessions); ok && m.prompt.Value() == "" && len(m.messages) == 0 {
 				return m, m.loadConversation(latest.ID), true
 			}
-			m.notify("No previous session in this project. Starting a new conversation.")
+			m.notify(m.tr("No previous session in this project. Starting a new conversation.", "이 프로젝트의 이전 세션이 없어 새 대화를 시작합니다."))
 			return m, nil, true
 		}
 		if len(msg.records) == 0 && !msg.paged {
-			m.notify("No saved conversations yet. Conversations and drafts are saved automatically.")
+			m.notify(m.tr("No saved conversations yet. Conversations and drafts are saved automatically.", "저장된 대화가 없습니다. 대화와 초안은 자동으로 저장됩니다."))
 			return m, nil, true
 		}
 		next, cmd := m.openMenu("history")
@@ -288,16 +288,16 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		m.loadingSession = false
 		if msg.err != nil {
-			message := "Could not open conversation: " + friendlyError(msg.err)
+			message := m.tr("Could not open conversation: ", "대화를 열지 못했습니다. ") + friendlyError(msg.err, m.prefs)
 			if m.recoveryPath != "" && m.recoveryAction != "" {
-				m.notice = "Recovery copy: " + terminalSafe(m.recoveryPath)
+				m.notice = m.tr("Recovery copy: ", "복구 사본: ") + terminalSafe(m.recoveryPath)
 				m.renderMessages()
 			}
 			m.notify(message)
 			return m, nil, true
 		}
 		if m.attachmentsPending > 0 || m.prompt.Value() != msg.draftAtLoad || !slices.Equal(m.files, msg.filesAtLoad) {
-			m.notify("Kept the current draft. Reopen the saved conversation when you finish editing.")
+			m.notify(m.tr("Kept the current draft. Reopen the saved conversation when you finish editing.", "현재 초안을 유지했습니다. 편집을 마친 뒤 저장된 대화를 다시 여세요."))
 			return m, nil, true
 		}
 		m.sessionEpoch++
@@ -351,9 +351,9 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.layout()
 		m.renderMessages()
 		m.chat.GotoBottom()
-		m.notify("Conversation restored.")
+		m.notify(m.tr("Conversation restored.", "대화를 복원했습니다."))
 		if len(m.queue) > 0 {
-			m.notify(fmt.Sprintf("Conversation restored · %d follow-up(s) paused · /queue resume", len(m.queue)))
+			m.notify(fmt.Sprintf(m.tr("Conversation restored · %d follow-up(s) paused · /queue resume", "대화를 복원했습니다 · 후속 질문 %d개 일시정지 · /queue resume"), len(m.queue)))
 		}
 		return m, projectContext(m.workdir), true
 	case conversationSaved:
@@ -367,7 +367,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		action := m.afterSave
 		m.afterSave = ""
 		if msg.err != nil {
-			m.saveError = friendlyError(msg.err)
+			m.saveError = friendlyError(msg.err, m.prefs)
 			m.nextSave = time.Now().Add(10 * time.Second)
 			m.saveBlocked = blockedSave(msg.err)
 			if m.saveBlocked != "" {
@@ -382,7 +382,7 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			if action != "" {
 				m.recoveryAction = action
 			}
-			m.notify(m.saveError + " F6 saves a plain-text recovery file before moving on.")
+			m.notify(m.saveError + m.tr(" F6 saves a plain-text recovery file before moving on.", " F6으로 일반 텍스트 복구 파일을 저장한 뒤 이동하세요."))
 			return m, nil, true
 		}
 		m.pendingSave = nil
@@ -411,21 +411,12 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 }
 
 func (m *Model) ensureSelected() {
-	if isOpenCodeModel(m.selected) {
-		return
-	}
-	if !m.ready {
-		return
-	}
-	if m.selected == "free/auto" || strings.HasPrefix(m.selected, "preview/") {
-		return
-	}
 	for _, model := range m.availableModels {
-		if model.ID == m.selected {
+		if model.ID == m.selected || slices.Contains(model.RouteIDs, m.selected) {
+			m.selected, m.listedSelection = model.ID, model.ID
 			return
 		}
 	}
-	m.notify("Your previous model is unavailable. Pick one with F2 or choose /auto.")
 }
 
 func (m *Model) snapshot() client.Conversation {
@@ -542,13 +533,13 @@ func (m Model) showHistory(initial bool) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.busy {
-		m.notify("Press Esc to stop the response first.")
+		m.notify(m.tr("Press Esc to stop the response first.", "먼저 Esc로 응답을 중지하세요."))
 		return m, nil
 	}
 	backend, ok := m.gateway.(conversationGateway)
 	if !ok {
 		m.startupDone = true
-		m.notify("Saved conversations are not available in preview mode.")
+		m.notify(m.tr("Saved conversations are not available in preview mode.", "미리보기에서 저장된 대화를 열 수 없습니다."))
 		return m, nil
 	}
 	if m.loadingHistory && !initial {
@@ -607,12 +598,12 @@ func (m Model) navigate(action string) (tea.Model, tea.Cmd) {
 			m.dirty = true
 			m.renderMessages()
 		} else {
-			m.notify("Press Esc to stop the response first. Your draft will stay here.")
+			m.notify(m.tr("Press Esc to stop the response first. Your draft will stay here.", "Esc로 응답을 먼저 중지하세요. 초안은 보존됩니다."))
 			return m, nil
 		}
 	}
 	if m.loadingSession {
-		m.notify("Loading conversation…")
+		m.notify(m.tr("Loading conversation…", "대화를 불러오는 중…"))
 		return m, nil
 	}
 	if m.saving {
@@ -664,7 +655,7 @@ func (m Model) performNavigation(action string) (tea.Model, tea.Cmd) {
 		m.layout()
 		m.renderMessages()
 		m.chat.GotoBottom()
-		m.notify("New conversation · Press Alt+H to reopen earlier work.")
+		m.notify(m.tr("New conversation · Press Alt+H to reopen earlier work.", "새 대화 · Alt+H로 이전 대화 열기"))
 		return m, nil
 	case strings.HasPrefix(action, "open:"):
 		return m, m.loadConversation(strings.TrimPrefix(action, "open:"))
@@ -693,7 +684,7 @@ func (m Model) performNavigation(action string) (tea.Model, tea.Cmd) {
 			m.layout()
 			return m.startResponse()
 		}
-		m.notify("Fork created. The original conversation is preserved.")
+		m.notify(m.tr("Fork created. The original conversation is preserved.", "대화를 분기했습니다. 원본은 보존됩니다."))
 		m.renderMessages()
 		return m, m.persist()
 	}

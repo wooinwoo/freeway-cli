@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
+	"github.com/wooinwoo/freeway-cli/cli/client"
 	"github.com/wooinwoo/freeway-cli/cli/tui"
 	"github.com/wooinwoo/freeway-cli/cli/update"
 )
@@ -36,6 +38,31 @@ func run() error {
 	if handled, err := runNativeCommand(os.Args[1:]); handled {
 		return err
 	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	prefs := tui.LoadPreferences()
+	if len(os.Args) > 1 && os.Args[1] == "image" {
+		return runImageCommand(ctx, os.Args[2:], prefs)
+	}
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		return runMCPCommand(ctx, os.Args[2:], prefs)
+	}
+	if len(os.Args) > 1 && os.Args[1] == "connect" {
+		if len(os.Args) > 3 || !interactiveTerminal() {
+			return fmt.Errorf("freeway connect [PROVIDER] requires an interactive terminal")
+		}
+		gateway, closeGateway, err := openGateway(ctx, "", "")
+		if err != nil {
+			return err
+		}
+		defer closeGateway()
+		providerID := ""
+		if len(os.Args) == 3 {
+			providerID = os.Args[2]
+		}
+		_, _, err = setupConnections(ctx, gateway, &prefs, terminalOptions(ctx, prefs.NoColor), "", providerID)
+		return err
+	}
 	inv, err := parseInvocation(os.Args[1:])
 	if err != nil {
 		return err
@@ -44,15 +71,32 @@ func run() error {
 		fmt.Print(usage)
 		return nil
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	prefs.NoColor = prefs.NoColor || inv.noColor
+	options := terminalOptions(ctx, prefs.NoColor)
 	model := tui.New()
 	if !inv.preview {
 		address := inv.url
 		if address == "" {
 			address = os.Getenv("FREEWAY_URL")
 		}
-		gateway, closeGateway, err := openGateway(ctx, address, os.Getenv("FREEWAY_API_KEY"))
+		key := os.Getenv("FREEWAY_API_KEY")
+		chatUI := inv.mode != "sessions" && interactiveTerminal()
+		if chatUI {
+			proceed, err := prefs.ConfigureAppearance(options...)
+			if !proceed {
+				return err
+			}
+			if err != nil {
+				fmt.Fprintln(os.Stderr, prefs.Text("Could not save language and theme.", "언어와 테마를 저장하지 못했습니다."), err)
+			}
+		}
+		localUI := chatUI && address == "" && key == ""
+		if localUI {
+			if restarted, err := startupUpdate(ctx, prefs, options); restarted || err != nil {
+				return err
+			}
+		}
+		gateway, closeGateway, err := openGateway(ctx, address, key)
 		if err != nil {
 			return err
 		}
@@ -103,14 +147,32 @@ func run() error {
 			fmt.Println("\nResume: freeway resume SESSION_ID")
 			return nil
 		}
-		model = tui.NewConnected(ctx, gateway).WithStartMode(inv.mode, inv.query, inv.all, inv.noSave)
+		var statuses []client.ProviderStatus
+		if localUI {
+			mode, readyStatuses, err := setupConnections(ctx, gateway, &prefs, options, inv.mode, "")
+			if err != nil || mode == "" {
+				return err
+			}
+			inv.mode = mode
+			statuses = readyStatuses
+		}
+		model = tui.NewConnected(ctx, gateway).WithStartMode(inv.mode, inv.query, inv.all, inv.noSave).WithProviderStatuses(statuses)
+		if localUI {
+			if executable, err := os.Executable(); err == nil {
+				model = model.WithProviderSetup(executable)
+			}
+		}
 	}
-	options := []tea.ProgramOption{tea.WithFPS(30)}
-	if inv.noColor {
+	_, err = tea.NewProgram(model.WithPreferences(prefs), options...).Run()
+	return err
+}
+
+func terminalOptions(ctx context.Context, noColor bool) []tea.ProgramOption {
+	options := []tea.ProgramOption{tea.WithContext(ctx), tea.WithFPS(30)}
+	if noColor {
 		options = append(options, tea.WithColorProfile(colorprofile.NoTTY))
 	} else if os.Getenv("WT_SESSION") != "" {
 		options = append(options, tea.WithColorProfile(colorprofile.TrueColor))
 	}
-	_, err = tea.NewProgram(model, options...).Run()
-	return err
+	return options
 }

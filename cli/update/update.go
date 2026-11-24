@@ -203,6 +203,10 @@ func (m Manager) Update(ctx context.Context) (State, error) {
 	if err != nil {
 		return State{}, err
 	}
+	return m.InstallRelease(ctx, release)
+}
+
+func (m Manager) InstallRelease(ctx context.Context, release Release) (State, error) {
 	state, err := m.Status()
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return State{}, err

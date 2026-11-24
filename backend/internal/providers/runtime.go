@@ -2,8 +2,10 @@ package providers
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +19,25 @@ func ProviderHome() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".freeway", "providers")
+}
+
+// CLIProfile identifies the executable and account search environment, without returning its paths.
+func CLIProfile() string {
+	root, _ := filepath.Abs(ProviderHome())
+	home, _ := os.UserHomeDir()
+	config, _ := os.UserConfigDir()
+	parts := []string{root, home, config}
+	parts = append(parts, os.Getenv("PATH"), os.Getenv("OPENCODE_CONFIG_CONTENT"))
+	for _, name := range []string{"XDG_DATA_HOME", "OPENCODE_BIN", "CLINE_BIN", "OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "CLINE_HOME"} {
+		path := os.Getenv(name)
+		if path != "" {
+			if absolute, err := filepath.Abs(path); err == nil {
+				path = absolute
+			}
+		}
+		parts = append(parts, path)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(parts, "\x00"))))
 }
 
 // CLIExecutable resolves explicit overrides, managed native installations, then PATH.

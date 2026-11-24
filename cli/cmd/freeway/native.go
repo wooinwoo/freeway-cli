@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"syscall"
 
+	"github.com/wooinwoo/freeway-cli/cli/imagegen"
+	"github.com/wooinwoo/freeway-cli/cli/tui"
 	"github.com/wooinwoo/freeway-cli/cli/update"
 )
 
@@ -46,6 +48,7 @@ func runNativeCommand(args []string) (bool, error) {
 			return true, err
 		}
 		child := exec.Command(binary, args[1:]...)
+		child.Env = imagegen.WithoutTokenEnv()
 		child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
 		return true, child.Run()
 	}
@@ -80,6 +83,12 @@ func runNativeCommand(args []string) (bool, error) {
 			return true, errors.New("use freeway install --archive PATH --sha256 EXPECTED_SHA256 [--root PATH]")
 		}
 		result, err = m.Install(ctx, *archive, *sha)
+		if err == nil && interactiveTerminal() {
+			prefs := tui.LoadPreferences()
+			if _, setupErr := prefs.ConfigureAppearance(terminalOptions(ctx, prefs.NoColor)...); setupErr != nil {
+				fmt.Fprintln(os.Stderr, prefs.Text("Could not complete appearance setup. It will be offered on first launch.", "화면 설정을 마치지 못했습니다. 첫 실행 때 다시 선택할 수 있습니다."), setupErr)
+			}
+		}
 	case "update":
 		if check {
 			result, err = m.Check(ctx)

@@ -1,12 +1,20 @@
 ---
 title: Models and responses
-description: Choose a route and stop safely.
+description: Choose a model and stop safely.
 ---
 ## Select a model
 
 Open `/model`, **F2**, or **Alt+P**. Search, select, and continue writing. Closing the menu preserves your draft.
 
-Only models explicitly marked free and ready by the gateway appear. Auto selection is gateway policy. Responses identify the actual model.
+The picker shows free, ready models. When multiple providers offer the same model, the picker lists them together on one row. Responses identify the model and provider used.
+
+Press **Ctrl+T** to cycle through General, Coding, and Reasoning. Coding uses Terminal-Bench 4.0 and Reasoning uses HLE-Diamond. Models with comparable results are reordered among their existing positions. The source comparisons were checked on 2026-11-20. Reasoning settings and results on a free route can differ from the published evaluations. [Terminal-Bench 4.0](https://artificialanalysis.ai/evaluations/terminalbench-4-0) · [HLE-Diamond](https://artificialanalysis.ai/evaluations/hle-diamond)
+
+**Auto** uses the matching comparison when it detects a clear request to implement a function, fix code, or prove a statement. Manual model choices and explicit routing preferences retain priority.
+
+You can change the model or response length while a reply is in progress. The new choice takes effect on the next question.
+
+If every route for the selected model disappears from the catalog, Freeway keeps your selection and draft. Open **F2** and press **Ctrl+R** to check for restored routes before sending. Use `/queue resume` to continue paused follow-ups.
 
 ## Write and stream
 
@@ -28,7 +36,7 @@ Select a file in **F8** and press Enter to exclude or include earlier copies of 
 
 Files attached to the current question stay in the request. Alt+R and F5 include the attachments of the question being retried. Freeway saves the settings per conversation and keeps the original messages and attachments in history.
 
-If a selected route fails before output, the client may retry through Auto and shows a notice. Once output starts, it preserves the partial response and reports the error. Failed and stopped assistant messages are excluded from later model context.
+If a provider is rate-limited or unavailable before output starts, the gateway can try another provider of the same selected model. Once output starts, the client preserves the partial response and reports the error. Failed and stopped assistant messages are excluded from later model context.
 
 ## Understand usage
 

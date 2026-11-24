@@ -36,6 +36,8 @@ type fileCredentials struct {
 type credentialWire struct {
 	Key           string `json:"key"`
 	FreeConfirmed bool   `json:"freeConfirmed"`
+	Disconnected  bool   `json:"disconnected,omitempty"`
+	AutoExcluded  bool   `json:"autoExcluded,omitempty"`
 }
 
 type credentialsVault struct {
@@ -84,7 +86,7 @@ func (s *fileCredentials) Load(ctx context.Context, id string) (Credential, erro
 		return Credential{}, err
 	}
 	value := vault.Providers[id]
-	return Credential{Key: value.Key, FreeConfirmed: value.FreeConfirmed}, nil
+	return Credential(value), nil
 }
 
 func (s *fileCredentials) Save(ctx context.Context, id string, value Credential) error {
@@ -133,7 +135,7 @@ func (s *fileCredentials) save(ctx context.Context, id string, value Credential,
 	}
 	if previous != nil {
 		current := vault.Providers[id]
-		if current.Key != previous.Key || current.FreeConfirmed != previous.FreeConfirmed {
+		if Credential(current) != *previous {
 			return failure("credential_conflict", 409)
 		}
 	}
@@ -146,7 +148,15 @@ func (s *fileCredentials) save(ctx context.Context, id string, value Credential,
 			return err
 		}
 	}
-	vault.Providers[id] = credentialWire{Key: value.Key, FreeConfirmed: value.FreeConfirmed}
+	vault.Providers[id] = credentialWire(value)
+	// Older binaries ignore policy fields. Keep the vault unreadable to them while a rule is active.
+	vault.Version = 1
+	for _, entry := range vault.Providers {
+		if entry.Disconnected || entry.AutoExcluded {
+			vault.Version = 2
+			break
+		}
+	}
 	plaintext, err := json.Marshal(vault)
 	if err != nil || len(plaintext) > credentialsLimit-128 {
 		return failure("credential_store_failed", 500)
@@ -194,7 +204,7 @@ func (s *fileCredentials) read() (credentialsVault, []byte, error) {
 		return empty, nil, failure("credential_store_corrupt", 500)
 	}
 	var vault credentialsVault
-	if json.Unmarshal(plaintext, &vault) != nil || vault.Version != 1 || vault.Providers == nil {
+	if json.Unmarshal(plaintext, &vault) != nil || (vault.Version != 1 && vault.Version != 2) || vault.Providers == nil {
 		return empty, nil, failure("credential_store_corrupt", 500)
 	}
 	return vault, key, nil

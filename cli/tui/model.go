@@ -18,6 +18,8 @@ const minWidth, minHeight = 44, 12
 // Model owns transient screen state and delegates requests to its gateway adapter.
 type Model struct {
 	interactionState
+	prefs                                                                   Preferences
+	renderedTheme                                                           string
 	width, height                                                           int
 	chat                                                                    viewport.Model
 	find                                                                    *transcriptSearch
@@ -25,6 +27,7 @@ type Model struct {
 	models                                                                  modelsList
 	modelsFocused                                                           bool
 	selected                                                                string
+	listedSelection                                                         string
 	messages                                                                []client.Message
 	gateway                                                                 gateway
 	ctx                                                                     context.Context
@@ -32,26 +35,32 @@ type Model struct {
 	cancel                                                                  context.CancelFunc
 	events                                                                  <-chan client.Event
 	generation                                                              uint64
+	imagePrompt                                                             string
+	mcpApproval                                                             *mcpApproval
+	mcpRunning                                                              bool
 	responseTarget                                                          responseTarget
 	shorterMax                                                              int
 	status                                                                  string
 	notice                                                                  string
 	loadingModels                                                           bool
 	modelsStarted                                                           bool
+	modelListNeedsRefresh                                                   bool
 	ready                                                                   bool
 	availableModels                                                         []client.Model
+	modelRanking                                                            modelRanking
 	menu                                                                    string
 	menuQuery                                                               string
 	menuAll                                                                 []list.Item
 	menuSearching                                                           bool
 	providers                                                               map[string]client.ProviderStatus
+	providerOrder                                                           []string
 	providersLoading                                                        bool
+	providerChecksPending                                                   map[string]bool
 	providersError                                                          string
+	providerCheckID                                                         string
 	providersRequest                                                        uint64
-	openCodeLoading                                                         bool
-	openCodeError                                                           string
-	openCodeRequest                                                         uint64
-	openCodeModels                                                          []client.Model
+	modelsEpoch                                                             uint64
+	providerSetup                                                           string
 	inputHistory                                                            []string
 	inputIndex                                                              int
 	inputDraft, lastRecalled                                                string
@@ -114,6 +123,18 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	m = next.(Model)
+	if m.renderedTheme != m.activeTheme() {
+		m.applyPreferences()
+	}
+	return m, cmd
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.updateMCPApproval(msg); handled {
+		return next, cmd
+	}
 	if next, cmd, handled := m.updateConvenience(msg); handled {
 		return next, cmd
 	}
@@ -123,18 +144,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.BackgroundColorMsg:
 		lightBackground.Store(!msg.IsDark())
-		m.renderCache = nil
-		applyPromptTheme(&m.prompt)
-		m.renderMessages()
+		m.applyPreferences()
 		return m, nil
 	case modelsLoaded:
 		return m.receiveModels(msg)
 	case providerStatusesLoaded:
 		return m.receiveProviderStatuses(msg)
-	case openCodeModelsLoaded:
-		return m.receiveOpenCodeModels(msg)
+	case providerSetupFinished:
+		if msg.err != nil {
+			m.notify(m.tr("Could not open provider setup.", "공급처 연결 안내를 열지 못했습니다."))
+		}
+		next, cmd := m.refreshProviders(msg.id)
+		m = next.(Model)
+		m.loadingModels = true
+		m.modelListNeedsRefresh = false
+		m.modelsEpoch++
+		m.modelsStarted = true
+		return m, tea.Batch(cmd, m.modelLoad(true, false))
 	case responseEvent:
 		return m.receiveResponse(msg)
+	case mcpPlanLoaded:
+		return m.receiveMCPPlan(msg)
+	case mcpToolFinished:
+		return m.receiveMCPToolResult(msg)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.resize()
@@ -193,8 +225,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.busy {
 				m.queuePaused = true
+				mcpRunning := m.mcpRunning
 				m.stopResponse()
 				m.status = "Stopped"
+				if mcpRunning {
+					m.notify(m.mcpInterruptNotice())
+				}
 				m.dirty = true
 				m.renderMessages()
 				return m, m.persist()
@@ -205,7 +241,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.files = nil
 				m.markDraftChanged()
 				m.layout()
-				m.notify("Edit cancelled. The original conversation is unchanged.")
+				m.notify(m.tr("Edit cancelled. The original conversation is unchanged.", "편집을 취소했습니다. 원래 대화를 유지합니다."))
 				return m, nil
 			}
 			if time.Since(m.lastEscape) < 500*time.Millisecond {
@@ -247,6 +283,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.PasteMsg:
 		if m.modelsFocused {
+			if m.themePicker() {
+				return m, nil
+			}
 			return m.appendMenuQuery(msg.Content)
 		}
 	case tea.MouseClickMsg:
@@ -305,6 +344,25 @@ func (m Model) modelCommandPending() bool {
 	return !m.modelsFocused && !m.busy && strings.HasPrefix(value, "/") && strings.HasPrefix("/model", value)
 }
 
+func (m Model) openModels() (tea.Model, tea.Cmd) {
+	m.menu = "models"
+	return m.changeFocus(true)
+}
+
+func (m Model) refreshModelPicker(reconnect bool) (tea.Model, tea.Cmd) {
+	if m.loadingModels {
+		m.notify(m.tr("Already checking models…", "이미 모델을 확인 중입니다…"))
+		return m, nil
+	}
+	m.reconnectAttempts = 0
+	m.loadingModels = true
+	m.modelListNeedsRefresh = false
+	if !m.busy && !m.modelsFocused {
+		m.status = "Connecting"
+	}
+	return m, m.modelLoad(true, reconnect)
+}
+
 func (m Model) changeFocus(models bool) (tea.Model, tea.Cmd) {
 	m.modelsFocused = models
 	var cmd tea.Cmd
@@ -320,11 +378,13 @@ func (m Model) changeFocus(models bool) (tea.Model, tea.Cmd) {
 		m.menuQuery = ""
 		m.menuSearching = false
 		m.models.list.ResetFilter()
-		target := m.selected
-		if m.menu == "context" {
-			target = "turns"
+		m.models.list.Select(0)
+		switch m.menu {
+		case "models":
+			m.selectMenuItem(m.selected)
+		case "context":
+			m.selectMenuItem("turns")
 		}
-		m.selectMenuItem(target)
 	} else {
 		m.menu = ""
 		cmd = m.prompt.Focus()
@@ -332,7 +392,9 @@ func (m Model) changeFocus(models bool) (tea.Model, tea.Cmd) {
 	m.layout()
 	if models && m.menu == "models" && m.gateway != nil && !m.loadingModels && !m.busy {
 		m.loadingModels = true
-		return m, tea.Batch(cmd, m.loadModels())
+		refresh := m.modelListNeedsRefresh
+		m.modelListNeedsRefresh = false
+		return m, tea.Batch(cmd, m.modelLoad(refresh, false))
 	}
 	return m, cmd
 }
@@ -371,12 +433,22 @@ func (m *Model) layout() {
 	bottomHeight := m.prompt.Height() + 4 + extra
 	menuHeight := max(1, m.height-8)
 	if m.modelsFocused {
-		if m.inlineFilePicker() {
+		if m.themePicker() {
+			menuHeight = len(m.models.list.Items())
+			bottomHeight = menuHeight + 2
+			composerHeight := m.prompt.Height() + 2 + extra
+			if m.height-3-bottomHeight-composerHeight >= 3 {
+				bottomHeight += composerHeight
+			}
+		} else if m.inlineFilePicker() {
 			composerHeight := m.prompt.Height() + 3 + extra
 			menuHeight = max(1, min(5, m.height-6-composerHeight))
 			bottomHeight = composerHeight + menuHeight + 2
 		} else {
-			menuHeight -= m.promptPreviewHeight()
+			menuHeight -= m.menuPreviewHeight()
+			if m.menu == "models" {
+				menuHeight--
+			}
 			bottomHeight = menuHeight + 4
 		}
 	}
@@ -397,4 +469,9 @@ func (m *Model) renderMessages() {
 	m.renderConversation()
 }
 
-func (m Model) View() tea.View { return m.workspaceView() }
+func (m Model) View() tea.View {
+	if m.mcpApproval != nil {
+		return themedView(m.mcpApprovalView(), m.prefs.NoColor)
+	}
+	return themedView(m.workspaceView(), m.prefs.NoColor)
+}

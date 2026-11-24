@@ -107,6 +107,38 @@ func TestMenusDuringGenerationDoNotQueueOrCancelByAccident(t *testing.T) {
 	}
 }
 
+func TestClearingQueueNeverReplacesStashedDraft(t *testing.T) {
+	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.stash = &draftState{Text: "Stashed work", Files: []client.Attachment{{Path: "draft.txt", Content: "draft file"}}}
+	m.queue = []client.PendingPrompt{{Text: "Queued question", Files: []client.Attachment{{Path: "queued.txt", Content: "queued file"}}}}
+	next, _ := m.reviewQueue("clear")
+	m = update(next.(Model), press(tea.KeyEnter))
+	if len(m.queue) != 1 || m.stash.Text != "Stashed work" || m.modelsFocused {
+		t.Fatal("the safe default must preserve the queue and existing stash")
+	}
+	next, _ = m.reviewQueue("clear")
+	m = update(next.(Model), press(tea.KeyDown))
+	m = update(m, press(tea.KeyEnter))
+	if len(m.queue) != 0 || m.stash.Text != "Stashed work" || len(m.stash.Files) != 1 || m.stash.Files[0].Path != "draft.txt" || m.modelsFocused {
+		t.Fatal("confirmation must clear only the queue")
+	}
+}
+
+func TestAddingFollowUpKeepsQueuePaused(t *testing.T) {
+	m := connectedFixture(&burstGateway{})
+	m.busy = true
+	next, _ := m.reviewQueue("pause")
+	m = next.(Model)
+	m.prompt.SetValue("Keep this queued")
+	m = update(m, press(tea.KeyTab))
+	m.busy = false
+	next, cmd := m.startQueued()
+	m = next.(Model)
+	if !m.queuePaused || cmd != nil || len(m.queue) != 1 || len(m.messages) != 0 {
+		t.Fatal("adding a follow-up must not resume a paused queue")
+	}
+}
+
 func TestRestoredSessionKeepsDraftAttachmentsAndPausesQueue(t *testing.T) {
 	m := connectedFixture(&memoryGateway{})
 	m.sessionEpoch = 2
@@ -144,6 +176,7 @@ func TestSessionPickerCanChangeProjectScope(t *testing.T) {
 
 func TestDoubleEscapeEditPreservesOriginalUntilFork(t *testing.T) {
 	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.prefs.Language = "ko"
 	m.messages = []client.Message{newMessage("user", "original"), newMessage("assistant", "answer")}
 	m.lastEscape = time.Now()
 	m = update(m, press(tea.KeyEsc))
@@ -154,6 +187,9 @@ func TestDoubleEscapeEditPreservesOriginalUntilFork(t *testing.T) {
 	m = update(m, press(tea.KeyEsc))
 	if m.editingAt != -1 || m.messages[0].Content != "original" {
 		t.Fatal("cancel changed original history")
+	}
+	if m.toast != "편집을 취소했습니다. 원래 대화를 유지합니다." {
+		t.Fatalf("unexpected edit cancellation notice: %q", m.toast)
 	}
 }
 
@@ -180,6 +216,7 @@ func TestProjectFileAttachmentIsBoundedAndRestorable(t *testing.T) {
 		t.Fatal("binary attachment accepted")
 	}
 	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.prefs.Language = "ko"
 	m.workdir = root
 	m.prompt.SetValue("Read @he")
 	m.prompt.MoveToEnd()
@@ -187,8 +224,16 @@ func TestProjectFileAttachmentIsBoundedAndRestorable(t *testing.T) {
 	if !ok || query.Text != "he" {
 		t.Fatal("inline file token not recognized")
 	}
-	m = update(m, fileAttached{file: file, epoch: m.sessionEpoch, query: query})
+	next, attach := m.attachPath(file.Path, query)
+	m = next.(Model)
+	if m.toast != "첨부 중… hello.go" {
+		t.Fatalf("unexpected attachment progress: %q", m.toast)
+	}
+	m = update(m, attach())
 	if m.prompt.Value() != "Read @hello.go " || len(m.files) != 1 {
 		t.Fatalf("inline file replacement: %q", m.prompt.Value())
+	}
+	if m.toast != "첨부 완료 · hello.go · /detach로 제거" {
+		t.Fatalf("unexpected attachment completion: %q", m.toast)
 	}
 }

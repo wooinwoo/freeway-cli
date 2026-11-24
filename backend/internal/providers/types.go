@@ -21,6 +21,8 @@ type Config struct {
 type Credential struct {
 	Key           string `json:"-"`
 	FreeConfirmed bool   `json:"freeConfirmed"`
+	Disconnected  bool   `json:"disconnected,omitempty"`
+	AutoExcluded  bool   `json:"autoExcluded,omitempty"`
 }
 
 // CredentialStore is supplied by the backend's existing secret store.
@@ -44,8 +46,10 @@ type Provider struct {
 
 type AuthOptions struct {
 	// Key is passed directly to the adapter, never to CLI arguments. Empty preserves existing credentials.
-	Key         string `json:"key,omitempty"`
-	ConfirmFree bool   `json:"confirmFree,omitempty"`
+	Key          string `json:"key,omitempty"`
+	ConfirmFree  bool   `json:"confirmFree,omitempty"`
+	ResumeCLI    bool   `json:"resumeCLI,omitempty"`
+	RequireReady bool   `json:"-"`
 }
 
 type AuthResult struct {
@@ -84,6 +88,8 @@ type Bucket struct {
 type Quota struct {
 	Provider            string            `json:"provider"`
 	KeyConfigured       bool              `json:"keyConfigured"`
+	Disconnected        bool              `json:"disconnected,omitempty"`
+	AutoExcluded        bool              `json:"autoExcluded,omitempty"`
 	Source              string            `json:"source"`
 	Authoritative       bool              `json:"authoritative"`
 	ObservedAt          time.Time         `json:"observedAt"`
@@ -110,6 +116,7 @@ type Request struct {
 	MaxTokens       int       `json:"maxTokens,omitempty"`
 	ReasoningEffort string    `json:"reasoningEffort,omitempty"`
 	Temperature     *float64  `json:"temperature,omitempty"`
+	Automatic       bool      `json:"-"`
 }
 
 type Completion struct {

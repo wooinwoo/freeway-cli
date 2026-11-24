@@ -21,7 +21,13 @@ import (
 func TestMain(m *testing.M) {
 	if os.Getenv("FREEWAY_PROVIDERCTL_TEST_HELPER") == "1" {
 		if len(os.Args) == 2 && os.Args[1] == "--version" && os.Getenv("FREEWAY_PROVIDERCTL_VERSION_PID") != "" {
-			_ = os.WriteFile(os.Getenv("FREEWAY_PROVIDERCTL_VERSION_PID"), []byte(strconv.Itoa(os.Getpid())), 0600)
+			pidFile := os.Getenv("FREEWAY_PROVIDERCTL_VERSION_PID")
+			if err := os.WriteFile(pidFile+".tmp", []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+				panic(err)
+			}
+			if err := os.Rename(pidFile+".tmp", pidFile); err != nil {
+				panic(err)
+			}
 			for {
 				time.Sleep(time.Hour)
 			}

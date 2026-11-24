@@ -16,6 +16,7 @@ type renderedMessage struct {
 	message client.Message
 	width   int
 	text    string
+	wraps   []transcriptWrap
 }
 
 func terminalSafe(s string) string {
@@ -38,13 +39,14 @@ func terminalSafe(s string) string {
 var inlineMarkup = regexp.MustCompile("`([^`\\n]+)`|\\*\\*([^*\\n]+)\\*\\*")
 var listMarker = regexp.MustCompile(`^( *)([-+*]|[0-9]{1,9}[.)]) +(.+)$`)
 
-func markdown(text string, width int) string {
+func markdown(text string, width int) (string, []transcriptWrap) {
 	width = max(1, width)
 	colors := grooveColors()
 	codeStyle := lipgloss.NewStyle().Foreground(colors.code)
 	heading := lipgloss.NewStyle().Foreground(colors.accent).Bold(true)
 	lines := strings.Split(terminalSafe(text), "\n")
 	var output []string
+	var wraps []transcriptWrap
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 		trimmed := strings.TrimSpace(line)
@@ -60,13 +62,18 @@ func markdown(text string, width int) string {
 				code = append(code, lines[i])
 				i++
 			}
-			output = append(output, codeBlock(code, language, width))
+			output = append(output, codeBlock(code, language, width, len(output), &wraps)...)
 			continue
 		}
 		if strings.HasPrefix(trimmed, "#") {
 			content := strings.TrimLeft(trimmed, "#")
 			if strings.HasPrefix(content, " ") {
-				output = append(output, heading.Render(ansi.Wrap(strings.TrimSpace(content), width, "")))
+				content = strings.TrimSpace(content)
+				parts := strings.Split(ansi.Wrap(content, width, ""), "\n")
+				recordWordWrap(&wraps, len(output), 0, content, parts)
+				for _, part := range parts {
+					output = append(output, heading.Render(part))
+				}
 				continue
 			}
 		}
@@ -91,47 +98,61 @@ func markdown(text string, width int) string {
 			}
 			return lipgloss.NewStyle().Bold(true).Render(s[2 : len(s)-2])
 		})
-		wrapped := ansi.Wrap(line, width-ansi.StringWidth(prefix), "")
-		output = append(output, prefix+strings.ReplaceAll(wrapped, "\n", "\n"+continuation))
+		parts := strings.Split(ansi.Wrap(line, width-ansi.StringWidth(prefix), ""), "\n")
+		// ponytail: search joins wrapped rows at one byte offset, so a "•" bullet (wider in bytes than its indent) skips cross-row matches.
+		if skip := len(ansi.Strip(prefix)); skip == len(ansi.Strip(continuation)) {
+			recordWordWrap(&wraps, len(output), skip, line, parts)
+		}
+		for i, part := range parts {
+			if i == 0 {
+				output = append(output, prefix+part)
+			} else {
+				output = append(output, continuation+part)
+			}
+		}
 	}
-	return strings.Join(output, "\n")
+	return strings.Join(output, "\n"), wraps
 }
 
-func codeBlock(lines []string, language string, width int) string {
+func codeBlock(lines []string, language string, width, row int, wraps *[]transcriptWrap) []string {
 	c := grooveColors()
 	border := lipgloss.NewStyle().Foreground(c.border)
 	code := lipgloss.NewStyle().Foreground(c.code)
-	if width < 8 {
-		return code.Render(ansi.Hardwrap(strings.Join(lines, "\n"), width, true))
-	}
 	label := " " + ansi.Truncate(language, max(1, width-8), "…") + " "
 	rows := []string{border.Render("╭─") + code.Render(label) + border.Render(strings.Repeat("─", max(0, width-3-ansi.StringWidth(label)))+"╮")}
 	for _, line := range lines {
-		for _, part := range strings.Split(ansi.Hardwrap(line, width-4, true), "\n") {
+		parts := strings.Split(ansi.Hardwrap(line, width-4, true), "\n")
+		recordTranscriptWrap(wraps, row+len(rows), len("│ "), parts)
+		for _, part := range parts {
 			rows = append(rows, border.Render("│ ")+code.Render(padCells(part, width-4))+border.Render(" │"))
 		}
 	}
 	rows = append(rows, border.Render("╰"+strings.Repeat("─", width-2)+"╯"))
-	return strings.Join(rows, "\n")
+	return rows
 }
 
-func renderUserMessage(message client.Message, width int, colors schemeColors) string {
+func (m Model) renderUserMessage(message client.Message, width int, colors schemeColors) (string, []transcriptWrap) {
 	inset := min(16, max(2, width/8))
 	panelWidth := width - inset - 1
 	gutter := strings.Repeat(" ", inset)
 	edge := lipgloss.NewStyle().Foreground(colors.userAccent).Background(colors.userPanel).Render("▎")
 	panel := lipgloss.NewStyle().Background(colors.userPanel).Foreground(colors.text)
 	title := panel.Foreground(colors.userAccent).Bold(true)
-	rows := []string{gutter + edge + title.Render(padCells(" ● YOU", panelWidth))}
+	rows := []string{gutter + edge + title.Render(padCells(m.tr(" ● YOU", " ● 나"), panelWidth))}
 	bodyWidth := panelWidth - 2
-	for _, line := range strings.Split(ansi.Hardwrap(terminalSafe(message.Content), bodyWidth, true), "\n") {
-		rows = append(rows, gutter+edge+panel.Render(padCells(" "+line, panelWidth)))
+	var wraps []transcriptWrap
+	for _, line := range strings.Split(terminalSafe(message.Content), "\n") {
+		parts := strings.Split(ansi.Hardwrap(line, bodyWidth, true), "\n")
+		recordTranscriptWrap(&wraps, len(rows), inset+len("▎ "), parts)
+		for _, part := range parts {
+			rows = append(rows, gutter+edge+panel.Render(padCells(" "+part, panelWidth)))
+		}
 	}
 	for _, file := range message.Files {
-		label := ansi.Truncate("[file] "+terminalSafe(file.Path), bodyWidth, "…")
+		label := ansi.Truncate(m.tr("[file] ", "[파일] ")+terminalSafe(file.Path), bodyWidth, "…")
 		rows = append(rows, gutter+edge+title.Bold(false).Render(padCells(" "+label, panelWidth)))
 	}
-	return strings.Join(rows, "\n")
+	return strings.Join(rows, "\n"), wraps
 }
 
 func (m *Model) renderConversation() {
@@ -150,26 +171,36 @@ func (m *Model) renderConversation() {
 			continue
 		}
 		var rendered string
+		var wraps []transcriptWrap
 		bodyWidth := max(1, width-4)
 		label := lipgloss.NewStyle().Foreground(colors.accent).Bold(true)
 		if message.Role == "user" {
-			rendered = renderUserMessage(message, width, colors)
+			rendered, wraps = m.renderUserMessage(message, width, colors)
 		} else {
-			rendered = markdown(message.Content, bodyWidth)
+			rendered, wraps = markdown(message.Content, bodyWidth)
+			for i := range wraps {
+				wraps[i].row += 2
+				wraps[i].prefix += 4
+			}
 			if message.Content == "" && m.busy {
-				rendered = lipgloss.NewStyle().Foreground(colors.muted).Render("Thinking…")
+				rendered = lipgloss.NewStyle().Foreground(colors.muted).Render(m.tr("Thinking…", "응답을 기다리는 중…"))
 			}
 			if message.Status == "stopped" {
-				rendered += "\n" + lipgloss.NewStyle().Foreground(colors.border).Render("Stopped · Alt+R to regenerate")
+				rendered += "\n" + lipgloss.NewStyle().Foreground(colors.border).Render(m.tr("Stopped · Alt+R to regenerate", "응답 중지됨 · Alt+R로 다시 생성"))
 			}
+			// The route appears with the first chunk, so Auto shows which free connection answered.
 			identity := label.Render("✦ FREEWAY")
 			if message.Model != "" {
 				route := " · " + routeLabel(message.Model)
+				// Keep provider detail the model ID lacks, such as which image server answered.
+				if prefix, _, _ := strings.Cut(message.Model, "/"); message.Provider != "" && !strings.EqualFold(message.Provider, prefix) {
+					route += " · " + oneLine(message.Provider)
+				}
 				identity += lipgloss.NewStyle().Foreground(colors.muted).Render(ansi.Truncate(route, width-ansi.StringWidth(identity), "…"))
 			}
 			rendered = identity + "\n\n    " + strings.ReplaceAll(rendered, "\n", "\n    ")
 		}
-		cache[i] = renderedMessage{message: message, width: width, text: rendered}
+		cache[i] = renderedMessage{message: message, width: width, text: rendered, wraps: wraps}
 		rows = append(rows, rendered)
 	}
 	m.renderCache = cache
@@ -187,30 +218,15 @@ func (m *Model) renderConversation() {
 	m.lastRender, m.renderPending = time.Now(), false
 }
 
-func (m Model) modelLabel() string {
-	if m.selected == "free/auto" {
-		return "Auto"
-	}
-	for _, model := range m.availableModels {
-		if model.ID == m.selected {
-			return oneLine(model.Name)
-		}
-	}
-	for _, model := range m.openCodeModels {
-		if model.ID == m.selected {
-			return "OpenCode · " + oneLine(model.Name)
-		}
-	}
-	return routeLabel(m.selected)
-}
-
 func routeLabel(model string) string {
 	model = oneLine(model)
 	provider, name, ok := strings.Cut(model, "/")
-	if !ok || provider == "preview" || provider == "free" {
+	if !ok || provider == "preview" || provider == "free" || provider == "model" {
 		return model
 	}
 	switch provider {
+	case "mcp":
+		provider = "MCP"
 	case "opencode":
 		provider = "OpenCode"
 	case "kilo":
@@ -225,25 +241,51 @@ func routeLabel(model string) string {
 	return provider + " · " + name
 }
 
+func (m Model) modelLabel(id string) string {
+	if id == "free/auto" {
+		return m.tr("Auto", "자동")
+	}
+	for _, model := range m.availableModels {
+		if model.ID == id {
+			return oneLine(model.Name)
+		}
+	}
+	return id
+}
+
 func (m Model) statusLabel() string {
 	status := m.status
+	if m.prefs.Language == "ko" {
+		message, provider, _ := strings.Cut(status, " · ")
+		if localized := koreanStatus[message]; localized != "" {
+			status = localized
+			if provider != "" {
+				status += " · " + provider
+			}
+		}
+	}
 	if !m.busy && m.responseElapsed > 0 {
-		status += fmt.Sprintf(" · %.1fs", m.responseElapsed.Seconds())
+		status += fmt.Sprintf(m.tr(" · %.1fs", " · %.1f초"), m.responseElapsed.Seconds())
 		if m.lastResponseTokens > 0 {
-			status += fmt.Sprintf(" · %d tokens", m.lastResponseTokens)
+			status += fmt.Sprintf(m.tr(" · %d tokens", " · %d토큰"), m.lastResponseTokens)
+		}
+	}
+	if m.ready && !m.busy && !m.loadingModels {
+		if issue := m.textRouteIssue(); issue != "" {
+			status = issue
 		}
 	}
 	if m.busy {
 		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		elapsed := max(0, time.Since(m.startedAt).Seconds())
-		status = fmt.Sprintf("%s %s · %.0fs · Esc to stop", frames[int(elapsed*8)%len(frames)], m.status, elapsed)
+		status = fmt.Sprintf(m.tr("%s %s · %.0fs · Esc to stop", "%s %s · %.0f초 · Esc 중지"), frames[int(elapsed*8)%len(frames)], status, elapsed)
 	}
 	if m.saveError != "" {
-		status += " · Save failed · F6 recovery"
+		status = m.tr("Save failed · /save to retry · F6 recovery · ", "저장 실패 · /save로 다시 시도 · F6 복구 · ") + status
 	} else if m.saving {
-		status += " · Saving…"
+		status += m.tr(" · Saving…", " · 저장 중…")
 	} else if m.saveEnabled && m.session.ID != "" && !m.dirty && m.pendingSave == nil {
-		status += " · Saved locally"
+		status += m.tr(" · Saved locally", " · 로컬에 저장됨")
 	}
 	if m.nearSaveLimit {
 		status += " · Near 8 MiB save limit"
@@ -251,8 +293,16 @@ func (m Model) statusLabel() string {
 	return status
 }
 
+var koreanStatus = map[string]string{
+	"Connecting": "연결 중", "Connection needs attention": "연결 확인 필요", "Ready": "준비 완료",
+	"Preparing response": "응답 준비 중", "Writing response": "응답 생성 중", "Response complete": "응답 완료",
+	"Generating image":      "이미지 생성 중",
+	"Image tool configured": "이미지 도구 설정됨",
+	"Ready to retry":        "다시 시도 가능", "Stopped": "중지됨",
+}
+
 func sameRenderedMessage(a, b client.Message) bool {
-	if a.ID != b.ID || a.Role != b.Role || a.Content != b.Content || a.Status != b.Status || a.Model != b.Model || a.Error != b.Error || len(a.Files) != len(b.Files) {
+	if a.ID != b.ID || a.Role != b.Role || a.Content != b.Content || a.Status != b.Status || a.Model != b.Model || a.Provider != b.Provider || a.Error != b.Error || len(a.Files) != len(b.Files) {
 		return false
 	}
 	for i := range a.Files {

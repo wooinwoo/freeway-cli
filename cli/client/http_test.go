@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -60,6 +61,30 @@ func TestModelsExcludePaidAndUnavailableRoutes(t *testing.T) {
 	models, err := c.Models(context.Background())
 	if err != nil || len(models) != 1 || models[0].ID != "free/ready" {
 		t.Fatalf("invalid model list: %#v %v", models, err)
+	}
+}
+
+func TestFreshModelsSupportsAnOlderRunningGateway(t *testing.T) {
+	for _, current := range []bool{true, false} {
+		var checks atomic.Int32
+		c := fixtureHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/v1/providers":
+				checks.Add(1)
+				fmt.Fprint(w, `{"data":[]}`)
+			case r.URL.Query().Get("refresh") == "1" && current:
+				fmt.Fprint(w, `{"refreshed":true,"data":[{"id":"fresh/model","free":true,"ready":true}]}`)
+			case checks.Load() > 0:
+				fmt.Fprint(w, `{"data":[{"id":"fresh/model","free":true,"ready":true}]}`)
+			default:
+				fmt.Fprint(w, `{"data":[{"id":"stale/model","free":true,"ready":true}]}`)
+			}
+		})
+		c.managed = true
+		models, err := c.RefreshModels(t.Context())
+		if err != nil || len(models) != 1 || models[0].ID != "fresh/model" || current != (checks.Load() == 0) {
+			t.Fatalf("current=%v, models=%v, status refreshes=%d, error=%v", current, models, checks.Load(), err)
+		}
 	}
 }
 
@@ -129,14 +154,14 @@ func TestManagedGatewayRefreshDoesNotReplayCompletion(t *testing.T) {
 		return second, func() {}, nil
 	})
 	defer c.Close()
-	if !c.CanOpenCode() {
+	if !c.hasFeature(featureOpenCode) {
 		t.Fatal("negotiated OpenCode capability was not available")
 	}
 	if err := c.Stream(t.Context(), "free/auto", []Message{{Role: "user", Content: "fixture"}}, nil); err == nil {
 		t.Fatal("the interrupted completion should be reported to the user")
 	}
 	models, err := c.Models(t.Context())
-	if err != nil || len(models) != 1 || models[0].ID != "free/replacement" || c.CanOpenCode() {
+	if err != nil || len(models) != 1 || models[0].ID != "free/replacement" || c.hasFeature(featureOpenCode) {
 		t.Fatalf("replacement and its capabilities were not applied: %+v %v", models, err)
 	}
 }
@@ -251,6 +276,29 @@ func TestConversationRoundTripIncludesClearsStashAndConflicts(t *testing.T) {
 	list, err := c.Conversations(ctx)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("history missing: %#v %v", list, err)
+	}
+}
+
+func TestConversationCanSaveWithOlderGateway(t *testing.T) {
+	client := fixtureHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		var chat Conversation
+		if err := json.NewDecoder(r.Body).Decode(&chat); err != nil {
+			t.Error(err)
+			return
+		}
+		if chat.Messages[0].Provider != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"message":"Invalid fields","code":"invalid_request"}}`)
+			return
+		}
+		chat.ID, chat.Revision = "saved", 1
+		_ = json.NewEncoder(w).Encode(chat)
+	})
+	chat := Conversation{Messages: []Message{{Role: "assistant", Content: "Keep this answer", Model: "actual", Provider: "fixture"}}}
+	saved, err := client.SaveConversation(t.Context(), chat)
+	if err != nil || len(saved.Messages) != 1 || saved.Messages[0].Content != "Keep this answer" ||
+		saved.Messages[0].Model != "actual" || chat.Messages[0].Provider != "fixture" {
+		t.Fatalf("compatibility save changed the answer or live metadata: %+v, %v", saved, err)
 	}
 }
 

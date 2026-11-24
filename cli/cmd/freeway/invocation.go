@@ -106,14 +106,19 @@ const usage = `Freeway — a free AI workspace
   --new / -n       Start fresh
   --resume / -r    Open the session picker, or pass an ID/title
   --continue / -c  Continue the latest session in this project
-  --no-save       Keep this session in memory only
+  --no-save       Skip conversation history. Image outputs still save as files.
   --no-color      Disable terminal colors
   --preview       Offline UI preview
 
-In the UI: /resume, /fork, /rename TITLE, /new, /queue, /help
+In the UI: /resume, /fork, /rename TITLE, /new, /queue, /language, /theme, /help
 
 Native tools:
   freeway providers COMMAND  Native provider authentication and diagnostics
+  freeway image connect      Connect an MCP image tool for Auto
+  freeway image status       Show the configured MCP image tool
+  freeway image disconnect   Disconnect the MCP image tool
+  freeway mcp --help          Discover and call MCP tools from the terminal
+  freeway connect [PROVIDER]  Guided provider connection
   freeway gateway serve      Start the local Go gateway
   freeway gateway key        Print the local gateway client key
   freeway --version          Print the native client version

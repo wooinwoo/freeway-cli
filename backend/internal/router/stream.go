@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/wooinwoo/freeway-cli/backend/internal/contracts"
@@ -37,17 +39,50 @@ func (r *Router) Stream(ctx context.Context, input contracts.CompletionRequest, 
 	if err != nil {
 		return contracts.Completion{}, executionError(err)
 	}
-	catalog := discovered.routes
-	if input.Model == Auto {
+	selected := input.Model
+	auto := selected == Auto
+	if r.resolveLegacy && !auto {
+		provider, upstreamID, _ := strings.Cut(selected, "/")
+		if providers.IsProvider(provider) {
+			selected = modelIdentity(selected, upstreamID)
+		}
+	}
+	grouped := strings.HasPrefix(selected, "model/")
+	catalog := slices.DeleteFunc(slices.Clone(discovered.routes), func(candidate route) bool {
+		if auto {
+			return candidate.source.ExplicitOnly
+		}
+		return selected != candidate.groupID && selected != candidate.model.ID
+	})
+	policies := r.connectionPolicies(ctx, catalog)
+	if err := ctx.Err(); err != nil {
+		return contracts.Completion{}, executionError(err)
+	}
+	catalog = slices.DeleteFunc(catalog, func(candidate route) bool {
+		policy := policies[candidate.source.ID]
+		return !policy.enabled || (auto && !policy.auto)
+	})
+	if auto {
+		if order := taskBenchmark(input.Messages); len(order) != 0 {
+			r.prioritizeBenchmark(catalog, order)
+		}
 		catalog = prioritizeDistinctProviders(catalog)
 	}
+	attemptLimit := 1
+	if auto {
+		attemptLimit = maxAttempts
+	} else if grouped {
+		attemptLimit = len(catalog)
+	}
 	request := providerRequest(input)
+	request.Automatic = auto
 	estimate := estimatedTokens(request)
 	var attempts int
 	var lastAttempt error
 	var blockedRoute *contracts.Problem
+	tried := make(map[string]bool)
 	for i, candidate := range catalog {
-		if input.Model != Auto && candidate.model.ID != input.Model {
+		if grouped && tried[candidate.source.ID] {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
@@ -73,13 +108,16 @@ func (r *Router) Stream(ctx context.Context, input contracts.CompletionRequest, 
 			continue
 		}
 		attempts++
+		if grouped {
+			tried[candidate.source.ID] = true
+		}
 		request.Provider, request.Model = candidate.source.ID, candidate.model.ID
 		var firstTextWait time.Duration
-		if input.Model == Auto && attempts < maxAttempts && r.hasFallbackProvider(catalog[i+1:], candidate.source.ID, estimate) {
+		if attempts < attemptLimit && r.hasFallbackProvider(catalog[i+1:], candidate.source.ID, estimate, tried) {
 			firstTextWait = r.firstTextWait
 		}
 		completion, started, err := r.try(ctx, request, reservation, firstTextWait, emit)
-		if err == nil || started || ctx.Err() != nil || input.Model != Auto || attempts >= maxAttempts || !retryable(err) {
+		if err == nil || started || ctx.Err() != nil || attempts >= attemptLimit || !retryable(err) {
 			return completion, err
 		}
 		lastAttempt = err
@@ -100,11 +138,11 @@ func outputFit(problem *contracts.Problem) int {
 	return *problem.MaxOutputTokens
 }
 
-func (r *Router) hasFallbackProvider(routes []route, provider string, estimate int) bool {
+func (r *Router) hasFallbackProvider(routes []route, provider string, estimate int, tried map[string]bool) bool {
 	checked := map[string]bool{provider: true}
 	for _, candidate := range routes {
 		source := candidate.source
-		if checked[source.ID] {
+		if checked[source.ID] || tried[source.ID] {
 			continue
 		}
 		checked[source.ID] = true

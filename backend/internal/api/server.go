@@ -28,14 +28,19 @@ type Inference interface {
 }
 
 type server struct {
-	chats       *session.Store
-	inference   Inference
-	modelPrefix string
+	chats          *session.Store
+	inference      Inference
+	modelPrefix    string
+	manageProvider func(context.Context, string, contracts.ProviderChange) error
+	cliProfile     string
 }
 
 type LocalClient struct {
-	Key      auth.ClientKey
-	OpenCode Inference
+	Key            auth.ClientKey
+	Inference      Inference
+	OpenCode       Inference
+	ManageProvider func(context.Context, string, contracts.ProviderChange) error
+	CLIProfile     string
 }
 
 func New(key auth.ClientKey, chats *session.Store, inference Inference, local *LocalClient) http.Handler {
@@ -52,9 +57,32 @@ func New(key auth.ClientKey, chats *session.Store, inference Inference, local *L
 			<-r.Context().Done()
 		}
 	})
-	mux.HandleFunc("GET /v1/models", s.models)
-	mux.HandleFunc("GET /v1/providers", s.providerStatuses)
-	mux.HandleFunc("POST /v1/chat/completions", s.completions)
+	personal := s
+	if local != nil && local.Inference != nil {
+		personal = &server{inference: local.Inference, manageProvider: local.ManageProvider, cliProfile: local.CLIProfile}
+	}
+	for pattern, handlers := range map[string][2]http.HandlerFunc{
+		"GET /v1/models":            {s.models, personal.models},
+		"GET /v1/providers":         {s.providerStatuses, personal.providerStatuses},
+		"POST /v1/chat/completions": {s.completions, personal.completions},
+	} {
+		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+			if personal != s && local.Key.Matches(r.Header.Get("Authorization")) {
+				handlers[1](w, r)
+				return
+			}
+			handlers[0](w, r)
+		})
+	}
+	if local != nil && personal.manageProvider != nil {
+		mux.HandleFunc("POST /v1/local/providers/{id}/management", func(w http.ResponseWriter, r *http.Request) {
+			if !local.Key.Matches(r.Header.Get("Authorization")) {
+				writeProblem(w, problem(http.StatusForbidden, "local_client_required", "Provider management requires the local Freeway client."))
+				return
+			}
+			personal.changeProvider(w, r)
+		})
+	}
 	if local != nil && local.OpenCode != nil {
 		opencode := &server{inference: local.OpenCode, modelPrefix: "opencode/"}
 		for pattern, handler := range map[string]http.HandlerFunc{

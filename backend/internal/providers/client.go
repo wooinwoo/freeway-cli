@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -165,13 +166,16 @@ func (c *Client) credential(ctx context.Context, d Definition) (Credential, erro
 		}
 		return value, failure("credential_store_failed", 500)
 	}
-	if value.Key == "" {
+	if value.Key == "" && !value.Disconnected {
 		value.Key = os.Getenv(d.Env)
 		value.FreeConfirmed = false
 	}
 	return value, nil
 }
 func readiness(d Definition, value Credential) string {
+	if value.Disconnected {
+		return "disconnected"
+	}
 	if !d.RequiresCLI && d.ID != "kilo" && value.Key == "" {
 		return "needs_key"
 	}
@@ -197,6 +201,9 @@ func (c *Client) Authenticate(ctx context.Context, id string, options AuthOption
 	if d.RequiresCLI && options.Key != "" {
 		return result, failure("cli_login_required", 409)
 	}
+	if options.ResumeCLI && !d.RequiresCLI {
+		return result, failure("cli_login_required", 409)
+	}
 	previous, err := c.config.Credentials.Load(ctx, d.ID)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -205,7 +212,7 @@ func (c *Client) Authenticate(ctx context.Context, id string, options AuthOption
 		return result, failure("credential_store_failed", 500)
 	}
 	value := previous
-	if value.Key == "" {
+	if value.Key == "" && (!previous.Disconnected || options.Key != "" || options.ConfirmFree) {
 		value.Key = os.Getenv(d.Env)
 		value.FreeConfirmed = false
 	}
@@ -215,40 +222,128 @@ func (c *Client) Authenticate(ctx context.Context, id string, options AuthOption
 		}
 		value.Key = strings.TrimSpace(options.Key)
 		value.FreeConfirmed = false
+		value.Disconnected = false
 	}
 	if options.ConfirmFree {
 		value.FreeConfirmed = true
 	}
-	if options.Key != "" || options.ConfirmFree {
-		if store, ok := c.config.Credentials.(interface {
-			CompareAndSwap(context.Context, string, Credential, Credential) error
-		}); ok {
-			err = store.CompareAndSwap(ctx, id, previous, value)
-		} else {
-			err = c.config.Credentials.Save(ctx, id, value)
-		}
-		if err != nil {
-			if ctx.Err() != nil {
-				return result, ctx.Err()
-			}
-			var typed *Error
-			if errors.As(err, &typed) && typed.Code == "credential_conflict" {
-				return result, failure("credential_conflict", 409)
-			}
-			return result, failure("credential_store_failed", 500)
-		}
+	if options.ResumeCLI || (options.ConfirmFree && value.Key != "") {
+		value.Disconnected = false
 	}
 	result.Reason = readiness(d, value)
-	if result.Reason != "" {
-		return result, nil
+	if options.RequireReady && result.Reason != "" {
+		return result, failure(result.Reason, 409)
 	}
-	models, err := c.models(ctx, d, value)
-	if err != nil {
-		return result, err
+	if result.Reason == "" {
+		if d.ID == "openrouter" && options.Key != "" {
+			if err := c.checkOpenRouterKey(ctx, value.Key); err != nil {
+				return result, err
+			}
+		}
+		models, err := c.models(ctx, d, value)
+		if err != nil {
+			return result, err
+		}
+		result.ModelCount = len(models)
+		if len(models) == 0 && (options.Key != "" || options.ResumeCLI || options.RequireReady) {
+			return result, failure("no_free_models", 503)
+		}
 	}
-	result.Ready = true
-	result.ModelCount = len(models)
+	if options.Key != "" || options.ConfirmFree || options.ResumeCLI && previous.Disconnected {
+		if err := c.saveCredential(ctx, id, previous, value); err != nil {
+			return result, err
+		}
+	}
+	result.Ready = result.Reason == ""
 	return result, nil
+}
+
+func (c *Client) checkOpenRouterKey(ctx context.Context, key string) error {
+	adapter, ok := c.adapters["openrouter"].(*httpAdapter)
+	if !ok {
+		return failure("key_check_unavailable", http.StatusServiceUnavailable)
+	}
+	return adapter.checkOpenRouterKey(ctx, key)
+}
+
+// CheckProviderKey verifies the currently configured OpenRouter key without running inference.
+func (c *Client) CheckProviderKey(ctx context.Context, id string) error {
+	ctx, done, err := c.call(ctx)
+	if err != nil {
+		return err
+	}
+	defer done()
+	if id != "openrouter" {
+		return failure("key_check_unavailable", http.StatusServiceUnavailable)
+	}
+	d, err := c.definition(id)
+	if err != nil {
+		return err
+	}
+	value, err := c.credential(ctx, d)
+	if err != nil {
+		return err
+	}
+	if reason := readiness(d, value); reason != "" {
+		return failure(reason, http.StatusConflict)
+	}
+	return c.checkOpenRouterKey(ctx, value.Key)
+}
+
+func (c *Client) saveCredential(ctx context.Context, id string, previous, value Credential) error {
+	var err error
+	if store, ok := c.config.Credentials.(interface {
+		CompareAndSwap(context.Context, string, Credential, Credential) error
+	}); ok {
+		err = store.CompareAndSwap(ctx, id, previous, value)
+	} else {
+		err = c.config.Credentials.Save(ctx, id, value)
+	}
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	var typed *Error
+	if errors.As(err, &typed) && (typed.Code == "credential_conflict" || typed.Code == "credential_store_busy") {
+		return failure(typed.Code, 409)
+	}
+	return failure("credential_store_failed", 500)
+}
+
+// Manage uses the same atomic write as authentication so concurrent changes cannot restore an old key.
+func (c *Client) Manage(ctx context.Context, id, action string) error {
+	ctx, done, err := c.call(ctx)
+	if err != nil {
+		return err
+	}
+	defer done()
+	d, err := c.definition(id)
+	if err != nil {
+		return err
+	}
+	previous, err := c.config.Credentials.Load(ctx, d.ID)
+	if err != nil {
+		return failure("credential_store_failed", 500)
+	}
+	value := previous
+	switch action {
+	case "disconnect":
+		value.Key, value.FreeConfirmed, value.Disconnected = "", false, true
+	case "enable":
+		value.Disconnected = false
+	case "include-auto":
+		value.AutoExcluded = false
+	case "exclude-auto":
+		value.AutoExcluded = true
+	default:
+		return failure("invalid_connection_action", 400)
+	}
+	if value == previous {
+		return nil
+	}
+	return c.saveCredential(ctx, d.ID, previous, value)
 }
 
 // Login runs the official CLI's interactive authentication directly from Go.
@@ -356,7 +451,9 @@ func (c *Client) Quota(ctx context.Context, id string) (Quota, error) {
 	if err != nil {
 		return Quota{}, err
 	}
-	q := Quota{Provider: id, KeyConfigured: strings.TrimSpace(value.Key) != "", Source: "provider_adapter", ObservedAt: time.Now().UTC(), LastFailure: json.RawMessage("null")}
+	q := Quota{Provider: id, KeyConfigured: !value.Disconnected && strings.TrimSpace(value.Key) != "",
+		Disconnected: value.Disconnected, AutoExcluded: value.AutoExcluded, Source: "provider_adapter",
+		ObservedAt: time.Now().UTC(), LastFailure: json.RawMessage("null")}
 	q.Reason = readiness(d, value)
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -431,6 +528,9 @@ func (c *Client) Stream(ctx context.Context, request Request, emit func(string))
 	value, err := c.credential(ctx, d)
 	if err != nil {
 		return Completion{}, err
+	}
+	if request.Automatic && value.AutoExcluded {
+		return Completion{}, failure("excluded_from_auto", 409)
 	}
 	models, err := c.models(ctx, d, value)
 	if err != nil {

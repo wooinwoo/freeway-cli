@@ -65,3 +65,9 @@ func compareNumeric(a, b string) int {
 	}
 	return strings.Compare(a, b)
 }
+
+// NewerThan reports whether r is a strictly newer valid release than current.
+func (r Release) NewerThan(current string) bool {
+	return versionPattern.MatchString(current) && versionPattern.MatchString(r.Version) &&
+		compareVersions(r.Version, current) > 0
+}

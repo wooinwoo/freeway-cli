@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/wooinwoo/freeway-cli/cli/client"
+	"github.com/wooinwoo/freeway-cli/cli/imagegen"
 )
 
 func openGateway(ctx context.Context, address, key string) (*client.HTTP, func(), error) {
@@ -63,7 +64,9 @@ func connectManaged(ctx, lifetime context.Context, binary string) (*client.HTTP,
 func discoverGateway(ctx context.Context, binary string) (*client.HTTP, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, binary, "connect").Output()
+	cmd := exec.CommandContext(ctx, binary, "connect")
+	cmd.Env = imagegen.WithoutTokenEnv()
+	output, err := cmd.Output()
 	if err != nil {
 		var process *exec.ExitError
 		if errors.As(err, &process) && len(process.Stderr) > 0 {

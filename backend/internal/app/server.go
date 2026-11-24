@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/wooinwoo/freeway-cli/backend/internal/api"
@@ -51,7 +52,7 @@ func Serve(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	sources, err := configuredSources(cfg.Providers)
+	sources, err := configuredSources(cfg.Providers, cfg.Managed)
 	if err != nil {
 		return err
 	}
@@ -85,7 +86,8 @@ func Serve(ctx context.Context, cfg Config) error {
 		return err
 	}
 	defer upstream.Close()
-	models := router.New(upstream, ledger, sources, cfg.Preferred, cfg.Allowed)
+	commonSources := slices.DeleteFunc(slices.Clone(sources), func(source router.Source) bool { return source.ExplicitOnly })
+	models := router.New(upstream, ledger, commonSources, cfg.Preferred, cfg.Allowed)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
@@ -103,7 +105,15 @@ func Serve(ctx context.Context, cfg Config) error {
 	defer vault.ClearConnection()
 	local := &api.LocalClient{Key: managedKey}
 	if cfg.Managed {
-		local.OpenCode = router.New(upstream, ledger, []router.Source{{ID: "opencode", Name: "OpenCode"}}, nil, nil)
+		personal := models.WithSources(sources, true)
+		local.Inference, local.ManageProvider = personal, personal.ManageProvider
+		local.CLIProfile = providers.CLIProfile()
+		for _, source := range sources {
+			if source.ID == "opencode" {
+				local.OpenCode = models.WithSources([]router.Source{source}, false)
+				break
+			}
+		}
 	}
 	handler := api.New(clientKey, chats, models, local)
 	if cfg.Managed {
@@ -163,25 +173,25 @@ func loopbackAddress(address string) (string, error) {
 	return net.JoinHostPort(host, port), nil
 }
 
-func configuredSources(ids []string) ([]router.Source, error) {
+func configuredSources(ids []string, managed bool) ([]router.Source, error) {
 	wanted := make(map[string]bool, len(ids))
 	for _, id := range ids {
 		wanted[id] = true
 	}
 	var sources []router.Source
 	for _, item := range providers.Definitions() {
-		// CLI-only promotions and evaluation-only trial routes stay in the diagnostic tool.
-		if item.RequiresCLI || item.ID == "nvidia" || (len(ids) > 0 && !wanted[item.ID]) {
+		localOpenCode := managed && item.ID == "opencode"
+		if (item.RequiresCLI && !localOpenCode) || item.ID == "nvidia" || (len(ids) > 0 && !wanted[item.ID]) {
 			continue
 		}
 		limits := item.Limits
-		sources = append(sources, router.Source{ID: item.ID, Name: item.Name, Priority: item.Priority,
+		sources = append(sources, router.Source{ID: item.ID, Name: item.Name, Priority: item.Priority, ExplicitOnly: localOpenCode, RemoteCatalog: item.Catalog || localOpenCode,
 			Limits: quota.Limits{Minute: limits["minute"], Hour: limits["hour"], Day: limits["day"], DayTokens: limits["dayTokens"]}})
 		delete(wanted, item.ID)
 	}
 	for _, id := range ids {
 		if wanted[id] {
-			return nil, fmt.Errorf("provider %q is unavailable in the common gateway", id)
+			return nil, fmt.Errorf("provider %q is unavailable in this gateway", id)
 		}
 	}
 	return sources, nil

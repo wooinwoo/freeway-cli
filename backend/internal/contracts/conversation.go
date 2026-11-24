@@ -53,13 +53,14 @@ type ContextSelection struct {
 }
 
 type Message struct {
-	ID      string       `json:"id"`
-	Role    string       `json:"role"`
-	Content string       `json:"content"`
-	Status  string       `json:"status"`
-	Model   string       `json:"model,omitempty"`
-	Error   string       `json:"error,omitempty"`
-	Files   []Attachment `json:"files,omitempty"`
+	ID       string       `json:"id"`
+	Role     string       `json:"role"`
+	Content  string       `json:"content"`
+	Status   string       `json:"status"`
+	Model    string       `json:"model,omitempty"`
+	Provider string       `json:"provider,omitempty"`
+	Error    string       `json:"error,omitempty"`
+	Files    []Attachment `json:"files,omitempty"`
 }
 
 type Conversation struct {

@@ -114,21 +114,19 @@ func TestTokenBurstIsCoalescedAndDraftRemainsEditable(t *testing.T) {
 	}
 }
 
-func TestSelectedModelFailureWaitsForExplicitAutoChoice(t *testing.T) {
+func TestSelectedModelFailureKeepsSelectionAndPrompt(t *testing.T) {
 	g := &burstGateway{failFirst: true}
 	m := connectedFixture(g)
-	m.selected = "free/chosen"
+	m.selected = "model/deepseek/deepseek-v4.1-flash"
+	m = update(m, modelsLoaded{models: []client.Model{{ID: m.selected, Name: "DeepSeek", Free: true, Ready: true}}})
 	m.prompt.SetValue("중복되면 안 되는 질문")
 	next, cmd := m.Update(press(tea.KeyEnter))
 	m, _ = drainResponse(t, next.(Model), cmd)
-	if strings.Join(g.calls, ",") != "free/chosen" || m.selected != "free/chosen" || !strings.Contains(m.notice, "Alt+R") {
-		t.Fatalf("selected model was not preserved: %#v %s %s", g.calls, m.selected, m.notice)
+	if len(g.calls) != 1 || g.calls[0] != m.selected || m.selected != "model/deepseek/deepseek-v4.1-flash" || len(g.requests[0]) != 1 {
+		t.Fatalf("failed request changed the selection or duplicated the prompt: %#v %#v", g.calls, m.messages)
 	}
-	next, _ = m.execute("/auto", "")
-	next, cmd = next.(Model).retry()
-	m, _ = drainResponse(t, next.(Model), cmd)
-	if strings.Join(g.calls, ",") != "free/chosen,free/auto" || len(m.messages) != 2 || len(g.requests[1]) != 1 {
-		t.Fatalf("explicit Auto retry duplicated prompt: %#v %#v", g.calls, m.messages)
+	if m.notice == "" {
+		t.Fatal("failed request did not surface a notice")
 	}
 }
 
@@ -152,8 +150,9 @@ func TestFailureAfterOutputDoesNotSwitchModelsAndRetryKeepsDraft(t *testing.T) {
 
 type memoryGateway struct {
 	burstGateway
-	saved []client.Conversation
-	chat  client.Conversation
+	saved        []client.Conversation
+	chat         client.Conversation
+	usedSettings client.Settings
 }
 
 func (g *memoryGateway) Conversations(context.Context) ([]client.ConversationSummary, error) {
@@ -172,6 +171,11 @@ func (g *memoryGateway) SaveConversation(_ context.Context, chat client.Conversa
 	return chat, nil
 }
 
+func (g *memoryGateway) StreamWithSettings(ctx context.Context, model string, messages []client.Message, settings client.Settings, emit func(client.Event)) error {
+	g.usedSettings = settings
+	return g.Stream(ctx, model, messages, emit)
+}
+
 func TestCancelWhileInitialSavePendingDoesNotStartGeneration(t *testing.T) {
 	g := &memoryGateway{}
 	m := connectedFixture(g)
@@ -188,6 +192,36 @@ func TestCancelWhileInitialSavePendingDoesNotStartGeneration(t *testing.T) {
 	}
 	if m.session.ID == "" || m.session.Revision != 1 {
 		t.Fatal("saved session identity was lost")
+	}
+}
+
+func TestModelChangeDuringInitialSaveAppliesToNextQuestion(t *testing.T) {
+	g := &memoryGateway{}
+	m := connectedFixture(g)
+	m.prompt.SetValue("Use the model selected at send time")
+	next, save := m.Update(press(tea.KeyEnter))
+	m = next.(Model)
+	if !m.saving || m.afterSave != "generate" {
+		t.Fatal("question was not saved before generation")
+	}
+	m = update(m, press(tea.KeyF2))
+	m = update(m, press(tea.KeyDown))
+	m = update(m, press(tea.KeyEnter))
+	if m.selected != "free/chosen" || m.toast != "Next question · Chosen" {
+		t.Fatalf("model picker did not explain the next selection: %q, %q", m.selected, m.toast)
+	}
+	m.notify("Queued another question.")
+	if view := ansi.Strip(m.View().Content); !strings.Contains(view, "Auto · Next Chosen") {
+		t.Fatalf("the conversation lost the active or next model after another notification:\n%s", view)
+	}
+	originalSettings := m.settings
+	m.menu = "settings"
+	next, _ = m.chooseItem(modelItem{ID: "8192", Name: "Long"})
+	m = next.(Model)
+	m, _ = drainResponse(t, m, save)
+	nextConfig := m.snapshot()
+	if len(g.calls) != 1 || g.calls[0] != "free/auto" || nextConfig.Model != "free/chosen" || g.usedSettings != originalSettings || nextConfig.Settings.MaxTokens != 8192 {
+		t.Fatalf("current response: %v %+v; next selection: %q %+v", g.calls, g.usedSettings, nextConfig.Model, nextConfig.Settings)
 	}
 }
 
@@ -214,19 +248,26 @@ func TestNavigationSavesEditsMadeWhileSaveWasPending(t *testing.T) {
 
 func TestCopyCodeAndExportPreserveRawText(t *testing.T) {
 	m := New()
+	m.prefs.Language = "ko"
 	raw := "# 코드\n```go\n  fmt.Println(\"안녕🌏\")\n```"
 	m.messages = []client.Message{newMessage("assistant", raw)}
 	copied := ""
 	m.copyText = func(s string) error { copied = s; return nil }
-	_, cmd := m.copyAnswer(true)
-	cmd()
-	if copied != "  fmt.Println(\"안녕🌏\")" {
-		t.Fatalf("code copy changed content: %q", copied)
+	_, cmd := m.copyAnswer(false)
+	m = update(m, cmd())
+	if copied != raw || m.toast != "응답을 복사했습니다." {
+		t.Fatalf("unexpected response copy: %q, %q", copied, m.toast)
+	}
+	_, cmd = m.copyAnswer(true)
+	m = update(m, cmd())
+	if copied != "  fmt.Println(\"안녕🌏\")" || m.toast != "코드를 복사했습니다." {
+		t.Fatalf("unexpected code copy: %q, %q", copied, m.toast)
 	}
 	path := filepath.Join(t.TempDir(), "대화.md")
 	_, cmd = m.export(path)
-	if result := cmd().(actionResult); result.err != nil {
-		t.Fatal(result.err)
+	m = update(m, cmd())
+	if m.toast != "대화를 내보냈습니다. "+path {
+		t.Fatalf("unexpected export result: %q", m.toast)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil || !strings.Contains(string(data), raw) {

@@ -14,44 +14,180 @@ import (
 
 type providerGatewayFixture struct{ fixtureGateway }
 
+type scopedProviderRefreshFixture struct {
+	providerGatewayFixture
+	checked string
+	refresh bool
+}
+
+func (f *scopedProviderRefreshFixture) ProviderStatus(_ context.Context, id string) (client.ProviderStatus, error) {
+	f.checked = id
+	return client.ProviderStatus{ID: id, Name: "Groq", State: "ready", KeyConfigured: true, CatalogChecked: true}, nil
+}
+
+func (f *scopedProviderRefreshFixture) RefreshModels(ctx context.Context) ([]client.Model, error) {
+	f.refresh = true
+	return f.Models(ctx)
+}
+
 func (providerGatewayFixture) ProviderStatuses(context.Context) ([]client.ProviderStatus, error) {
 	return []client.ProviderStatus{
 		{ID: "kilo", Name: "Kilo", State: "ready", FreeModels: 2},
 		{ID: "groq", Name: "Groq", State: "needs_key"},
+		{ID: "opencode", Name: "OpenCode", State: "opencode_not_installed"},
+		{ID: "gemini_api", Name: "Gemini API", State: "ready", FreeModels: 2, KeyConfigured: true},
 	}, nil
 }
 
-type openCodeGatewayFixture struct{ fixtureGateway }
-
-func (openCodeGatewayFixture) CanOpenCode() bool { return true }
-
-func (openCodeGatewayFixture) OpenCodeModels(context.Context) ([]client.Model, error) {
-	return []client.Model{{ID: "opencode/fixture", Name: "Fixture OpenCode", Free: true, Ready: true}}, nil
-}
-
-func TestOpenCodeIsSelectableInTheChat(t *testing.T) {
-	m := update(NewConnected(t.Context(), openCodeGatewayFixture{}), tea.WindowSizeMsg{Width: 80, Height: 24})
+func TestModelPickerSelectsGroupIncludingOpenCode(t *testing.T) {
+	const picked = "model/deepseek/deepseek-v4.1-flash"
+	const old = "opencode/deepseek-v4.1-flash-free"
+	m := update(NewConnected(t.Context(), fixtureGateway{}), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = update(m, modelsLoaded{models: []client.Model{
+		{ID: "free/auto", Name: "Auto", Free: true, Ready: true},
+		{ID: picked, Name: "DeepSeek V4.1 Flash", Detail: "Kilo · OpenCode", RouteIDs: []string{old}, Free: true, Ready: true},
+	}})
 	m.prompt.SetValue("Keep this draft")
 	m = update(m, press(tea.KeyF2))
-	next, cmd := m.Update(press(tea.KeyEnter))
-	m = update(next.(Model), cmd())
-	if !strings.Contains(ansi.Strip(m.View().Content), "Fixture OpenCode") {
-		t.Fatal("the OpenCode picker did not load")
+	view := ansi.Strip(m.View().Content)
+	if strings.Count(view, "DeepSeek V4.1 Flash") != 1 || !strings.Contains(view, "Kilo · OpenCode") {
+		t.Fatalf("the model group is missing: %s", view)
+	}
+	m = update(m, press(tea.KeyDown))
+	m = update(m, modelsLoaded{models: m.availableModels})
+	if m.models.list.SelectedItem().(modelItem).ID != picked {
+		t.Fatal("model refresh moved the cursor away from the highlighted model")
 	}
 	m = update(m, press(tea.KeyEnter))
-	m.ready = true
+	if m.selected != picked || m.modelsFocused || m.prompt.Value() != "Keep this draft" {
+		t.Fatal("group selection was lost or changed the draft")
+	}
+	m.selected = old
 	m.ensureSelected()
-	if m.selected != "opencode/fixture" || m.modelsFocused || m.prompt.Value() != "Keep this draft" {
-		t.Fatal("OpenCode selection was lost or changed the draft")
+	if m.selected != picked {
+		t.Fatal("a saved OpenCode route did not resolve to the model group")
+	}
+}
+
+func TestProviderManagementRefreshesItsRowIndependentlyOfModels(t *testing.T) {
+	f := &scopedProviderRefreshFixture{}
+	statuses, _ := f.ProviderStatuses(t.Context())
+	m := update(NewConnected(t.Context(), f).WithProviderStatuses(statuses), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = update(m, press(tea.KeyF4))
+	m = update(m, press(tea.KeyDown))
+	m.prompt.SetValue("Unsent draft")
+	next, run := m.Update(providerSetupFinished{id: "groq"})
+	m = next.(Model)
+	batch, ok := run().(tea.BatchMsg)
+	if !ok || len(batch) != 2 {
+		t.Fatal("account return must start independent provider and model commands")
+	}
+	m = update(m, batch[0]())
+	if f.checked != "groq" || f.refresh || !m.loadingModels || m.providersLoading || m.providers["groq"].State != "ready" ||
+		m.providers["kilo"].State != "ready" || m.models.list.SelectedItem().(modelItem).ID != "groq" || m.prompt.Value() != "Unsent draft" {
+		t.Fatal("scoped provider refresh failed to preserve unrelated rows, selection, draft, or model loading state")
+	}
+	m = update(m, modelsLoaded{models: []client.Model{{ID: "old-result"}}})
+	if len(m.availableModels) != 0 || !m.loadingModels {
+		t.Fatal("model discovery started before account management was accepted")
+	}
+	m = update(m, batch[1]())
+	if !f.refresh || m.loadingModels || len(m.availableModels) == 0 {
+		t.Fatal("the forced model discovery did not complete independently")
+	}
+}
+
+func TestModelPickerLoadsDuringStartupAndOpensFromProviders(t *testing.T) {
+	m := update(NewConnected(t.Context(), providerGatewayFixture{}), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = update(m, press(tea.KeyF2))
+	view := ansi.Strip(m.View().Content)
+	if strings.Contains(view, "preview/") || !strings.Contains(view, "Loading models…") {
+		t.Fatalf("startup model picker should show loading: %s", view)
+	}
+	m.startupDone = true
+	m = update(m, tickMsg{})
+	if !m.modelsStarted {
+		t.Fatal("open picker prevented startup model loading")
+	}
+	m = update(m, m.loadModels()())
+	next, cmd := m.Update(press(tea.KeyF4))
+	m = update(next.(Model), cmd())
+	m = update(m, press(tea.KeyF2))
+	if m.menu != "models" || len(m.models.list.Items()) != 1 || m.models.list.Items()[0].(modelItem).ID != "free/auto" {
+		t.Fatal("F2 on the provider screen did not open the available models")
+	}
+	m = update(m, modelsLoaded{err: &client.GatewayError{Code: "no_free_models", Status: 503}})
+	if len(m.models.list.Items()) != 0 || !strings.Contains(ansi.Strip(m.View().Content), "No models available") {
+		t.Fatal("an empty ready catalog left stale selectable models")
+	}
+}
+
+func TestModelPickerSwitchesRanksWithoutChangingCursorOrDraft(t *testing.T) {
+	m := update(New(), tea.WindowSizeMsg{Width: 44, Height: 12})
+	m.availableModels = []client.Model{
+		{ID: "free/auto", Name: "Auto"},
+		{ID: "general-first", Name: "General leader", QualityRank: 1, CodingRank: 2, ReasoningRank: 1, ReadyProviders: []string{"Kilo", "OpenRouter"}},
+		{ID: "unmeasured", Name: "No evidence"},
+		{ID: "coding-first", Name: "Coding leader", QualityRank: 2, CodingRank: 1, ReasoningRank: 2},
+	}
+	m.prompt.SetValue("Unsent draft")
+	m = update(m, press(tea.KeyF2))
+	m = update(m, press(tea.KeyDown))
+	m = update(m, ctrl('t'))
+	items := m.models.list.Items()
+	if items[0].(modelItem).ID != "free/auto" || items[1].(modelItem).ID != "coding-first" || items[2].(modelItem).ID != "unmeasured" ||
+		m.models.list.SelectedItem().(modelItem).ID != "general-first" || m.prompt.Value() != "Unsent draft" {
+		t.Fatal("coding view must reorder benchmarked slots while keeping the cursor and draft")
+	}
+	if view := ansi.Strip(m.View().Content); !strings.Contains(view, "Ctrl+T rank") || !strings.Contains(view, "Terminal-Bench 4.0") || !strings.Contains(view, "Kilo · OpenRouter") || lipgloss.Height(view) > 12 {
+		t.Fatalf("narrow picker hid the benchmark or keyboard controls:\n%s", view)
+	}
+	m = update(m, ctrl('t'))
+	if m.models.list.Items()[1].(modelItem).ID != "general-first" || !strings.Contains(ansi.Strip(m.View().Content), "HLE-Diamond") {
+		t.Fatal("the reasoning benchmark was not displayed")
+	}
+}
+
+func TestNarrowProviderListKeepsConnectionActionVisible(t *testing.T) {
+	m := NewConnected(t.Context(), providerGatewayFixture{}).WithPreferences(Preferences{Language: "ko", Theme: "system"})
+	m = update(m, tea.WindowSizeMsg{Width: 48, Height: 22})
+	next, cmd := m.Update(press(tea.KeyF4))
+	m = update(next.(Model), cmd())
+	view := ansi.Strip(m.View().Content)
+	if !strings.Contains(view, "CLI 설치 필요") || !strings.Contains(view, "API 키 필요") {
+		t.Fatalf("narrow provider list clipped the required actions: %s", view)
+	}
+}
+
+func TestExplicitImagePreservesDraftWhileResponding(t *testing.T) {
+	m := update(NewConnected(t.Context(), fixtureGateway{}), tea.WindowSizeMsg{Width: 80, Height: 24})
+	const draft = "/image make a cat logo"
+	m.busy, m.generation = true, 42
+	m.prompt.SetValue(draft)
+	next, cmd := m.Update(press(tea.KeyEnter))
+	m = next.(Model)
+	if cmd != nil || !m.busy || m.generation != 42 || len(m.messages) != 0 || m.prompt.Value() != draft {
+		t.Fatal("busy image submission started another response or changed the draft")
+	}
+}
+
+func TestRenameWithAnImagePhraseKeepsCommandBehavior(t *testing.T) {
+	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.selected = "free/auto"
+	const title = "우주복 입은 강아지 그려줘"
+	m.prompt.SetValue("/rename " + title)
+	next, _ := m.submit()
+	m = next.(Model)
+	if m.session.Title != title || len(m.messages) != 0 || m.prompt.Value() != "" {
+		t.Fatal("image words in a rename command must only update the conversation title")
 	}
 }
 
 func TestModelMenuRefreshPreservesHighlightedChoice(t *testing.T) {
-	m := update(NewConnected(t.Context(), openCodeGatewayFixture{}), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m := update(NewConnected(t.Context(), fixtureGateway{}), tea.WindowSizeMsg{Width: 80, Height: 24})
 	models := []client.Model{{ID: "free/auto", Name: "Auto"}, {ID: "kilo/one", Name: "One"}, {ID: "kilo/two", Name: "Two"}}
 	m = update(m, modelsLoaded{models: models})
 	m = update(m, press(tea.KeyF2))
-	m = update(m, press(tea.KeyDown))
 	m = update(m, press(tea.KeyDown))
 	m = update(m, modelsLoaded{models: []client.Model{models[0], models[2], models[1]}})
 	if item := m.models.list.SelectedItem().(modelItem); item.ID != "kilo/one" || m.selected != "free/auto" {
@@ -63,7 +199,8 @@ func TestModelMenuRefreshPreservesHighlightedChoice(t *testing.T) {
 }
 
 func TestMarkdownWrapsListsAndQuotesWithoutBreakingWords(t *testing.T) {
-	result := ansi.Strip(markdown("- Keep the words together\n> Longer quoted text\n`**literal**`\n```go\n    call()\n```", 15))
+	rendered, _ := markdown("- Keep the words together\n> Longer quoted text\n`**literal**`\n```go\n    call()\n```", 15)
+	result := ansi.Strip(rendered)
 	for _, want := range []string{"• Keep the\n  words", "│ Longer quoted\n│ text", "**literal**", "    call()"} {
 		if !strings.Contains(result, want) {
 			t.Fatalf("missing %q in %q", want, result)
@@ -77,16 +214,24 @@ func TestProviderStatusMenuPreservesDraft(t *testing.T) {
 	next, cmd := m.Update(press(tea.KeyF4))
 	m = update(next.(Model), cmd())
 	view := ansi.Strip(m.View().Content)
-	if !strings.Contains(view, "Guest · 2 free models") || !strings.Contains(view, "Key required") {
+	if !strings.Contains(view, "Connected · Guest · 2 free models") || !strings.Contains(view, "Key required · Disconnected") || !strings.Contains(view, "CLI required · Disconnected") || !strings.Contains(view, "Connection unchecked · Key saved") {
 		t.Fatalf("provider status missing from view: %s", view)
 	}
 	m = update(m, press(tea.KeyDown))
 	if !strings.Contains(ansi.Strip(m.View().Content), "freeway providers auth groq") {
 		t.Fatal("missing key did not show the provider auth command")
 	}
+	next, cmd = m.showProviders()
+	m = update(next.(Model), cmd())
+	if m.models.list.SelectedItem().(modelItem).ID != "groq" {
+		t.Fatal("refresh moved away from the provider being checked")
+	}
 	m = update(m, press(tea.KeyEsc))
 	if m.modelsFocused || m.prompt.Value() != "Keep this draft" || !m.prompt.Focused() {
 		t.Fatal("provider status changed the current draft")
+	}
+	if !strings.Contains(ansi.Strip(m.View().Content), "Connected · Kilo · F4") {
+		t.Fatal("the chat header did not show the connected provider")
 	}
 }
 func TestJumpToLatestButton(t *testing.T) {
@@ -158,6 +303,42 @@ func TestTranscriptSearchKeepsDraftAndRestoresOrJumps(t *testing.T) {
 	}
 }
 
+func TestTranscriptSearchFindsSoftWrapInTextAndCode(t *testing.T) {
+	const query = "한글 needle boundary"
+	for _, tc := range []struct {
+		role, before, after string
+		padding             int
+	}{
+		{role: "user", padding: 29},
+		{role: "assistant", padding: 33},
+		{role: "assistant", before: "# ", padding: 33},
+		{role: "assistant", before: "```txt\n", after: "\n```", padding: 29},
+	} {
+		m := update(New(), tea.WindowSizeMsg{Width: 44, Height: 12})
+		padding := strings.Repeat("x", tc.padding)
+		m.messages = []client.Message{
+			newMessage(tc.role, tc.before+padding+query+tc.after),
+			newMessage(tc.role, tc.before+padding+"한글 needle\nboundary"+tc.after),
+		}
+		m.renderMessages()
+		expected := ansi.Strip(m.chat.GetContent())
+		m.chat.GotoBottom()
+		originalOffset := m.chat.YOffset()
+		next, _ := m.findTranscript("한글 NEEDLE boundary")
+		m = next.(Model)
+		if len(m.find.matches) != 1 || m.find.matches[0].row >= m.find.matches[0].lastRow {
+			t.Fatalf("expected one match across a soft wrap for %q; got %+v", tc.role+tc.before, m.find.matches)
+		}
+		if ansi.Strip(m.chat.GetContent()) != expected || !strings.Contains(m.View().Content, "1/1") || lipgloss.Height(m.View().Content) > 12 {
+			t.Fatalf("highlight changed transcript content or hid the search hint for %q", tc.role+tc.before)
+		}
+		m = update(m, press(tea.KeyEsc))
+		if m.find != nil || m.chat.YOffset() != originalOffset || ansi.Strip(m.chat.GetContent()) != expected {
+			t.Fatal("cancelling a wrapped match must restore the view")
+		}
+	}
+}
+
 func TestFilePickerKeepsTypedPathAndFitsWindow(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {44, 12}} {
 		m := update(New(), tea.WindowSizeMsg{Width: size[0], Height: size[1]})
@@ -207,5 +388,219 @@ func TestPromptHistoryShowsPreviewAndStashesDraft(t *testing.T) {
 	m = update(m, ctrl('s'))
 	if m.prompt.Value() != "Current draft" {
 		t.Fatal("the draft could not be recovered")
+	}
+}
+
+func TestConversationPickerPreviewsAndSearchesLastSavedQuestion(t *testing.T) {
+	m := update(New(), tea.WindowSizeMsg{Width: 72, Height: 24})
+	m.history = []client.ConversationSummary{
+		{ID: "first", Title: "Working session", Preview: "Compare two colors"},
+		{ID: "second", Title: "Working session", Preview: "Recover the previous draft"},
+	}
+	next, _ := m.openMenu("history")
+	m = update(next.(Model), press(tea.KeyDown))
+	view := ansi.Strip(m.View().Content)
+	_, preview, found := strings.Cut(view, "Last saved question")
+	if !found || !strings.HasPrefix(strings.TrimSpace(preview), "Recover the previous draft") {
+		t.Fatalf("the selected conversation preview is missing:\n%s", view)
+	}
+	m = update(m, tea.PasteMsg{Content: "two colors"})
+	if row, ok := m.models.list.SelectedItem().(modelItem); !ok || row.ID != "first" {
+		t.Fatal("search must match the last saved question even when session titles are identical")
+	}
+}
+
+func TestProviderRowsRemainVisibleWhileRefreshing(t *testing.T) {
+	gateway := &scopedProviderRefreshFixture{}
+	m := NewConnected(t.Context(), gateway).WithProviderSetup("freeway").
+		WithProviderStatuses([]client.ProviderStatus{{ID: "kilo", Name: "Kilo", State: "ready", FreeModels: 2}})
+	m = update(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	next, cmd := m.Update(press(tea.KeyF4))
+	m = next.(Model)
+	if row, ok := m.models.list.SelectedItem().(modelItem); !ok || row.ID != "kilo" {
+		t.Fatal("the cached provider must be selectable before the refresh response")
+	}
+	if view := ansi.Strip(m.View().Content); !strings.Contains(view, "Kilo") || !strings.Contains(view, "Checking provider connections") {
+		t.Fatalf("provider rows and refresh indication must both be visible: %s", view)
+	}
+	msg := cmd().(providerStatusesLoaded)
+	if msg.provider != "" || gateway.checked != "" || len(m.providerChecksPending) != 0 {
+		t.Fatal("a gateway without scoped capability should receive one bulk check")
+	}
+}
+
+type progressiveProviderFixture struct {
+	providerGatewayFixture
+	modelsRefreshed bool
+}
+
+func (g *progressiveProviderFixture) RefreshModels(ctx context.Context) ([]client.Model, error) {
+	g.modelsRefreshed = true
+	return g.Models(ctx)
+}
+
+func (progressiveProviderFixture) ProviderStatus(_ context.Context, id string) (client.ProviderStatus, error) {
+	if id == "kilo" {
+		return client.ProviderStatus{ID: id, Name: "Kilo", State: "ready", FreeModels: 14, CatalogChecked: true, ScopedCheck: true, Management: true}, nil
+	}
+	return client.ProviderStatus{}, &client.GatewayError{Code: "provider_status_unavailable", Status: 503}
+}
+
+func TestProviderRowsRefreshIndependentlyInManagedGateway(t *testing.T) {
+	gateway := &progressiveProviderFixture{}
+	m := connectedFixture(gateway).WithProviderSetup("freeway").
+		WithProviderStatuses([]client.ProviderStatus{
+			{ID: "kilo", Name: "Kilo", State: "ready", FreeModels: 2, ScopedCheck: true},
+			{ID: "opencode", Name: "OpenCode", State: "ready", FreeModels: 10, ScopedCheck: true},
+		})
+	m = update(m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.prompt.SetValue("Keep the draft")
+	next, cmd := m.Update(press(tea.KeyF4))
+	m = next.(Model)
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok || !m.providersLoading || len(m.providerChecksPending) != 2 {
+		t.Fatal("model did not start independent checks for the known provider rows")
+	}
+	results := map[string]providerStatusesLoaded{}
+	for _, check := range batch {
+		if msg, ok := check().(providerStatusesLoaded); ok {
+			results[msg.provider] = msg
+		}
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected both scoped requests: %+v", results)
+	}
+	m = update(m, results["kilo"])
+	view := ansi.Strip(m.View().Content)
+	if !m.providersLoading || !m.providerChecksPending["opencode"] || !strings.Contains(view, "14 free models") || !strings.Contains(view, "Checking…") || strings.Contains(m.providerSummary(), "OpenCode") {
+		t.Fatalf("the completed row must update while the slow row is pending:\n%s", view)
+	}
+	request := m.providersRequest
+	next, cmd = m.Update(ctrl('r'))
+	m = next.(Model)
+	if m.providersRequest != request || cmd != nil {
+		t.Fatal("refresh restarted an active provider batch")
+	}
+	m = update(m, press(tea.KeyEsc))
+	m = update(m, results["opencode"])
+	if m.modelsFocused || m.providersLoading || m.prompt.Value() != "Keep the draft" || m.providers["kilo"].FreeModels != 14 || m.providers["opencode"].State != "status_check_failed" {
+		t.Fatal("one failed provider or closing the view discarded remaining results or the draft")
+	}
+	next, cmd = m.Update(press(tea.KeyF2))
+	m = update(next.(Model), cmd())
+	if !gateway.modelsRefreshed || m.modelListNeedsRefresh || m.prompt.Value() != "Keep the draft" {
+		t.Fatal("F2 did not refresh the model catalog after an observed provider change")
+	}
+}
+
+func TestAutoWithoutTextRouteKeepsDraftBeforeSending(t *testing.T) {
+	m := connectedFixture(&burstGateway{})
+	m = update(m, modelsLoaded{models: []client.Model{{ID: "opencode/test", Name: "OpenCode"}}})
+	m.prompt.SetValue("Unsent question")
+	next, cmd := m.Update(press(tea.KeyEnter))
+	m = next.(Model)
+	if cmd != nil || m.prompt.Value() != "Unsent question" || len(m.messages) != 0 || !strings.Contains(m.toast, "Auto has no text route") {
+		t.Fatal("text submission must stop at the composer when Auto has no text route")
+	}
+}
+
+type modelRecoveryGateway struct {
+	burstGateway
+	refreshed bool
+}
+
+func (g *modelRecoveryGateway) RefreshModels(context.Context) ([]client.Model, error) {
+	g.refreshed = true
+	return []client.Model{
+		{ID: "free/auto", Name: "Auto", Ready: true, Free: true},
+		{ID: "model/deepseek/deepseek-v4.1-flash", Name: "DeepSeek V4.1 Flash", Ready: true, Free: true, ReadyProviders: []string{"OpenCode"}},
+	}, nil
+}
+
+func TestUnavailableModelKeepsSelectionAndDraftUntilRefresh(t *testing.T) {
+	const selected = "model/deepseek/deepseek-v4.1-flash"
+	g := &modelRecoveryGateway{}
+	m := connectedFixture(g)
+	m.selected = selected
+	m = update(m, modelsLoaded{models: []client.Model{{ID: "free/auto", Name: "Auto", Ready: true, Free: true}}})
+	m.messages = []client.Message{newMessage("user", "Previous question"), newMessage("assistant", "Previous answer")}
+	m.prompt.SetValue("Unsent follow-up")
+	m.files = []client.Attachment{{Path: "context.txt", Content: "keep me"}}
+	m.saveError = "out of space"
+	if status := m.statusLabel(); !strings.Contains(status, "Selected model unavailable") || !strings.Contains(status, "Save failed") {
+		t.Fatalf("outage status hid the draft save failure: %q", status)
+	}
+	m = update(m, tea.WindowSizeMsg{Width: 44, Height: 12})
+	if !strings.Contains(ansi.Strip(m.View().Content), "/save to retry") {
+		t.Fatal("a narrow terminal cut off the save recovery action")
+	}
+
+	next, cmd := m.submit()
+	m = next.(Model)
+	if cmd != nil || m.selected != selected || m.prompt.Value() != "Unsent follow-up" || len(m.files) != 1 || len(m.messages) != 2 || !strings.Contains(m.toast, "Selected model unavailable") {
+		t.Fatalf("unavailable model did not preserve the draft: %q %q %q", m.selected, m.prompt.Value(), m.toast)
+	}
+	next, cmd = m.retry()
+	m = next.(Model)
+	if cmd != nil || len(m.messages) != 2 || m.messages[1].Content != "Previous answer" {
+		t.Fatal("retry dropped the existing answer before checking the selected model")
+	}
+	m.queue = []client.PendingPrompt{{Text: "Saved follow-up"}}
+	next, cmd = m.startQueued()
+	m = next.(Model)
+	if cmd != nil || !m.queuePaused || len(m.queue) != 1 || m.queue[0].Text != "Saved follow-up" || len(m.messages) != 2 || !strings.Contains(m.toast, "/queue resume") {
+		t.Fatal("unavailable model did not pause the queue with its follow-up intact")
+	}
+	if !strings.Contains(ansi.Strip(m.View().Content), "/queue resume") {
+		t.Fatal("a narrow terminal cut off the action to resume the queue")
+	}
+
+	m = update(m, press(tea.KeyF2))
+	m = update(m, modelsLoaded{models: m.availableModels, epoch: m.modelsEpoch})
+	next, cmd = m.Update(ctrl('r'))
+	m = next.(Model)
+	if cmd == nil || !m.loadingModels || !strings.Contains(ansi.Strip(m.View().Content), "Checking models") {
+		t.Fatal("Ctrl+R did not show a model refresh")
+	}
+	m = update(m, cmd())
+	if !g.refreshed || m.selected != selected || !m.modelsFocused || m.prompt.Value() != "Unsent follow-up" || len(m.files) != 1 || !m.queuePaused {
+		t.Fatal("refresh changed the selected model, draft, or paused queue")
+	}
+	m = update(m, press(tea.KeyEsc))
+	next, cmd = m.submit()
+	m, _ = drainResponse(t, next.(Model), cmd)
+	if len(g.calls) != 1 || g.calls[0] != selected || len(g.requests[0][2].Files) != 1 || len(m.queue) != 1 {
+		t.Fatalf("recovered model did not receive exactly the preserved draft: %v", g.calls)
+	}
+}
+
+func TestCatalogOutageDistinguishesListedModelsFromLegacyIDs(t *testing.T) {
+	const listed = "vikasit/vikasit-nova"
+	m := connectedFixture(&burstGateway{})
+	m = update(m, modelsLoaded{models: []client.Model{{ID: listed, Ready: true, Free: true}}})
+	next, _ := m.execute("/model", listed)
+	m = next.(Model)
+	m = update(m, modelsLoaded{models: []client.Model{{ID: "free/auto", Ready: true, Free: true}}})
+	if m.textRouteIssue() == "" {
+		t.Fatal("the provider-only picker choice disappeared without an outage message")
+	}
+
+	m.selected = "opencode/deepseek-v4.1-flash-free"
+	if m.textRouteIssue() != "" {
+		t.Fatal("the client blocked an older provider ID before the gateway could resolve it")
+	}
+}
+
+func TestFindMatchesWordsSplitByWordWrap(t *testing.T) {
+	// Each padding moves the word-wrap break, including onto the removed space.
+	for padding := 20; padding <= 45; padding++ {
+		m := update(New(), tea.WindowSizeMsg{Width: 44, Height: 12})
+		m.messages = []client.Message{newMessage("assistant", strings.Repeat("x", padding)+" needle across rows")}
+		m.renderMessages()
+		next, _ := m.findTranscript("needle across rows")
+		m = next.(Model)
+		if len(m.find.matches) != 1 {
+			t.Fatalf("padding %d: expected one match, got %+v in %q", padding, m.find.matches, ansi.Strip(m.chat.GetContent()))
+		}
 	}
 }
