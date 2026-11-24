@@ -45,6 +45,8 @@ func TestNativeHTTPCatalogUsesBearerAndRejectsPaidUnknownAndDisabledModels(t *te
 {"id":"free","pricing":{"prompt":"0","completion":"0"},"architecture":{"modality":"text+image->text+image","input_modalities":["text","image"],"output_modalities":["text","image"]},"supported_parameters":["reasoning"],"opencode":{"reasoning_options":[{"type":"effort","values":["low","high"]}]}},
 {"id":"explicit-paid","isFree":false,"pricing":{"prompt":"0","completion":"0"}},
 {"id":"paid","cost":{"input":1,"output":0}},
+{"id":"tiered-free","input_price":0,"output_price":0,"pricing":[{"prompt_tokens_threshold":0,"input_price":0,"output_price":0}]},
+{"id":"tiered-paid","input_price":3e-06,"output_price":0,"pricing":[{"prompt_tokens_threshold":0,"input_price":3e-06,"output_price":0}]},
 {"id":"unknown"},
 {"id":"deprecated","status":"deprecated","cost":{"input":0,"output":0}},
 {"id":"disabled","disabled":true,"cost":{"input":0,"output":0}},
@@ -56,7 +58,7 @@ func TestNativeHTTPCatalogUsesBearerAndRejectsPaidUnknownAndDisabledModels(t *te
 ]}`)
 	})
 	models, err := a.Models(context.Background(), "example-key")
-	if err != nil || len(models) != 1 || models[0].ID != "kilo/free" || models[0].Reasoning.Parameter != "reasoning" || len(models[0].Reasoning.Efforts) != 2 {
+	if err != nil || len(models) != 2 || models[0].ID != "kilo/free" || models[0].Reasoning.Parameter != "reasoning" || len(models[0].Reasoning.Efforts) != 2 || models[1].ID != "kilo/tiered-free" {
 		t.Fatalf("catalog: %+v / %v", models, err)
 	}
 }

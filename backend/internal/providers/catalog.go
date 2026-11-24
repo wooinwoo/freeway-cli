@@ -101,8 +101,12 @@ func NormalizeModel(d Definition, raw map[string]any) (Model, bool) {
 		price, ok := raw["pricing"].(map[string]any)
 		a, b := "prompt", "completion"
 		if !ok {
-			price, _ = raw["cost"].(map[string]any)
+			price, ok = raw["cost"].(map[string]any)
 			a, b = "input", "output"
+		}
+		if !ok {
+			// Requesty puts the base price on the model itself. Its "pricing" is a list of tiers.
+			price, a, b = raw, "input_price", "output_price"
 		}
 		x, okX := numeric(price[a])
 		y, okY := numeric(price[b])
