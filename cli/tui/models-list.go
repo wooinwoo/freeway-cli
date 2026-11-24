@@ -111,6 +111,8 @@ func (m Model) modelPickerItems() []list.Item {
 			model.Detail = m.tr("Connection unchecked", "연결 미확인") + " · " + model.Detail
 		} else if len(model.ReadyProviders) > 0 {
 			model.Detail = fmt.Sprintf(m.tr("Ready routes (%d) · %s", "사용 가능 %d곳 · %s"), len(model.ReadyProviders), strings.Join(model.ReadyProviders, " · "))
+		} else if !model.Ready {
+			model.Detail = m.tr("Unavailable now · ", "지금 사용 불가 · ") + model.Detail
 		}
 		if model.LocalTokensRemaining != nil {
 			model.Detail += fmt.Sprintf(m.tr(" · %d local tokens", " · 로컬 토큰 %d개"), *model.LocalTokensRemaining)

@@ -621,3 +621,25 @@ func TestEscFromSettingsSubmenuReturnsToSettings(t *testing.T) {
 		t.Fatal("a stale parent reopened settings from the model list")
 	}
 }
+
+func TestUnavailableRoutesSayTheyCannotBeUsedNow(t *testing.T) {
+	m := connectedFixture(&burstGateway{})
+	m = update(m, modelsLoaded{models: []client.Model{
+		{ID: "model/zai/glm-4.7-flash", Name: "glm-4.7-flash", Detail: "Z.ai", Free: true},
+		{ID: "model/groq/gpt-oss-20b", Name: "gpt-oss-20b", Detail: "Groq", Free: true, Ready: true, ReadyProviders: []string{"Groq"}},
+	}})
+	details := map[string]string{}
+	for _, item := range m.modelPickerItems() {
+		details[item.(modelItem).ID] = item.(modelItem).Detail
+	}
+	if !strings.HasPrefix(details["model/zai/glm-4.7-flash"], m.tr("Unavailable now", "지금 사용 불가")) {
+		t.Fatalf("a model without a ready route was not marked unavailable: %q", details["model/zai/glm-4.7-flash"])
+	}
+	if strings.Contains(details["model/groq/gpt-oss-20b"], m.tr("Unavailable now", "지금 사용 불가")) {
+		t.Fatalf("a ready model was marked unavailable: %q", details["model/groq/gpt-oss-20b"])
+	}
+	limited := ProviderConnectionText(m.prefs, client.ProviderStatus{State: "limited", RetryAfter: 30})
+	if !strings.Contains(limited, m.tr("Auto skips it", "Auto는 건너뜀")) {
+		t.Fatalf("a blocked provider did not say Auto skips it: %q", limited)
+	}
+}

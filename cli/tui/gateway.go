@@ -466,10 +466,10 @@ func friendlyError(err error, prefs Preferences) string {
 			}
 			return t("The current context exceeds the local token budget. Use F8 to reduce it, or shorten the current draft.", "현재 문맥이 로컬 토큰 예산을 넘었습니다. F8로 문맥을 줄이거나 초안을 줄이세요.")
 		case gateway.Code == "provider_busy":
-			return t("The provider's free servers are busy for everyone right now. This is not your usage. Retry shortly with Alt+R, or use /auto for another provider.", "공급처 무료 서버가 모두에게 붐벼 요청을 거절했습니다. 내 사용량 때문이 아닙니다. 잠시 후 Alt+R로 다시 시도하거나 /auto로 다른 공급처를 쓰세요.")
+			return t("This provider is unavailable now: its free servers are busy for everyone, not because of your usage. /auto moves to another provider. Retry shortly with Alt+R.", "지금 이 공급처는 쓸 수 없습니다. 무료 서버가 모두에게 붐비는 상태이고 내 사용량 때문이 아닙니다. /auto는 다른 공급처로 넘어갑니다. 잠시 후 Alt+R로 다시 시도하세요.")
 		case gateway.Code == "provider_cooldown":
 			wait := time.Duration(min(max(gateway.RetryAfter, 1), 86400)) * time.Second
-			return fmt.Sprintf(t("The provider just turned a request away, so Freeway waits %s before trying it again. Use /auto for another provider.", "공급처가 방금 요청을 거절해서 %s 동안 다시 보내지 않습니다. /auto로 다른 공급처를 쓸 수 있습니다."), wait)
+			return fmt.Sprintf(t("This provider is unavailable for %s after it turned a request away. /auto moves to another provider.", "지금 이 공급처는 쓸 수 없습니다. 방금 요청을 거절해서 %s 뒤에 다시 씁니다. /auto는 다른 공급처로 넘어갑니다."), wait)
 		case gateway.Status == 429 && gateway.RetryAfter > 0:
 			wait := time.Duration(min(gateway.RetryAfter, 86400)) * time.Second
 			return fmt.Sprintf(t("Free usage is temporarily limited. Try again in %s with Alt+R.", "무료 사용이 일시 제한됐습니다. %s 후 Alt+R로 다시 시도하세요."), wait)

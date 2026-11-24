@@ -300,9 +300,9 @@ func ProviderConnectionText(prefs Preferences, provider client.ProviderStatus) s
 	case "limited":
 		if provider.RetryAfter > 0 {
 			wait := time.Duration(min(provider.RetryAfter, 86400)) * time.Second
-			return fmt.Sprintf(t("Rate limited · Retry in %s", "한도 제한 · %s 후 재시도"), wait)
+			return fmt.Sprintf(t("Unavailable now · Retry in %s · Auto skips it", "지금 사용 불가 · %s 후 다시 시도 · Auto는 건너뜀"), wait)
 		}
-		return t("Temporarily rate limited", "일시 한도 제한")
+		return t("Unavailable now · Auto skips it", "지금 사용 불가 · Auto는 건너뜀")
 	case "no_free_models":
 		return auth + t(" · No eligible free models", " · 사용 가능한 무료 모델 없음")
 	case "credential_store_failed":
