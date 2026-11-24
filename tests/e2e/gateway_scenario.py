@@ -2,19 +2,21 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import errno
-import fcntl
 import http.server
 import json
 import os
 from pathlib import Path
-import pty
 import select
 import signal
 import struct
 import subprocess
-import termios
 import threading
 import time
+
+if os.name != "nt":  # Windows runs use ConPTY through context_history_scenario.WindowsTerminal.
+    import fcntl
+    import pty
+    import termios
 
 MODEL = "model/deepseek/deepseek-v4.1-flash"
 NEXT_MODEL = "model/minimax/minimax-m3.1-flash"
