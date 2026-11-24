@@ -184,11 +184,32 @@ func (l *Ledger) Today(provider string) Usage {
 	return l.state.usage(provider, l.now().Truncate(24*time.Hour))
 }
 
+// clockSkew bounds how far the clock may move back before the ledger trusts it.
+// A smaller rollback keeps the latest time, so changing the clock cannot reopen a
+// spent window. A larger gap means the saved time came from a clock that ran ahead.
+const clockSkew = 24 * time.Hour
+
+// now must be called with l.mu held because it may rebase the in-memory state.
 func (l *Ledger) now() time.Time {
 	now := l.clock().UTC()
-	if now.Before(l.state.Last) {
+	if !now.Before(l.state.Last) {
+		return now
+	}
+	if l.state.Last.Sub(now) <= clockSkew {
 		return l.state.Last
 	}
+	next := state{Version: ledgerSchema, Last: now, Cooldown: make(map[string]time.Time)}
+	for _, item := range l.state.Attempts {
+		if !item.Started.After(now) {
+			next.Attempts = append(next.Attempts, item)
+		}
+	}
+	for provider, until := range l.state.Cooldown {
+		if until.Sub(now) <= clockSkew {
+			next.Cooldown[provider] = until
+		}
+	}
+	l.state = next
 	return now
 }
 
