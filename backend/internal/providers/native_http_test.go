@@ -233,3 +233,18 @@ func TestNativeHTTPReportsReasoningProgressWithoutText(t *testing.T) {
 		t.Fatalf("reasoning progress: %q %+v %v", events, result, err)
 	}
 }
+
+func TestNativeHTTPSeparatesASharedFreePoolFromTheCallersLimit(t *testing.T) {
+	for _, tc := range []struct{ body, code string }{
+		{`{"error":{"code":429,"metadata":{"raw":"m:free is temporarily rate-limited upstream","limit_source":"upstream_provider_shared_pool"}}}`, "provider_busy"},
+		{`{"error":{"code":"1305","message":"The service may be temporarily overloaded, please try again later"}}`, "provider_busy"},
+		{`{"error":{"message":"Rate limit exceeded: free-models-per-day"}}`, "rate_limit_exceeded"},
+	} {
+		a, model := nativeHTTPFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, tc.body)
+		})
+		_, err := a.Stream(context.Background(), model, "", nativeHTTPRequest(model), nil)
+		assertNativeHTTPError(t, err, tc.code, 429)
+	}
+}

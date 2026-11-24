@@ -329,8 +329,24 @@ func httpStatusError(response *http.Response) *Error {
 	code := "upstream_error"
 	if status == 429 {
 		code = "rate_limit_exceeded"
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 8<<10))
+		if sharedLimit(body) {
+			code = "provider_busy"
+		}
 	}
 	return &Error{Code: code, Status: status, RetryAfter: httpRetryAfter(response.Header.Get("Retry-After"), time.Now())}
+}
+
+// sharedLimit recognizes a 429 that every user gets: a shared free pool or an overloaded server, not the caller's allowance.
+// ponytail: vendor wording, add markers as vendors are seen.
+func sharedLimit(body []byte) bool {
+	text := strings.ToLower(string(body))
+	for _, marker := range []string{"upstream_provider_shared_pool", "rate-limited upstream", "temporarily overloaded", `"code":"1305"`} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func httpRetryAfter(value string, now time.Time) int {

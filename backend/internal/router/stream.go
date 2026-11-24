@@ -302,6 +302,9 @@ func executionError(err error) error {
 	if errors.As(err, &remote) {
 		switch remote.Status {
 		case http.StatusTooManyRequests:
+			if remote.Code == "provider_busy" {
+				return &contracts.Problem{Code: "provider_busy", Message: "The provider is busy for all users and turned this request away.", Status: remote.Status, RetryAfter: int(retryDelay(err) / time.Second)}
+			}
 			return &contracts.Problem{Code: "quota_exhausted", Message: "The provider is rate limited or has exhausted its free allowance.", Status: remote.Status, RetryAfter: int(retryDelay(err) / time.Second)}
 		case http.StatusUnauthorized, http.StatusForbidden, http.StatusPaymentRequired, http.StatusConflict:
 			return &contracts.Problem{Code: "provider_connection_required", Message: "Review the provider connection and free-account eligibility.", Status: http.StatusServiceUnavailable}
