@@ -126,7 +126,8 @@ func startManaged(dataDir string) (<-chan error, error) {
 		if exit, ok := errors.AsType[*exec.ExitError](err); ok && exit.ExitCode() == vaultLocked {
 			done <- storage.ErrLocked
 		} else if err != nil && len(message) > 0 {
-			done <- errors.New(strings.TrimSpace(string(message)))
+			// The child already prefixed its message; keep one prefix when relaying it.
+			done <- errors.New(strings.TrimPrefix(strings.TrimSpace(string(message)), "Freeway gateway: "))
 		} else {
 			done <- err
 		}

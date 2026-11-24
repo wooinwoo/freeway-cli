@@ -56,7 +56,7 @@ func (v *Vault) initialize() error {
 		return err
 	}
 	if err := requirePrivate(v.root, ".", info); err != nil {
-		return err
+		return fmt.Errorf("%s: %w", v.root.Name(), err)
 	}
 	v.lock, err = v.openLock()
 	if err != nil {
@@ -197,7 +197,10 @@ func (v *Vault) checkFile(name string) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("gateway state file %q must be private and regular", name)
 	}
-	return requirePrivate(v.root, name, info)
+	if err := requirePrivate(v.root, name, info); err != nil {
+		return fmt.Errorf("%s: %w", filepath.Join(v.root.Name(), name), err)
+	}
+	return nil
 }
 
 func (v *Vault) read(name string, limit int64) ([]byte, error) {

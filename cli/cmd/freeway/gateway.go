@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -61,6 +63,28 @@ func connectManaged(ctx, lifetime context.Context, binary string) (*client.HTTP,
 	return nil, nil, fmt.Errorf("connect to the local Freeway gateway: %w", leaseErr)
 }
 
+// gatewayFailure drops the prefix that each gateway process layer adds, and explains permission failures.
+func gatewayFailure(stderr string) string {
+	message := strings.TrimSpace(stderr)
+	for {
+		rest, ok := strings.CutPrefix(message, "Freeway gateway: ")
+		if !ok {
+			break
+		}
+		message = rest
+	}
+	if strings.Contains(message, "owner-only permissions") {
+		dir := os.Getenv("FREEWAY_GATEWAY_HOME")
+		if dir == "" {
+			if home, err := os.UserHomeDir(); err == nil {
+				dir = filepath.Join(home, ".freeway", "gateway")
+			}
+		}
+		message += fmt.Sprintf("\nFix the gateway folder %s: chmod 700 on it and its folders, chmod 600 on its files.", dir)
+	}
+	return "local gateway: " + message
+}
+
 func discoverGateway(ctx context.Context, binary string) (*client.HTTP, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -70,7 +94,7 @@ func discoverGateway(ctx context.Context, binary string) (*client.HTTP, error) {
 	if err != nil {
 		var process *exec.ExitError
 		if errors.As(err, &process) && len(process.Stderr) > 0 {
-			return nil, errors.New(strings.TrimSpace(string(process.Stderr)))
+			return nil, errors.New(gatewayFailure(string(process.Stderr)))
 		}
 		return nil, fmt.Errorf("start the local Freeway gateway: %w", err)
 	}
