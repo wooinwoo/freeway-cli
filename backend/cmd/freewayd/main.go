@@ -86,7 +86,7 @@ func run(ctx context.Context, args []string) error {
 		address = "127.0.0.1:0"
 	}
 	return app.Serve(ctx, app.Config{Address: address, DataDir: *path,
-		Providers: csv(enabled), Preferred: csv(preferred), Allowed: csv(allowed), Managed: managed})
+		Providers: csv(enabled), Preferred: csv(preferred), Allowed: csv(allowed), Managed: managed, Version: version})
 }
 
 func csv(value string) []string {

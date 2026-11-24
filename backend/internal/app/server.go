@@ -34,6 +34,7 @@ type Config struct {
 	Preferred []string
 	Allowed   []string
 	Managed   bool
+	Version   string
 }
 
 func DataDir() (string, error) {
@@ -115,7 +116,7 @@ func Serve(ctx context.Context, cfg Config) error {
 			}
 		}
 	}
-	handler := api.New(clientKey, chats, models, local)
+	handler := withVersion(api.New(clientKey, chats, models, local), cfg.Version)
 	if cfg.Managed {
 		var stop func()
 		ctx, handler, stop = autoShutdown(ctx, handler)
@@ -124,6 +125,14 @@ func Serve(ctx context.Context, cfg Config) error {
 		slog.Info("gateway listening", "url", endpoint)
 	}
 	return serveHTTP(ctx, listener, handler)
+}
+
+// withVersion lets a newly updated client recognize a gateway that still runs the previous version.
+func withVersion(next http.Handler, version string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Freeway-Version", version)
+		next.ServeHTTP(w, r)
+	})
 }
 
 func serveHTTP(ctx context.Context, listener net.Listener, handler http.Handler) error {

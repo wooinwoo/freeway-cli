@@ -21,8 +21,12 @@ import (
 
 const vaultLocked = 3
 
+// staleWait covers the managed gateway's 8-second idle grace, so a client that restarts right
+// after an update does not attach to the previous version's gateway.
+const staleWait = 10 * time.Second
+
 func connect(ctx context.Context, dataDir string) (storage.Connection, error) {
-	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 14*time.Second)
 	defer cancel()
 	transport := &http.Transport{DisableKeepAlives: true}
 	defer transport.CloseIdleConnections()
@@ -30,8 +34,15 @@ func connect(ctx context.Context, dataDir string) (storage.Connection, error) {
 		Transport: transport, Timeout: 600 * time.Millisecond,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
+	if stale, running, ok := activeConnection(ctx, probe, dataDir); ok && running != version {
+		// Another client may still use the old gateway. Then it stays, and this client shares it.
+		waitForExit(ctx, dataDir, stale, staleWait)
+	}
 	connection, err := waitForConnection(ctx,
-		func(ctx context.Context) (storage.Connection, bool) { return activeConnection(ctx, probe, dataDir) },
+		func(ctx context.Context) (storage.Connection, bool) {
+			connection, _, ok := activeConnection(ctx, probe, dataDir)
+			return connection, ok
+		},
 		func() (<-chan error, error) { return startManaged(dataDir) },
 	)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -74,30 +85,49 @@ func waitForConnection(ctx context.Context, probe func(context.Context) (storage
 	}
 }
 
-func activeConnection(ctx context.Context, probe *http.Client, dataDir string) (storage.Connection, bool) {
+// waitForExit watches the connection file only. A status request would restart the old gateway's idle grace.
+func waitForExit(ctx context.Context, dataDir string, stale storage.Connection, limit time.Duration) {
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if current, err := storage.ReadConnection(dataDir); err != nil || current != stale {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// activeConnection also returns the running gateway's version. Gateways before 0.6.3 report none.
+func activeConnection(ctx context.Context, probe *http.Client, dataDir string) (storage.Connection, string, bool) {
 	connection, err := storage.ReadConnection(dataDir)
 	if err != nil {
-		return storage.Connection{}, false
+		return storage.Connection{}, "", false
 	}
 	endpoint, err := url.Parse(connection.URL)
 	if err != nil || endpoint.Scheme != "http" || endpoint.User != nil || endpoint.Path != "" ||
 		endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Port() == "" || !net.ParseIP(endpoint.Hostname()).IsLoopback() {
-		return storage.Connection{}, false
+		return storage.Connection{}, "", false
 	}
 	if _, err := auth.NewClientKey(connection.APIKey); err != nil {
-		return storage.Connection{}, false
+		return storage.Connection{}, "", false
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.URL+"/v1/status", nil)
 	if err != nil {
-		return storage.Connection{}, false
+		return storage.Connection{}, "", false
 	}
 	request.Header.Set("Authorization", "Bearer "+connection.APIKey)
 	response, err := probe.Do(request)
 	if err != nil {
-		return storage.Connection{}, false
+		return storage.Connection{}, "", false
 	}
 	defer response.Body.Close()
-	return connection, response.StatusCode == http.StatusNoContent && response.Header.Get("X-Freeway-API") == "1"
+	return connection, response.Header.Get("X-Freeway-Version"), response.StatusCode == http.StatusNoContent && response.Header.Get("X-Freeway-API") == "1"
 }
 
 func startManaged(dataDir string) (<-chan error, error) {
