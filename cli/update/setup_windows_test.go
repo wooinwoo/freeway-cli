@@ -4,8 +4,40 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
+
+	"golang.org/x/sys/windows/registry"
 )
+
+func TestUserPathAddsOnceAndRemovesOnlyFreeway(t *testing.T) {
+	subkey := `Software\FreewayPathTest` + strconv.FormatInt(time.Now().UnixNano(), 10)
+	key, _, err := registry.CreateKey(registry.CURRENT_USER, subkey, registry.ALL_ACCESS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { key.Close(); _ = registry.DeleteKey(registry.CURRENT_USER, subkey) })
+	if err := key.SetExpandStringValue("Path", `%USERPROFILE%\tools;C:\Other;`); err != nil {
+		t.Fatal(err)
+	}
+	dir := `C:\Users\me\.freeway\app\bin`
+	for range 2 {
+		if err := setUserPath(subkey, dir, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	value, kind, err := key.GetStringValue("Path")
+	if err != nil || kind != registry.EXPAND_SZ || value != `%USERPROFILE%\tools;C:\Other;`+dir {
+		t.Fatalf("added: %q %d %v", value, kind, err)
+	}
+	if err := setUserPath(subkey, dir+`\`, false); err != nil {
+		t.Fatal(err)
+	}
+	if value, _, _ := key.GetStringValue("Path"); value != `%USERPROFILE%\tools;C:\Other` {
+		t.Fatalf("removed: %q", value)
+	}
+}
 
 func TestStartMenuShortcutSafety(t *testing.T) {
 	programs := t.TempDir()

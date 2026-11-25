@@ -36,7 +36,11 @@ def main():
             found = shutil.which(name)
             if found:
                 (tools / name).symlink_to(found)
-        environment = dict(os.environ, PATH=str(tools), GOPROXY="off")
+        home = base / "home"
+        home.mkdir()
+        environment = dict(os.environ, PATH=str(tools), GOPROXY="off", HOME=str(home), SHELL="/bin/bash")
+        environment.pop("ZDOTDIR", None)
+        profile = home / (".bash_profile" if platform.system() == "Darwin" else ".bashrc")
         for name in list(environment):
             if name.startswith("FREEWAY_"):
                 del environment[name]
@@ -59,6 +63,17 @@ def main():
         root = base / "local install with spaces"
         run("/bin/bash", script, "--archive", archive, "--sha256", expected, "--root", root)
         installed(root)
+        line = f'export PATH="{root / "bin"}:$PATH"'
+        assert profile.read_text().count(line) == 1, profile.read_text()
+        run("/bin/bash", script, "--archive", archive, "--sha256", expected, "--root", root)
+        assert profile.read_text().count(line) == 1, "a second install must not repeat the PATH line"
+        unlisted = base / "no path change"
+        run("/bin/bash", script, "--archive", archive, "--sha256", expected, "--root", unlisted, "--no-modify-path")
+        assert str(unlisted) not in profile.read_text()
+        home_root = home / ".freeway/app"
+        run("/bin/bash", script, "--archive", archive, "--sha256", expected, "--root", home_root)
+        assert 'export PATH="$HOME/.freeway/app/bin:$PATH"' in profile.read_text()
+        profile.unlink()
         relative_root = base / "relative install"
         output = run("/bin/bash", script, "--archive", archive, "--sha256", expected, "--root", "relative install").stdout
         assert str(base).replace(" ", "\\ ") in output
@@ -125,7 +140,10 @@ def main():
         if args.go:
             (tools / "go").symlink_to(args.go.resolve())
             source_root = base / "source install"
-            run("/bin/bash", script, "--source", "--root", source_root, timeout=300)
+            # HOME points at a scratch profile, so keep Go's real module and build caches.
+            gomodcache, gocache, gopath = subprocess.run([str(args.go), "env", "GOMODCACHE", "GOCACHE", "GOPATH"], text=True, capture_output=True, check=True).stdout.splitlines()
+            source_env = dict(environment, GOMODCACHE=gomodcache, GOCACHE=gocache, GOPATH=gopath)
+            run("/bin/bash", script, "--source", "--root", source_root, env=source_env, timeout=300)
             installed(source_root, (REPO / "VERSION").read_text().strip())
         print("PASS Unix: local/download bootstrap, no Node runtime, path spaces, checksum failure, missing/ambiguous release and data preservation." + (" Source build passed." if args.go else " Source build not requested."))
 

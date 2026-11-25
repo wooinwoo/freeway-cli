@@ -17,7 +17,7 @@ $root = Join-Path $proof 'install with spaces'
 try {
   Copy-Item -LiteralPath $archive -Destination (Join-Path $proof 'native.zip')
   Set-Location -LiteralPath $proof
-  & $bootstrap -Archive '.\native.zip' -SHA256 $artifact.sha256 -Root '.\install with spaces'
+  & $bootstrap -NoModifyPath -Archive '.\native.zip' -SHA256 $artifact.sha256 -Root '.\install with spaces'
   $launcher = Join-Path $root 'bin\freeway.exe'
   $version = & $launcher --version
   if ($LASTEXITCODE -ne 0 -or "$version".Trim() -ne $manifest.version) { throw 'Windows bootstrap version verification failed.' }
@@ -25,18 +25,18 @@ try {
   if ($LASTEXITCODE -ne 0 -or $providers.providers.Count -ne 9) { throw 'Windows provider utility verification failed.' }
   $before = [IO.File]::ReadAllText((Join-Path $root 'install.json'))
   $rejected = $false
-  try { & $bootstrap -Archive $archive -SHA256 ('0' * 64) -Root $root } catch { $rejected = $true }
+  try { & $bootstrap -NoModifyPath -Archive $archive -SHA256 ('0' * 64) -Root $root } catch { $rejected = $true }
   if (!$rejected -or [IO.File]::ReadAllText((Join-Path $root 'install.json')) -ne $before) { throw 'Invalid checksum changed the Windows installation.' }
   if ($ReleaseBase) {
     $remoteRoot = Join-Path $proof 'download install'
-    & $bootstrap -ReleaseUrl "$ReleaseBase/query" -Root $remoteRoot
+    & $bootstrap -NoModifyPath -ReleaseUrl "$ReleaseBase/query" -Root $remoteRoot
     $remoteLauncher = Join-Path $remoteRoot 'bin\freeway.exe'
     $remoteVersion = & $remoteLauncher --version
     if ($LASTEXITCODE -ne 0 -or "$remoteVersion".Trim() -ne $manifest.version) { throw 'Signed-query download installation failed.' }
     $remoteBefore = [IO.File]::ReadAllText((Join-Path $remoteRoot 'install.json'))
     foreach ($fixture in @('missing','ambiguous','damaged')) {
       $rejected = $false
-      try { & $bootstrap -ReleaseUrl "$ReleaseBase/$fixture" -Root $remoteRoot } catch { $rejected = $true }
+      try { & $bootstrap -NoModifyPath -ReleaseUrl "$ReleaseBase/$fixture" -Root $remoteRoot } catch { $rejected = $true }
       if (!$rejected -or [IO.File]::ReadAllText((Join-Path $remoteRoot 'install.json')) -ne $remoteBefore) { throw "Failed $fixture download changed the Windows installation." }
     }
     & $remoteLauncher uninstall

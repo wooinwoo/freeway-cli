@@ -103,6 +103,9 @@ func install(root string, quiet bool) error {
 		home = root
 	}
 	installed := "Freeway " + state.Active + " is installed. Find it in the Start menu.\n\nOpen Freeway now?"
+	if update.AddUserPath(root) == nil {
+		installed = "Freeway " + state.Active + " is installed. Find it in the Start menu, or run freeway in a new terminal.\n\nOpen Freeway now?"
+	}
 	if err := update.AddSetupShortcut(root, home); err != nil {
 		installed = "Freeway " + state.Active + " is installed. Windows could not add a Start menu shortcut.\n\n" +
 			launcher + "\n\nOpen Freeway now?"

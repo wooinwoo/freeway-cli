@@ -242,11 +242,11 @@ def run_upgrade(directory, go):
         if system == "windows":
             powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
             run(powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
-                REPO / "install.ps1", "-Archive", old_archive, "-SHA256", old_artifact["sha256"], "-Root", root)
+                REPO / "install.ps1", "-Archive", old_archive, "-SHA256", old_artifact["sha256"], "-Root", root, "-NoModifyPath")
             launcher = root / "bin/freeway.exe"
         else:
             run("/bin/bash", REPO / "install.sh", "--archive", old_archive, "--sha256", old_artifact["sha256"],
-                "--root", root, env=dict(environment, PATH=os.defpath))
+                "--root", root, "--no-modify-path", env=dict(environment, PATH=os.defpath))
             launcher = root / "bin/freeway"
         assert run(launcher, "--version").strip() == PREVIOUS_VERSION
         assert len(json.loads(run(launcher, "providers", "list"))["providers"]) == 9

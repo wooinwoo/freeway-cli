@@ -5,11 +5,13 @@ param(
   [string]$Archive,
   [string]$SHA256,
   [string]$ReleaseUrl = 'https://github.com/wooinwoo/freeway-cli/releases/latest/download',
+  [switch]$NoModifyPath,
   [switch]$Help
 )
 $ErrorActionPreference = 'Stop'
 if ($Help) {
-  Write-Output 'Usage: install.ps1 [-Source | -Archive PATH -SHA256 HASH] [-Root PATH] [-ReleaseUrl HTTPS_BASE_URL]'
+  Write-Output 'Usage: install.ps1 [-Source | -Archive PATH -SHA256 HASH] [-Root PATH] [-ReleaseUrl HTTPS_BASE_URL] [-NoModifyPath]'
+  Write-Output 'The bin directory is added to the user PATH unless -NoModifyPath is given.'
   Write-Output 'Default: official native release. Source builds require Go 1.26+. Node.js is not used.'
   exit 0
 }
@@ -137,7 +139,28 @@ try {
   if ($installExit -ne 0) { throw 'Native installation failed; inspect the native installer error above.' }
   $bin = Join-Path ([IO.Path]::GetFullPath($Root)) 'bin'
   $escapedBin = $bin.Replace("'", "''")
-  Write-Output "`nFreeway installed. Add its bin directory to PATH:"
+  if (-not $NoModifyPath) {
+    # Edit the raw value so %VARIABLE% entries in the user PATH stay unexpanded.
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+    try {
+      $current = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+      $listed = @($current -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -ieq $bin.TrimEnd('\') })
+      if ($listed.Count -eq 0) {
+        $kind = if ($key.GetValueNames() -contains 'Path') { $key.GetValueKind('Path') } else { [Microsoft.Win32.RegistryValueKind]::ExpandString }
+        $value = $current.TrimEnd(';')
+        $value = if ($value) { "$value;$bin" } else { $bin }
+        $key.SetValue('Path', $value, $kind)
+        # Setting a user variable makes Windows tell new terminals that the environment changed.
+        [Environment]::SetEnvironmentVariable('FREEWAY_PATH_REFRESH', '1', 'User')
+        [Environment]::SetEnvironmentVariable('FREEWAY_PATH_REFRESH', $null, 'User')
+      }
+    } finally { $key.Close() }
+  }
+  if ($NoModifyPath) {
+    Write-Output "`nFreeway installed. Add its bin directory to PATH:"
+  } else {
+    Write-Output "`nFreeway installed and added to your user PATH. Open a new terminal, or run this now:"
+  }
   Write-Output ('$env:Path = ' + "'$escapedBin;'" + ' + $env:Path')
   Write-Output 'Then run: freeway'
 } finally {

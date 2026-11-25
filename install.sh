@@ -7,16 +7,18 @@ fail() { printf 'Freeway: %s\n' "$*" >&2; exit 1; }
 usage() {
   cat <<'USAGE'
 Usage: install.sh [--source | --archive PATH --sha256 SHA256] [--root PATH]
-                  [--release-url HTTPS_BASE_URL]
+                  [--release-url HTTPS_BASE_URL] [--no-modify-path]
 
 No arguments: download the native client from the official GitHub release.
 --source: build this checkout with Go 1.26+; Node.js is not used.
 --archive: install a local package using its trusted SHA256.
 Default program directory: ~/.freeway/app (or FREEWAY_INSTALL_ROOT).
+The bin directory is added to PATH in your shell profile unless --no-modify-path is given.
 USAGE
 }
 
 source_build=0
+modify_path=1
 archive=''
 expected=''
 root="${FREEWAY_INSTALL_ROOT:-$HOME/.freeway/app}"
@@ -24,6 +26,7 @@ release_url='https://github.com/wooinwoo/freeway-cli/releases/latest/download'
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --source) source_build=1; shift ;;
+    --no-modify-path) modify_path=0; shift ;;
     --archive|--sha256|--root|--release-url)
       [[ $# -gt 1 && -n $2 ]] || fail "$1 needs a value."
       case "$1" in
@@ -120,6 +123,41 @@ tar -xOzf "$archive" -- freeway > "$stage/freeway" || fail 'Archive does not con
 [[ -s "$stage/freeway" && $(wc -c < "$stage/freeway") -le 67108864 ]] || fail 'Invalid bootstrap executable size.'
 chmod 700 "$stage/freeway"
 "$stage/freeway" install --archive "$archive" --sha256 "$expected" --root "$root"
-printf '\nFreeway installed. Add its bin directory to PATH:\n'
-printf '  export PATH=%q:$PATH\n' "$root/bin"
-printf 'Then run: freeway\n'
+bin="$root/bin"
+
+# Pick the file this user's login or interactive shell reads.
+shell_profile() {
+  case "${SHELL:-}" in
+    */zsh|zsh) printf '%s' "${ZDOTDIR:-$HOME}/.zshrc" ;;
+    */bash|bash) if [[ $platform == darwin ]]; then printf '%s' "$HOME/.bash_profile"; else printf '%s' "$HOME/.bashrc"; fi ;;
+    */fish|fish) printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/freeway.fish" ;;
+    *) printf '%s' "$HOME/.profile" ;;
+  esac
+}
+
+profile=''
+if [[ $modify_path -eq 1 && ":$PATH:" != *":$bin:"* && $bin != *[\"\$\`\\]* ]]; then
+  profile="$(shell_profile)"
+  entry="$bin"
+  [[ $bin != "$HOME"/* ]] || entry="\$HOME/${bin#"$HOME"/}"
+  if [[ $profile == *.fish ]]; then line="fish_add_path --path \"$entry\""; else line="export PATH=\"$entry:\$PATH\""; fi
+  existing=''
+  [[ ! -f $profile ]] || existing="$(<"$profile")"
+  if [[ $existing != *"$line"* ]]; then
+    { [[ -d ${profile%/*} ]] || mkdir -p -- "${profile%/*}"; } &&
+      printf '\n# Freeway\n%s\n' "$line" >> "$profile" || profile=''
+  fi
+fi
+
+printf '\nFreeway installed.\n'
+if [[ ":$PATH:" == *":$bin:"* ]]; then
+  printf 'Run: freeway\n'
+elif [[ -n $profile ]]; then
+  printf 'Freeway is on PATH in %s. Open a new terminal, or run this now:\n' "$profile"
+  printf '  export PATH=%q:$PATH\n' "$bin"
+  printf 'Then run: freeway\n'
+else
+  printf 'Add its bin directory to PATH:\n'
+  printf '  export PATH=%q:$PATH\n' "$bin"
+  printf 'Then run: freeway\n'
+fi
