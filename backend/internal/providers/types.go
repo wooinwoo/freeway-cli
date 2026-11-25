@@ -14,6 +14,8 @@ type Config struct {
 	WorkDir        string
 	OpenCodeBinary string
 	ClineBinary    string
+	// CatalogDir keeps CLI catalogs between gateway runs. Empty disables the cache.
+	CatalogDir string
 }
 
 // Credential binds a free-account confirmation to one specific API key.

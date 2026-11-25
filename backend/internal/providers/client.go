@@ -85,6 +85,9 @@ func New(config Config) (*Client, error) {
 		}
 		cli := CLIConfig{Binary: binary, WorkDir: filepath.Join(workDir, d.ID), HTTPClient: config.HTTPClient}
 		if d.ID == "opencode" {
+			if config.CatalogDir != "" {
+				cli.CatalogCache = filepath.Join(config.CatalogDir, "opencode-models.json")
+			}
 			c.adapters[d.ID] = NewOpenCode(d, cli)
 		} else {
 			c.adapters[d.ID] = NewCline(d, cli)

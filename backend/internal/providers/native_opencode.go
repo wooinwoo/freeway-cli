@@ -35,6 +35,7 @@ type openCodeAdapter struct {
 	cmd        *exec.Cmd
 	wait       chan error
 	closed     bool
+	primed     atomic.Bool
 }
 
 // NewOpenCode controls one private official CLI server and its text-only sessions.
@@ -221,6 +222,14 @@ func (a *openCodeAdapter) request(ctx context.Context, base, method, path string
 }
 
 func (a *openCodeAdapter) Models(ctx context.Context, _ string) ([]Model, error) {
+	// A cold `opencode serve` takes several seconds. The first lookup answers from the last
+	// catalog and starts the server in the background. Later lookups use the live catalog.
+	if a.primed.CompareAndSwap(false, true) {
+		if models, ok := a.cachedModels(); ok {
+			go func() { _, _ = a.start(a.lifetime) }()
+			return models, nil
+		}
+	}
 	ctx, cancel := a.operation(ctx)
 	defer cancel()
 	base, err := a.start(ctx)
@@ -266,7 +275,57 @@ func (a *openCodeAdapter) Models(ctx context.Context, _ string) ([]Model, error)
 		}
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+	a.saveModels(models)
 	return models, nil
+}
+
+const openCodeCatalogMaxAge = 7 * 24 * time.Hour
+
+func (a *openCodeAdapter) cachedModels() ([]Model, bool) {
+	path := a.config.CatalogCache
+	if path == "" || a.config.Binary == "" {
+		return nil, false
+	}
+	info, err := os.Stat(path)
+	if err != nil || time.Since(info.ModTime()) > openCodeCatalogMaxAge {
+		return nil, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	var models []Model
+	if json.Unmarshal(data, &models) != nil || len(models) == 0 {
+		return nil, false
+	}
+	for _, model := range models {
+		if model.Provider != a.definition.ID || !model.Free {
+			return nil, false
+		}
+	}
+	return models, true
+}
+
+func (a *openCodeAdapter) saveModels(models []Model) {
+	path := a.config.CatalogCache
+	if path == "" || len(models) == 0 {
+		return
+	}
+	data, err := json.Marshal(models)
+	if err != nil || os.MkdirAll(filepath.Dir(path), 0700) != nil {
+		return
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), ".opencode-models-*")
+	if err != nil {
+		return
+	}
+	_, err = temp.Write(data)
+	if closeErr := temp.Close(); err == nil && closeErr == nil {
+		err = os.Rename(temp.Name(), path)
+	}
+	if err != nil {
+		_ = os.Remove(temp.Name())
+	}
 }
 
 type openCodeProvider struct {

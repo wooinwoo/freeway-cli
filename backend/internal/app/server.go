@@ -82,7 +82,7 @@ func Serve(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	upstream, err := providers.New(providers.Config{Credentials: credentials})
+	upstream, err := providers.New(providers.Config{Credentials: credentials, CatalogDir: filepath.Join(cfg.DataDir, "catalog")})
 	if err != nil {
 		return err
 	}

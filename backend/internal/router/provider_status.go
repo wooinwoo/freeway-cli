@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/wooinwoo/freeway-cli/backend/internal/contracts"
@@ -58,13 +59,20 @@ func (r *Router) ProviderStatuses(ctx context.Context) ([]contracts.ProviderStat
 	for _, route := range catalog.routes {
 		counts[route.source.ID]++
 	}
-	statuses := make([]contracts.ProviderStatus, 0, len(r.sources))
-	for _, source := range r.sources {
-		status, err := r.providerStatus(ctx, source, counts[source.ID], catalog.errors[source.ID])
+	// Key checks are network calls, so check every provider at once.
+	statuses := make([]contracts.ProviderStatus, len(r.sources))
+	failures := make([]error, len(r.sources))
+	var wait sync.WaitGroup
+	for i, source := range r.sources {
+		wait.Go(func() {
+			statuses[i], failures[i] = r.providerStatus(ctx, source, counts[source.ID], catalog.errors[source.ID])
+		})
+	}
+	wait.Wait()
+	for _, err := range failures {
 		if err != nil {
 			return nil, err
 		}
-		statuses = append(statuses, status)
 	}
 	return statuses, nil
 }

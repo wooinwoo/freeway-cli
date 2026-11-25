@@ -33,6 +33,8 @@ type CLIConfig struct {
 	Binary     string
 	WorkDir    string
 	HTTPClient *http.Client
+	// CatalogCache keeps the last free catalog so a cold start does not wait for the CLI.
+	CatalogCache string
 }
 
 func failure(code string, status int) *Error { return &Error{Code: code, Status: status} }

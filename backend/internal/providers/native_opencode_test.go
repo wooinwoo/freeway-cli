@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -53,6 +54,26 @@ func TestNativeOpenCodeCatalogKeepsOnlyItsOwnFreeModels(t *testing.T) {
 	models, err := adapter.Models(context.Background(), "")
 	if err != nil || len(models) != 1 || models[0].ID != "opencode/free-test" || len(models[0].Reasoning.Efforts) != 2 {
 		t.Fatalf("catalog: %+v %v", models, err)
+	}
+}
+
+func TestNativeOpenCodeColdStartAnswersFromTheLastCatalog(t *testing.T) {
+	cache := filepath.Join(t.TempDir(), "catalog", "opencode-models.json")
+	live := openCodeFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"all":[{"id":"opencode","models":{"free":{"id":"free-test","cost":{"input":0,"output":0}}}}]}`)
+	})
+	live.config.CatalogCache = cache
+	if _, err := live.Models(context.Background(), ""); err != nil {
+		t.Fatal(err)
+	}
+	cold := NewOpenCode(live.definition, CLIConfig{Binary: filepath.Join(t.TempDir(), "missing-opencode"), CatalogCache: cache}).(*openCodeAdapter)
+	t.Cleanup(func() { _ = cold.Close() })
+	models, err := cold.Models(context.Background(), "")
+	if err != nil || len(models) != 1 || models[0].ID != "opencode/free-test" {
+		t.Fatalf("cached catalog: %+v %v", models, err)
+	}
+	if _, err := cold.Models(context.Background(), ""); err == nil {
+		t.Fatal("later lookups must use the live server")
 	}
 }
 
