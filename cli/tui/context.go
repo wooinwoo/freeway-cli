@@ -82,7 +82,8 @@ func (p requestContext) visit(visit func(client.Message)) {
 	if p.system != "" {
 		visit(client.Message{Role: "system", Content: p.system})
 	}
-	for _, message := range p.history[p.start:] {
+	for i := p.start; i < len(p.history); i++ {
+		message := p.history[i]
 		if !includesModelContext(message) {
 			continue
 		}
@@ -92,10 +93,26 @@ func (p requestContext) visit(visit func(client.Message)) {
 		}
 		message.Files = p.priorFiles(message.Files)
 		visit(message)
+		if message.Role == "user" && !p.answered(i) {
+			visit(client.Message{Role: "assistant", Content: interruptedReply})
+		}
 	}
 	if p.current != nil {
 		visit(*p.current)
 	}
+}
+
+// interruptedReply stands in for a reply that was stopped or failed. Without a reply between
+// two questions, the model answers the earlier question again together with the next one.
+const interruptedReply = "[The reply to this message was interrupted.]"
+
+func (p requestContext) answered(i int) bool {
+	for _, next := range p.history[i+1:] {
+		if includesModelContext(next) {
+			return next.Role == "assistant"
+		}
+	}
+	return false
 }
 
 func (p requestContext) messages() []client.Message {

@@ -438,6 +438,7 @@ def context_history_smoke(program, environment, base):
                 {"role": "user", "content": FIRST},
                 {"role": "assistant", "content": ANSWER},
                 {"role": "user", "content": SECOND},
+                {"role": "assistant", "content": "[The reply to this message was interrupted.]"},
                 {"role": "user", "content": DRAFT},
             ], sent[-1]
             final = state["conversation"]["messages"][-1]

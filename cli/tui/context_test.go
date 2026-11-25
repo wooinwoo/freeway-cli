@@ -35,6 +35,27 @@ func TestContextKeepsWholeRecentTurnsAndOnlyCurrentAttachments(t *testing.T) {
 	}
 }
 
+func TestContextMarksAQuestionWhoseReplyWasStopped(t *testing.T) {
+	history := []client.Message{
+		{Role: "user", Content: "answered question"},
+		{Role: "assistant", Content: "answer", Status: "done"},
+		{Role: "user", Content: "stopped before any text"},
+		{Role: "user", Content: "stopped midway"},
+		{Role: "assistant", Content: "partial", Status: "stopped"},
+	}
+	current := client.Message{Role: "user", Content: "say hi"}
+	var got []string
+	for _, message := range planContext(history, &current, "", client.ContextSelection{RecentTurns: -1}).messages() {
+		got = append(got, message.Role+": "+message.Content)
+	}
+	want := []string{"user: answered question", "assistant: answer",
+		"user: stopped before any text", "assistant: " + interruptedReply,
+		"user: stopped midway", "assistant: " + interruptedReply, "user: say hi"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("two questions in a row make the model answer both:\n%s", strings.Join(got, "\n"))
+	}
+}
+
 func TestContextSetWhileSavingAppliesToTheFollowingRequest(t *testing.T) {
 	gateway := &memoryGateway{}
 	m := connectedFixture(gateway)
@@ -80,8 +101,8 @@ func TestContextCanExcludeOnePathWithoutDroppingDraftOrRetryFiles(t *testing.T) 
 	m = next.(Model)
 	plan := m.nextRequestContext()
 	messages := plan.messages()
-	if len(messages) != 3 || len(messages[0].Files) != 1 || messages[0].Files[0] != reference ||
-		len(messages[1].Files) != 0 || len(messages[2].Files) != 1 || messages[2].Files[0] != sensitive ||
+	if len(messages) != 5 || len(messages[0].Files) != 1 || messages[0].Files[0] != reference ||
+		len(messages[2].Files) != 0 || len(messages[4].Files) != 1 || messages[4].Files[0] != sensitive ||
 		len(m.messages[0].Files) != 2 || !strings.Contains(m.contextHint(), "1 earlier files included · 2 excluded") {
 		t.Fatalf("unexpected per-file context: %+v", messages)
 	}
@@ -96,7 +117,7 @@ func TestContextCanExcludeOnePathWithoutDroppingDraftOrRetryFiles(t *testing.T) 
 	next, _ = m.chooseItem(modelItem{ID: priorFileRow + sensitive.Path})
 	m = next.(Model)
 	retry := m.responseContext().messages()
-	if len(retry[0].Files) != 1 || retry[0].Files[0] != reference || len(retry[1].Files) != 1 || retry[1].Files[0] != sensitive ||
+	if len(retry[0].Files) != 1 || retry[0].Files[0] != reference || len(retry[2].Files) != 1 || retry[2].Files[0] != sensitive ||
 		len(m.nextRequestContext().messages()[0].Files) != 2 {
 		t.Fatalf("draft and pending retry used the wrong selection: %+v", retry)
 	}

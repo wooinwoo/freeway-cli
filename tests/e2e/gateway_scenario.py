@@ -411,6 +411,8 @@ def connected_smoke(program, environment, base):
                 {"role": "user", "content": FIRST},
                 {"role": "assistant", "content": ANSWER},
                 {"role": "user", "content": SECOND},
+                # The stopped reply stays out, and a marker keeps the model from answering SECOND again.
+                {"role": "assistant", "content": "[The reply to this message was interrupted.]"},
                 {"role": "user", "content": DRAFT},
             ], sent[-1]
             final = state["conversation"]["messages"][-1]
