@@ -10,9 +10,9 @@ import { Aside } from '@astrojs/starlight/components';
 Download **Freeway-Setup-x64.exe** for most Windows PCs or **Freeway-Setup-arm64.exe** for Windows on Arm from the official [GitHub Releases](https://github.com/wooinwoo/freeway-cli/releases).
 
 1. Double-click the setup file and confirm installation.
-2. Open Freeway from the finish dialog. Search for **Freeway** in the Start menu to open it again.
+2. Open Freeway from the finish dialog. Search for **Freeway** in the Start menu, or run `freeway` in a new terminal, to open it again.
 
-The setup file includes the full package. It installs under `$HOME\.freeway\app` and needs no administrator access, Go, Node.js, or PATH changes. Windows may show an unsigned-app prompt.
+The setup file includes the full package. It installs under `$HOME\.freeway\app` and needs no administrator access, Go, Node.js, or PATH changes. The setup file is not code-signed, so Windows may show "Windows protected your PC". Select **More info**, then **Run anyway**.
 
 Freeway packages contain `freeway`, `freewayd`, `freeway-providers`, a file manifest, and license notices. Choose the archive matching your operating system and CPU and keep the three executables together. The local gateway runs in `freewayd`.
 
@@ -23,10 +23,9 @@ Download the installer script and run it without options. It detects the OS and 
 ~~~sh
 curl -fsSLO https://raw.githubusercontent.com/wooinwoo/freeway-cli/main/install.sh
 bash install.sh
-export PATH="$HOME/.freeway/app/bin:$PATH"
 ~~~
 
-To use a script on Windows, download `install.ps1` the same way and run `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`. If the release cannot be fetched, the script fails without changing the installed version. `--release-url HTTPS_BASE_URL` / `-ReleaseUrl HTTPS_BASE_URL` selects a trusted release directory. `--root PATH` or `-Root PATH` chooses a dedicated install directory. PATH changes above apply to the current terminal; add the same directory to your shell configuration or Windows user PATH for future terminals.
+To use a script on Windows, download `install.ps1` the same way and run `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`. If the release cannot be fetched, the script fails without changing the installed version. `--release-url HTTPS_BASE_URL` / `-ReleaseUrl HTTPS_BASE_URL` selects a trusted release directory. `--root PATH` or `-Root PATH` chooses a dedicated install directory. The installer adds the bin directory to your shell profile (`~/.bashrc`, `~/.zshrc`, `~/.profile`, or fish configuration) or to the Windows user PATH. Open a new terminal and run `freeway`. To manage PATH yourself, pass `--no-modify-path` or `-NoModifyPath`.
 
 <Aside title="Use the official source">
 Download releases only from the official GitHub Releases page. Each release contains archives for each OS and CPU, both Windows setup executables, `SHA256SUMS`, `release.json`, and its signature `release.json.sig`. Do not download an archive from an unrelated mirror.
@@ -41,7 +40,6 @@ You need Go 1.26+ and a repository checkout.
 
 ~~~sh
 bash install.sh --source
-export PATH="$HOME/.freeway/app/bin:$PATH"
 ~~~
 
 </TabItem>

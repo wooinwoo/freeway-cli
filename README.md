@@ -4,18 +4,21 @@
 
 네이티브 패키지에는 TUI, 로컬 Go 게이트웨이, 공급처 관리 도구, 설치·업데이트 기능이 포함됩니다. 제품 실행에 Node.js가 필요하지 않습니다.
 
+![키 없이 Kilo 게스트로 대화하는 Freeway 화면](docs/assets/freeway-chat.png)
+
+설치 직후 가입이나 키 없이 Kilo 게스트로 대화할 수 있습니다. 다른 공급처는 F4에서 본인 API 키를 등록하거나 공식 CLI로 로그인해 추가합니다.
+
 ## 설치
 
 [GitHub Releases](https://github.com/wooinwoo/freeway-cli/releases)의 최신 릴리스를 사용합니다. Go와 Node.js는 필요하지 않습니다.
 
-**Windows:** 일반 PC는 `Freeway-Setup-x64.exe`, Windows on Arm은 `Freeway-Setup-arm64.exe`를 받아 실행하세요. 설치를 누르면 시작 메뉴에서 Freeway를 열 수 있습니다. 관리자 권한이 필요하지 않습니다.
+**Windows:** 일반 PC는 `Freeway-Setup-x64.exe`, Windows on Arm은 `Freeway-Setup-arm64.exe`를 받아 실행하세요. 설치를 누르면 시작 메뉴에서 Freeway를 열 수 있습니다. 관리자 권한이 필요하지 않습니다. 설치 파일은 코드 서명이 없어서 "Windows의 PC 보호" 화면이 뜰 수 있습니다. **추가 정보** → **실행**을 누르세요.
 
-**Linux·macOS:** 설치 스크립트를 받아 실행합니다. 스크립트가 OS·CPU를 감지하고 최신 릴리스의 `SHA256SUMS`와 압축 파일을 받아 검증한 뒤 `~/.freeway/app`에 설치합니다. `curl`, `tar`, `sha256sum` 또는 `shasum`이 필요합니다.
+**Linux·macOS:** 설치 스크립트를 받아 실행합니다. 스크립트가 OS·CPU를 감지하고 최신 릴리스의 `SHA256SUMS`와 압축 파일을 받아 검증한 뒤 `~/.freeway/app`에 설치합니다. `curl`, `tar`, `sha256sum` 또는 `shasum`이 필요합니다. 설치 스크립트가 셸 설정 파일(`~/.bashrc`, `~/.zshrc` 등)에 PATH를 추가하므로 새 터미널을 열고 `freeway`를 실행하면 됩니다. PATH를 직접 관리하려면 `--no-modify-path`를 붙이세요.
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/wooinwoo/freeway-cli/main/install.sh
 bash install.sh
-export PATH="$HOME/.freeway/app/bin:$PATH"
 ```
 
 Windows PowerShell에서도 같은 방식으로 [install.ps1](install.ps1)을 받아 `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`로 설치할 수 있습니다. 릴리스 파일은 `freeway_<버전>_<os>_<arch>.tar.gz`(Windows는 `.zip`), 설치 파일 2종, `SHA256SUMS`, `release.json`과 서명 `release.json.sig`로 구성됩니다. 내려받은 압축 파일을 직접 설치하는 방법과 사용자 지정 폴더는 [설치 안내](docs/site/src/content/docs/ko/docs/installation.mdx)를 참고하세요.
