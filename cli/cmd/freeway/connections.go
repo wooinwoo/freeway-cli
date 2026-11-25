@@ -30,7 +30,13 @@ func setupConnections(ctx context.Context, gateway *client.HTTP, prefs *tui.Pref
 	t := prefs.Text
 	startup := startMode != ""
 	if startup {
-		fmt.Fprintln(os.Stderr, t("Checking provider connections…", "공급처 연결 확인 중…"))
+		if interactiveTerminal() {
+			// The line is only a wait indicator, so it should not stay behind after Freeway exits.
+			fmt.Fprint(os.Stderr, t("Checking provider connections…", "공급처 연결 확인 중…"))
+			defer fmt.Fprint(os.Stderr, "\r\x1b[2K")
+		} else {
+			fmt.Fprintln(os.Stderr, t("Checking provider connections…", "공급처 연결 확인 중…"))
+		}
 	}
 	var selected, notice string
 	var statuses []client.ProviderStatus

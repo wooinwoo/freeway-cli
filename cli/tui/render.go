@@ -142,8 +142,8 @@ func (m Model) renderUserMessage(message client.Message, width int, colors schem
 	bodyWidth := panelWidth - 2
 	var wraps []transcriptWrap
 	for _, line := range strings.Split(terminalSafe(message.Content), "\n") {
-		parts := strings.Split(ansi.Hardwrap(line, bodyWidth, true), "\n")
-		recordTranscriptWrap(&wraps, len(rows), inset+len("▎ "), parts)
+		parts := strings.Split(ansi.Wrap(line, bodyWidth, ""), "\n")
+		recordWordWrap(&wraps, len(rows), inset+len("▎ "), line, parts)
 		for _, part := range parts {
 			rows = append(rows, gutter+edge+panel.Render(padCells(" "+part, panelWidth)))
 		}

@@ -98,17 +98,17 @@ const usage = `Freeway — a free AI workspace
   freeway -c                      Same as continue
   freeway resume                  Pick a saved session
   freeway resume ID_OR_TITLE      Resume by ID, unique ID prefix, or title
-  freeway resume --last            Continue the latest session
-  freeway resume --all             Pick from all projects
-  freeway sessions [--all]         List saved sessions
-  freeway sessions --json          Export session metadata as JSON
+  freeway resume --last           Continue the latest session
+  freeway resume --all            Pick from all projects
+  freeway sessions [--all]        List saved sessions
+  freeway sessions --json         Export session metadata as JSON
 
   --new / -n       Start fresh
   --resume / -r    Open the session picker, or pass an ID/title
   --continue / -c  Continue the latest session in this project
-  --no-save       Skip conversation history. Image outputs still save as files.
-  --no-color      Disable terminal colors
-  --preview       Offline UI preview
+  --no-save        Skip conversation history. Image outputs still save as files.
+  --no-color       Disable terminal colors
+  --preview        Offline UI preview
 
 In the UI: /resume, /fork, /rename TITLE, /new, /queue, /language, /theme, /help
 
@@ -117,8 +117,8 @@ Native tools:
   freeway image connect      Connect an MCP image tool for Auto
   freeway image status       Show the configured MCP image tool
   freeway image disconnect   Disconnect the MCP image tool
-  freeway mcp --help          Discover and call MCP tools from the terminal
-  freeway connect [PROVIDER]  Guided provider connection
+  freeway mcp --help         Discover and call MCP tools from the terminal
+  freeway connect [PROVIDER] Guided provider connection
   freeway gateway serve      Start the local Go gateway
   freeway gateway key        Print the local gateway client key
   freeway --version          Print the native client version
@@ -127,7 +127,7 @@ Native tools:
   freeway update             Verify and activate a new native version
   freeway rollback           Restore the previous program version
   freeway uninstall          Remove the program while preserving user data
-  --url URL       Local Go gateway address (or FREEWAY_URL)
+  --url URL                  Local Go gateway address (or FREEWAY_URL)
 
 Freeway starts its local gateway automatically. Set FREEWAY_API_KEY when choosing your own gateway.
 No Node.js or POC runtime is required.
