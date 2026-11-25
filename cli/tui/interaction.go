@@ -390,7 +390,7 @@ func (m Model) handleInterrupt() (tea.Model, tea.Cmd) {
 		return m.dismissMenu()
 	}
 	if m.busy {
-		m.queuePaused = true
+		m.queuePaused = m.queuePaused || len(m.queue) > 0
 		mcpRunning := m.mcpRunning
 		m.stopResponse()
 		m.status = "Stopped"

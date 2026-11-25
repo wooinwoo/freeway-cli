@@ -44,6 +44,11 @@ type conversationSaved struct {
 	size        int
 }
 
+// Resumable reports a saved conversation that `freeway -c` reopens.
+func (m Model) Resumable() bool {
+	return m.saveEnabled && m.session.ID != "" && !m.dirty && m.saveError == "" && len(m.messages) > 0
+}
+
 func (m Model) WithSession(id string, fresh, noSave bool) Model {
 	m.resumeID, m.startNew, m.saveEnabled = id, fresh, !noSave
 	return m
@@ -168,6 +173,11 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.loadingModels = true
 		return m, m.loadModels(), true
 	case actionResult:
+		if msg.err != nil && msg.clipboard != "" {
+			// SSH sessions and minimal Linux installs have no clipboard tool; most terminals copy through OSC 52.
+			m.notify(strings.TrimSuffix(msg.text, ".") + m.tr(" (terminal clipboard).", " (터미널 클립보드)."))
+			return m, tea.SetClipboard(msg.clipboard), true
+		}
 		if msg.err != nil {
 			m.notify(m.tr("Could not complete the action: ", "작업을 완료하지 못했습니다. ") + msg.err.Error())
 		} else {
@@ -331,7 +341,8 @@ func (m Model) updateConvenience(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.stash = &draftState{Text: msg.chat.Stash.Text, Files: append([]client.Attachment(nil), msg.chat.Stash.Files...)}
 		}
 		m.queue = append([]client.PendingPrompt(nil), msg.chat.Queued...)
-		m.queuePaused = true
+		// Restored follow-ups wait for /queue resume; a chat without any takes new ones normally.
+		m.queuePaused = len(m.queue) > 0
 		m.editingAt = -1
 		m.selected = msg.chat.Model
 		m.settings = msg.chat.Settings
@@ -447,10 +458,11 @@ func (m *Model) snapshot() client.Conversation {
 		}
 	}
 	chat.Messages = append([]client.Message{}, m.messages...)
+	// The first question names the chat. A draft is not used: it may be half typed, and the title never changes after it is set.
 	if chat.Title == "" {
-		title := chat.Draft
+		title := ""
 		for _, message := range m.messages {
-			if message.Role == "user" {
+			if message.Role == "user" && strings.TrimSpace(message.Content) != "" {
 				title = message.Content
 				break
 			}
@@ -459,9 +471,6 @@ func (m *Model) snapshot() client.Conversation {
 		runes := []rune(title)
 		if len(runes) > 45 {
 			title = string(runes[:45]) + "…"
-		}
-		if title == "" {
-			title = m.tr("New conversation", "새 대화")
 		}
 		chat.Title = title
 	}

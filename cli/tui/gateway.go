@@ -366,12 +366,12 @@ func (m Model) receiveResponse(msg responseEvent) (tea.Model, tea.Cmd) {
 		m.stopResponse()
 		m.status = "Response complete"
 		if msg.event.Provider != "" {
-			m.status += " · " + terminalSafe(msg.event.Provider)
+			m.status += " · " + providerLabel(terminalSafe(msg.event.Provider))
 		}
 		m.dirty = true
 	case "error":
 		mcpRunning := m.mcpRunning
-		m.queuePaused = true
+		m.queuePaused = m.queuePaused || len(m.queue) > 0
 		if len(m.messages) > 0 && m.messages[len(m.messages)-1].Role == "assistant" {
 			m.messages[len(m.messages)-1].Status = "error"
 			m.messages[len(m.messages)-1].Error = msg.event.Error

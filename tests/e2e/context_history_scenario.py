@@ -19,6 +19,8 @@ import threading
 import time
 from urllib.parse import parse_qs, urlsplit
 
+from gateway_scenario import shown
+
 if os.name != "nt":
     import fcntl
     import pty
@@ -74,9 +76,9 @@ class Terminal:
 
     def wait_text(self, text):
         deadline = time.monotonic() + 12
-        while text.encode() not in self.output and self.child.poll() is None and time.monotonic() < deadline:
+        while not shown(self.output, text) and self.child.poll() is None and time.monotonic() < deadline:
             self.read()
-        assert text.encode() in self.output, f"missing {text!r} in terminal: {bytes(self.output[-1800:])!r}"
+        assert shown(self.output, text), f"missing {text!r} in terminal: {bytes(self.output[-1800:])!r}"
 
     def exit(self):
         self.send(b"/exit\r")
@@ -132,9 +134,9 @@ class WindowsTerminal:
 
     def wait_text(self, text):
         deadline = time.monotonic() + 12
-        while text.encode() not in self.output and time.monotonic() < deadline:
+        while not shown(self.output, text) and time.monotonic() < deadline:
             self.read()
-        assert text.encode() in self.output, f"missing {text!r} in terminal: {bytes(self.output[-1800:])!r}"
+        assert shown(self.output, text), f"missing {text!r} in terminal: {bytes(self.output[-1800:])!r}"
 
     def exit(self):
         self.send(b"/exit\r")

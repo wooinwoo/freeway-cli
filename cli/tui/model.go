@@ -129,6 +129,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.renderedTheme != m.activeTheme() {
 		m.applyPreferences()
 	}
+	// Rows under the composer, such as the queue or context line, change without a resize.
+	// Fit the transcript to them so the status line stays on screen.
+	m.layout()
 	return m, cmd
 }
 
@@ -225,7 +228,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.dismissMenu()
 			}
 			if m.busy {
-				m.queuePaused = true
+				// Stopping holds follow-ups already queued. An empty queue stays open for new ones.
+				m.queuePaused = m.queuePaused || len(m.queue) > 0
 				mcpRunning := m.mcpRunning
 				m.stopResponse()
 				m.status = "Stopped"

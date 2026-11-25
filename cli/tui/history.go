@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"charm.land/bubbles/v2/list"
@@ -72,8 +73,9 @@ func (m Model) historyItems() []list.Item {
 			when = t.Local().Format("01/02 15:04")
 		}
 		detail := fmt.Sprintf(m.tr("%s · %d messages", "%s · 메시지 %d개"), when, chat.MessageCount)
-		if chat.Workspace != "" {
-			detail += " · " + chat.Workspace
+		// Within one project the folder is the same on every row.
+		if chat.Workspace != "" && m.allSessions {
+			detail += " · " + filepath.Base(chat.Workspace)
 		}
 		if chat.HasDraft {
 			detail += m.tr(" · draft", " · 초안")
@@ -84,7 +86,11 @@ func (m Model) historyItems() []list.Item {
 		if chat.Preview != "" {
 			detail += " · " + oneLine(chat.Preview)
 		}
-		items = append(items, modelItem{ID: chat.ID, Name: chat.Title, Detail: detail})
+		title := chat.Title
+		if title == "" {
+			title = m.tr("New conversation", "새 대화")
+		}
+		items = append(items, modelItem{ID: chat.ID, Name: title, Detail: detail})
 	}
 	if m.historyPage.cursor != "" {
 		items = append(items, modelItem{ID: historyMoreID, Name: m.tr("Load more conversations", "대화 더 불러오기"), Detail: m.tr("Enter to show the next page", "Enter로 다음 페이지 보기")})

@@ -33,7 +33,7 @@ func padCells(text string, width int) string {
 
 func (m Model) workspaceView() tea.View {
 	if !m.usable() {
-		view := tea.NewView(lipgloss.NewStyle().MaxWidth(max(1, m.width)).MaxHeight(max(1, m.height)).Render(m.tr("Resize to at least 44×12. Ctrl+C to quit.", "44×12 이상으로 늘리세요. Ctrl+C로 종료합니다.")))
+		view := tea.NewView(lipgloss.NewStyle().Width(max(1, m.width)).MaxHeight(max(1, m.height)).Render(m.tr("Resize to at least 44×12. Ctrl+C to quit.", "44×12 이상으로 늘리세요. Ctrl+C로 종료합니다.")))
 		view.AltScreen = true
 		return view
 	}
@@ -59,20 +59,30 @@ func (m Model) workspaceView() tea.View {
 		modelID = m.responseTarget.model
 	}
 	model := lipgloss.NewStyle().Foreground(c.text).Render(ansi.Truncate(m.modelLabel(modelID), max(10, width-16), "…")) + accent.Bold(true).Render(m.tr("  FREE", "  무료"))
-	if m.modelsFocused {
-		model += muted.Render("  ·  " + m.menuTitle())
-	} else if m.busy {
-		if modelID != m.selected {
-			next := m.tr(" · Next ", " · 다음 ")
-			currentWidth := (width - ansi.StringWidth(next)) / 2
-			text := lipgloss.NewStyle().Foreground(c.text)
-			model = text.Render(ansi.Truncate(m.modelLabel(modelID), currentWidth, "…")) + muted.Render(next) +
-				text.Render(ansi.Truncate(m.modelLabel(m.selected), width-currentWidth-ansi.StringWidth(next), "…"))
-		} else {
-			model += muted.Render(m.tr("  ·  generating", "  ·  응답 생성 중"))
+	// The status line already shows that a reply is running; the header only adds a model change.
+	if m.busy && !m.modelsFocused && modelID != m.selected {
+		next := m.tr(" · Next ", " · 다음 ")
+		currentWidth := (width - ansi.StringWidth(next)) / 2
+		text := lipgloss.NewStyle().Foreground(c.text)
+		model = text.Render(ansi.Truncate(m.modelLabel(modelID), currentWidth, "…")) + muted.Render(next) +
+			text.Render(ansi.Truncate(m.modelLabel(m.selected), width-currentWidth-ansi.StringWidth(next), "…"))
+	}
+	// The model sits on the left and the connection on the right, so a rule can close the header.
+	modelRow := ansi.Truncate(model, width, "…")
+	if summary := terminalSafe(m.providerSummary()); summary != "" {
+		dot := accent.Render("● ")
+		if m.providersLoading || m.loadingModels {
+			dot = muted.Render("● ")
+		} else if !m.ready {
+			dot = lipgloss.NewStyle().Foreground(c.warn).Render("● ")
+		}
+		if room := width - ansi.StringWidth(modelRow) - 4; room >= 10 {
+			connection := dot + muted.Render(ansi.Truncate(summary, room, "…"))
+			modelRow = padCells(modelRow, width-ansi.StringWidth(connection)) + connection
 		}
 	}
-	header := lipgloss.JoinVertical(lipgloss.Left, ansi.Truncate(brand, width, "…"), ansi.Truncate(model, width, "…"), muted.Render(ansi.Truncate(terminalSafe(m.providerSummary()), width, "…")))
+	rule := lipgloss.NewStyle().Foreground(c.border).Render(strings.Repeat("─", max(0, width)))
+	header := lipgloss.JoinVertical(lipgloss.Left, ansi.Truncate(brand, width, "…"), modelRow, rule)
 	body := m.chat.View()
 	if len(m.messages) == 0 && (!m.modelsFocused || m.inlineFilePicker() || m.themePicker()) {
 		body = m.welcomeView(width, m.chat.Height())
@@ -85,7 +95,7 @@ func (m Model) workspaceView() tea.View {
 		}
 		hint := m.tr("↑↓ preview · Enter save · Esc cancel", "↑↓ 미리보기 · Enter 저장 · Esc 취소")
 		items := lipgloss.NewStyle().Height(m.models.list.Height()).MaxHeight(m.models.list.Height()).Render(m.menuItemsView())
-		rows = append(rows, accent.Bold(true).Render(m.menuTitle()), items, muted.Render(ansi.Truncate(hint, width, "…")))
+		rows = append(rows, accent.Bold(true).Render(m.menuTitle()), items, keyHints(hint, width))
 		screen := lipgloss.NewStyle().Width(m.width).MaxHeight(m.height).Padding(0, 2).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 		view := tea.NewView(screen)
 		view.AltScreen, view.MouseMode = true, tea.MouseModeCellMotion
@@ -99,7 +109,11 @@ func (m Model) workspaceView() tea.View {
 		help = m.tr("↑↓ choose command · Tab complete · Enter run", "↑↓ 명령 선택 · Tab 완성 · Enter 실행")
 	}
 	if m.busy {
-		help = m.tr("Tab queue follow-up · Up take back · Esc stop · F1 help", "Tab 후속 질문 예약 · ↑ 되돌리기 · Esc 중지 · F1 도움말")
+		// The status line and the composer title already say Esc stops the reply.
+		help = m.tr("Tab queue follow-up · ? help", "Tab 후속 질문 예약 · ? 도움말")
+		if len(m.queue) > 0 {
+			help = m.tr("Tab queue follow-up · Up take back · ? help", "Tab 후속 질문 예약 · ↑ 되돌리기 · ? 도움말")
+		}
 	}
 	if m.inlineFilePicker() {
 		query := m.menuQuery
@@ -110,7 +124,7 @@ func (m Model) workspaceView() tea.View {
 		labelWidth := ansi.StringWidth(label)
 		search := accent.Bold(true).Render(label) + ansi.Truncate(terminalSafe(query), width-labelWidth, "…")
 		items := lipgloss.NewStyle().Height(m.models.list.Height()).MaxHeight(m.models.list.Height()).Render(m.menuItemsView())
-		context := muted.Render(ansi.Truncate(m.tr("↑↓ choose · Enter/Tab attach · Esc keep typing", "↑↓ 선택 · Enter/Tab 첨부 · Esc 돌아가기"), width, ""))
+		context := keyHints(m.tr("↑↓ choose · Enter/Tab attach · Esc keep typing", "↑↓ 선택 · Enter/Tab 첨부 · Esc 돌아가기"), width)
 		screen := lipgloss.NewStyle().Width(m.width).Padding(0, 2).Render(lipgloss.JoinVertical(lipgloss.Left, header, body, composer, search, items, context))
 		view := tea.NewView(screen)
 		view.AltScreen, view.MouseMode = true, tea.MouseModeCellMotion
@@ -134,6 +148,8 @@ func (m Model) workspaceView() tea.View {
 			columns, detail = m.tr("PROMPT", "질문"), m.tr("FULL TEXT", "전체 내용")
 		case "queue":
 			columns, detail = m.tr("FOLLOW-UP", "후속 질문"), m.tr("ACTION", "동작")
+		case "queue-clear":
+			columns, detail = m.tr("CHOICE", "선택"), m.tr("DESCRIPTION", "설명")
 		case "history":
 			columns, detail = m.tr("CONVERSATION", "대화"), m.tr("UPDATED / PREVIEW", "수정 시간 / 미리보기")
 		case "settings":
@@ -157,7 +173,7 @@ func (m Model) workspaceView() tea.View {
 		if m.menu == "models" {
 			help = m.tr("Ctrl+T ranking · Enter select · Esc back", "Ctrl+T 순위 · Enter 선택 · Esc 뒤로")
 			if m.gateway != nil {
-				help = m.tr("Ctrl+R refresh · Ctrl+T ranking · F4 providers · Enter select", "Ctrl+R 갱신 · Ctrl+T 순위 · F4 공급처 · Enter 선택")
+				help = m.tr("Enter select · Ctrl+R refresh · Ctrl+T ranking · F4 providers · Esc back", "Enter 선택 · Ctrl+R 갱신 · Ctrl+T 순위 · F4 공급처 · Esc 뒤로")
 				if width < 62 {
 					help = m.tr("Ctrl+R refresh · Ctrl+T rank · F4", "Ctrl+R 갱신 · Ctrl+T 순위 · F4")
 				}
@@ -173,29 +189,29 @@ func (m Model) workspaceView() tea.View {
 			}
 		}
 		if m.menu == "history" {
-			scope := m.tr("this project", "현재 프로젝트")
+			scope := m.tr("all projects", "모든 프로젝트 보기")
 			if m.allSessions {
-				scope = m.tr("all projects", "모든 프로젝트")
+				scope = m.tr("this project only", "현재 프로젝트만")
 			}
 			help = m.tr("Enter resume · Ctrl+A ", "Enter 이어서 · Ctrl+A ") + scope + m.tr(" · type to search · Esc back", " · 입력해서 검색 · Esc 뒤로")
 			if m.historyPage.paged {
-				help = m.tr("Enter open · Ctrl+A ", "Enter 열기 · Ctrl+A ") + scope + m.tr(" · Ctrl+R refresh · Esc", " · Ctrl+R 새로고침 · Esc")
+				help = m.tr("Enter open · Ctrl+A ", "Enter 열기 · Ctrl+A ") + scope + m.tr(" · Ctrl+R refresh · Esc back", " · Ctrl+R 새로고침 · Esc 뒤로")
 				if m.historyPage.cursor != "" {
-					help = m.tr("Enter open · Ctrl+A ", "Enter 열기 · Ctrl+A ") + scope + m.tr(" · End more · Esc", " · End 더 보기 · Esc")
+					help = m.tr("Enter open · Ctrl+A ", "Enter 열기 · Ctrl+A ") + scope + m.tr(" · End more · Esc back", " · End 더 보기 · Esc 뒤로")
 				}
 			}
 		}
 		if m.menu == "prompts" {
-			scope := m.tr("this project", "현재 프로젝트")
+			scope := m.tr("all projects", "모든 프로젝트 보기")
 			if m.allPrompts {
-				scope = m.tr("all projects", "모든 프로젝트")
+				scope = m.tr("this project only", "현재 프로젝트만")
 			}
 			help = m.tr("Enter restore · Esc back", "Enter 복원 · Esc 뒤로")
 			if _, ok := m.gateway.(scopedPromptGateway); ok {
-				help = m.tr("Enter restore · Ctrl+A ", "Enter 복원 · Ctrl+A ") + scope + " · Esc"
+				help = m.tr("Enter restore · Ctrl+A ", "Enter 복원 · Ctrl+A ") + scope + m.tr(" · Esc back", " · Esc 뒤로")
 			}
 			if m.promptsIncomplete && !m.promptsLoading {
-				help = m.tr("Some saved prompts unavailable · Ctrl+R retry · Esc", "일부 저장된 질문을 읽지 못함 · Ctrl+R 다시 시도 · Esc")
+				help = m.tr("Some saved prompts unavailable · Ctrl+R retry · Esc back", "일부 저장된 질문을 읽지 못함 · Ctrl+R 다시 시도 · Esc 뒤로")
 			}
 		}
 		if m.menu == "context" {
@@ -226,7 +242,7 @@ func (m Model) workspaceView() tea.View {
 			}
 			rows = append(rows, muted.Height(height).MaxHeight(height).Render(strings.Join(preview[:min(height, len(preview))], "\n")))
 		}
-		rows = append(rows, footer, muted.Render(ansi.Truncate(help, width, "")))
+		rows = append(rows, footer, keyHints(help, width))
 		screen := lipgloss.NewStyle().Width(m.width).Padding(0, 2).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 		view := tea.NewView(screen)
 		view.AltScreen = true
@@ -254,9 +270,20 @@ func (m Model) workspaceView() tea.View {
 		return view
 	}
 	if !m.modelsFocused {
-		composer = lipgloss.JoinVertical(lipgloss.Left, composer, muted.Render(ansi.Truncate(help, width, "")), muted.Render(ansi.Truncate(terminalSafe(status), width, "…")))
+		// Activity uses the accent and problems the warning color; a fresh notice reads at full strength.
+		tone := muted
+		switch {
+		case m.toast != "" && time.Now().Before(m.toastUntil):
+			tone = lipgloss.NewStyle().Foreground(c.text)
+		case m.busy:
+			tone = accent
+		case m.saveError != "" || m.status == "Connection needs attention" || m.status == "Ready to retry" ||
+			m.ready && !m.loadingModels && m.textRouteIssue() != "":
+			tone = lipgloss.NewStyle().Foreground(c.warn)
+		}
+		composer = lipgloss.JoinVertical(lipgloss.Left, composer, keyHints(help, width), tone.Render(ansi.Truncate(terminalSafe(status), width, "…")))
 	} else {
-		composer = lipgloss.JoinVertical(lipgloss.Left, composer, muted.Render(ansi.Truncate(help, width, "")))
+		composer = lipgloss.JoinVertical(lipgloss.Left, composer, keyHints(help, width))
 	}
 	screen := lipgloss.NewStyle().Width(m.width).Padding(0, 2).Render(lipgloss.JoinVertical(lipgloss.Left, header, body, composer))
 	view := tea.NewView(screen)
@@ -276,9 +303,16 @@ func (m Model) welcomeView(width, height int) string {
 	c := grooveColors()
 	accent := lipgloss.NewStyle().Foreground(c.accent)
 	muted := lipgloss.NewStyle().Foreground(c.muted)
-	lines := []string{accent.Bold(true).Render("↗"), lipgloss.NewStyle().Foreground(c.text).Bold(true).Render(m.tr("What would you like to make?", "무엇을 만들어 볼까요?")), "", muted.Render(m.tr("Think, build, and find answers with free AI.", "무료 AI로 생각하고 만들고 답을 찾아보세요.")), "", accent.Render("/models") + muted.Render(m.tr("  choose a model     ", "  모델 선택     ")) + accent.Render("/history") + muted.Render(m.tr("  pick up where you left off", "  이전 대화 이어서"))}
+	lines := []string{lipgloss.NewStyle().Foreground(c.text).Bold(true).Render(m.tr("What would you like to make?", "무엇을 만들어 볼까요?")), "", muted.Render(m.tr("Think, build, and find answers with free AI.", "무료 AI로 생각하고 만들고 답을 찾아보세요.")), "", accent.Render("/models") + muted.Render(m.tr("  choose a model     ", "  모델 선택     ")) + accent.Render("/history") + muted.Render(m.tr("  pick up where you left off", "  이전 대화 이어서"))}
 	if width < 65 {
-		lines = []string{accent.Bold(true).Render("↗ freeway"), lipgloss.NewStyle().Foreground(c.text).Bold(true).Render(m.tr("What would you like to make?", "무엇을 만들어 볼까요?")), "", muted.Render(m.tr("/models choose · /history resume", "/models 모델 선택 · /history 대화 기록"))}
+		lines = []string{lipgloss.NewStyle().Foreground(c.text).Bold(true).Render(m.tr("What would you like to make?", "무엇을 만들어 볼까요?")), "", muted.Render(m.tr("/models choose · /history resume", "/models 모델 선택 · /history 대화 기록"))}
+	}
+	// Startup problems, such as no reachable provider, would otherwise hide behind the welcome.
+	if m.notice != "" {
+		lines = append(lines, "")
+		for _, line := range strings.Split(ansi.Wrap(terminalSafe(m.notice), min(width, 72), ""), "\n") {
+			lines = append(lines, lipgloss.NewStyle().Foreground(m.noticeColor()).Render(line))
+		}
 	}
 	for i, line := range lines {
 		line = ansi.Truncate(line, width, "…")

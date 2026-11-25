@@ -197,19 +197,19 @@ func (m setupModel) View() tea.View {
 		rows = append(rows, muted.Render(strings.Join(detail[:min(len(detail), max(1, m.height-9))], "\n")))
 	}
 	rows = append(rows, "")
-	help := m.prefs.Text("↑↓ move  ·  Enter select  ·  Esc back", "↑↓ 이동  ·  Enter 선택  ·  Esc 뒤로")
+	help := m.prefs.Text("↑↓ move · Enter select · Esc back", "↑↓ 이동 · Enter 선택 · Esc 뒤로")
 	if m.previewTheme {
 		help = m.prefs.Text("↑↓ preview · Enter select · Esc back", "↑↓ 미리보기 · Enter 선택 · Esc 뒤로")
 	}
 	if m.cancel {
-		help = m.prefs.Text("↑↓ move  ·  Enter select  ·  Esc cancel", "↑↓ 이동  ·  Enter 선택  ·  Esc 취소")
+		help = m.prefs.Text("↑↓ move · Enter select · Esc cancel", "↑↓ 이동 · Enter 선택 · Esc 취소")
 	}
 	if m.Help != "" {
 		help = m.Help
 	}
 	if m.hasInput() {
 		rows = append(rows, m.input.View())
-		help = m.prefs.Text("Enter connect  ·  Esc cancel", "Enter 연결  ·  Esc 취소")
+		help = m.prefs.Text("Enter connect · Esc cancel", "Enter 연결 · Esc 취소")
 	} else if len(m.Options) > 0 {
 		detail := label(m.Options[m.index].Detail)
 		statusDetail := m.check.detail
@@ -235,7 +235,12 @@ func (m setupModel) View() tea.View {
 			if i == m.index {
 				rows = append(rows, accent.Bold(true).Background(colors.selected).Render(padCells("›  "+terminalSafe(name), width)))
 			} else {
-				rows = append(rows, text.Render(label("   "+name)))
+				// "Name · status" rows keep the name bright and the status quiet.
+				name, status, _ := strings.Cut(label("   "+name), " · ")
+				if status != "" {
+					status = muted.Render(" · " + status)
+				}
+				rows = append(rows, text.Render(name)+status)
 			}
 		}
 		if detail != "" {
@@ -246,7 +251,7 @@ func (m setupModel) View() tea.View {
 		notice := strings.Split(ansi.Wrap(terminalSafe(m.Notice), width, ""), "\n")
 		rows = append(rows, accent.Render(strings.Join(notice[:min(2, len(notice))], "\n")))
 	}
-	rows = append(rows, "", muted.Render(label(help)))
+	rows = append(rows, "", keyHints(terminalSafe(help), width))
 	view := tea.NewView(lipgloss.NewStyle().MaxWidth(max(1, m.width)).MaxHeight(max(1, m.height)).PaddingLeft(min(2, max(0, m.width-1))).Render(strings.Join(rows, "\n")))
 	view.AltScreen = true
 	return themedView(view, m.prefs.NoColor)

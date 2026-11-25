@@ -214,7 +214,7 @@ func TestProviderStatusMenuPreservesDraft(t *testing.T) {
 	next, cmd := m.Update(press(tea.KeyF4))
 	m = update(next.(Model), cmd())
 	view := ansi.Strip(m.View().Content)
-	if !strings.Contains(view, "Connected · Guest · 2 free models") || !strings.Contains(view, "Key required · Disconnected") || !strings.Contains(view, "CLI required · Disconnected") || !strings.Contains(view, "Connection unchecked · Key saved") {
+	if !strings.Contains(view, "Connected · Guest · 2 free models") || !strings.Contains(view, "API key required") || !strings.Contains(view, "CLI required") || !strings.Contains(view, "Connection unchecked · Key saved") {
 		t.Fatalf("provider status missing from view: %s", view)
 	}
 	m = update(m, press(tea.KeyDown))

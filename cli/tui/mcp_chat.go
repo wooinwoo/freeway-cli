@@ -295,7 +295,7 @@ func (m Model) updateMCPApproval(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc", "ctrl+c":
-			m.queuePaused = true
+			m.queuePaused = m.queuePaused || len(m.queue) > 0
 			m.stopResponse()
 			m.status = "Stopped"
 			m.notify(m.tr("MCP call canceled.", "MCP 호출을 취소했습니다."))

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/wooinwoo/freeway-cli/cli/client"
 )
 
@@ -235,5 +236,48 @@ func TestProjectFileAttachmentIsBoundedAndRestorable(t *testing.T) {
 	}
 	if m.toast != "첨부 완료 · hello.go · /detach로 제거" {
 		t.Fatalf("unexpected attachment completion: %q", m.toast)
+	}
+}
+
+func TestStoppingWithAnEmptyQueueLetsTheNextFollowUpSend(t *testing.T) {
+	m := connectedFixture(&burstGateway{})
+	m.busy = true
+	next, _ := m.handleInterrupt()
+	m = next.(Model)
+	m.busy = true
+	m.prompt.SetValue("Next question")
+	m = update(m, press(tea.KeyTab))
+	if m.queuePaused || len(m.queue) != 1 {
+		t.Fatal("a follow-up queued after an earlier stop stayed paused")
+	}
+	m = update(m, conversationLoaded{chat: client.Conversation{ID: "empty", Workspace: m.workdir}, epoch: m.sessionEpoch})
+	if m.queuePaused {
+		t.Fatal("resuming a chat without queued follow-ups paused the queue")
+	}
+}
+
+func TestStatusLineStaysVisibleWhenComposerRowsAppear(t *testing.T) {
+	m := connectedFixture(&burstGateway{})
+	m = update(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	question := newMessage("user", "explain")
+	question.Files = []client.Attachment{{Path: "a.go", Content: "a"}}
+	answer := newMessage("assistant", "")
+	m.messages = []client.Message{question, answer, newMessage("user", "next"), newMessage("assistant", "")}
+	m.queue = []client.PendingPrompt{{Text: "one"}, {Text: "two"}}
+	m.busy, m.generation = true, 7
+	m = update(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	// The context line appears once the reply finishes; nothing resizes the window then.
+	m = update(m, responseEvent{generation: 7, event: client.Event{Type: "done", Text: "answer"}})
+	view := ansi.Strip(m.View().Content)
+	if rows := strings.Split(view, "\n"); len(rows) > 30 || !strings.Contains(view, "Response complete") {
+		t.Fatalf("composer rows pushed the status line off a 30-row screen (%d rows):\n%s", len(rows), view)
+	}
+}
+
+func TestTitleSkipsAnAttachmentOnlyFirstQuestion(t *testing.T) {
+	m := connectedFixture(&burstGateway{})
+	m.messages = []client.Message{newMessage("user", ""), newMessage("assistant", "hi"), newMessage("user", "second question")}
+	if title := m.snapshot().Title; title != "second question" {
+		t.Fatalf("title = %q", title)
 	}
 }

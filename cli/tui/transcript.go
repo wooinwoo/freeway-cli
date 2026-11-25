@@ -124,7 +124,7 @@ func (m Model) transcriptMatches(lines []string, pattern *regexp.Regexp) []trans
 			}
 		}
 	}
-	first := 0
+	first := 1
 	for _, item := range m.renderCache {
 		for _, wrap := range item.wraps {
 			wrap.row += first

@@ -110,7 +110,7 @@ func (m Model) modelPickerItems() []list.Item {
 		if m.gateway != nil && !m.ready {
 			model.Detail = m.tr("Connection unchecked", "연결 미확인") + " · " + model.Detail
 		} else if len(model.ReadyProviders) > 0 {
-			model.Detail = fmt.Sprintf(m.tr("Ready routes (%d) · %s", "사용 가능 %d곳 · %s"), len(model.ReadyProviders), strings.Join(model.ReadyProviders, " · "))
+			model.Detail = strings.Join(model.ReadyProviders, " · ")
 		} else if !model.Ready {
 			model.Detail = m.tr("Unavailable now · ", "지금 사용 불가 · ") + model.Detail
 		}
@@ -136,17 +136,21 @@ func (d modelItemDelegate) Render(w io.Writer, m list.Model, index int, item lis
 		return
 	}
 	colors := grooveColors()
-	style := lipgloss.NewStyle().Foreground(colors.text)
+	// Names read first; numbers and details stay quiet until their row is selected.
+	base := lipgloss.NewStyle()
+	number, name, detail := base.Foreground(colors.muted), base.Foreground(colors.text), base.Foreground(colors.muted)
 	marker := "  "
 	if index == m.Index() {
-		marker = "> "
-		style = style.Foreground(colors.active)
-		style = style.Background(colors.selected)
+		marker = "› "
+		base = base.Background(colors.selected)
+		number, name, detail = base.Foreground(colors.active), base.Foreground(colors.active).Bold(true), base.Foreground(colors.active)
 	}
-	nameWidth := menuNameWidth(m.Width())
+	width := m.Width()
+	nameWidth := menuNameWidth(width)
 	prefix := fmt.Sprintf("%s%2d. ", marker, index+1)
-	row := prefix + padCells(oneLine(i.Name), nameWidth) + "  " + oneLine(i.Detail)
-	fmt.Fprint(w, style.MaxWidth(m.Width()).Render(padCells(ansi.Truncate(row, m.Width(), "…"), m.Width())))
+	rest := max(0, width-ansi.StringWidth(prefix)-nameWidth-2)
+	row := number.Render(prefix) + name.Render(padCells(oneLine(i.Name), nameWidth)) + base.Render("  ") + detail.Render(padCells(oneLine(i.Detail), rest))
+	fmt.Fprint(w, ansi.Truncate(row, width, ""))
 }
 
 func newModelsList() modelsList {

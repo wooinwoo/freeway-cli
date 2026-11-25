@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"regexp"
 	"strings"
 	"time"
@@ -38,6 +39,17 @@ func terminalSafe(s string) string {
 
 var inlineMarkup = regexp.MustCompile("`([^`\\n]+)`|\\*\\*([^*\\n]+)\\*\\*")
 var listMarker = regexp.MustCompile(`^( *)([-+*]|[0-9]{1,9}[.)]) +(.+)$`)
+var horizontalRule = regexp.MustCompile(`^(-{3,}|\*{3,}|_{3,})$`)
+var tableDivider = regexp.MustCompile(`^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$`)
+
+func inline(line string, codeStyle lipgloss.Style) string {
+	return inlineMarkup.ReplaceAllStringFunc(line, func(s string) string {
+		if s[0] == '`' {
+			return codeStyle.Render(s[1 : len(s)-1])
+		}
+		return lipgloss.NewStyle().Bold(true).Render(s[2 : len(s)-2])
+	})
+}
 
 func markdown(text string, width int) (string, []transcriptWrap) {
 	width = max(1, width)
@@ -52,6 +64,8 @@ func markdown(text string, width int) (string, []transcriptWrap) {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
 			fence := trimmed[:3]
+			// A fence nested in a list item is indented; its code lines carry the same indent.
+			indent := len(line) - len(strings.TrimLeft(line, " "))
 			language := strings.TrimSpace(trimmed[3:])
 			if language == "" {
 				language = "code"
@@ -59,16 +73,41 @@ func markdown(text string, width int) (string, []transcriptWrap) {
 			var code []string
 			i++
 			for i < len(lines) && !strings.HasPrefix(strings.TrimSpace(lines[i]), fence) {
-				code = append(code, lines[i])
+				codeLine := lines[i]
+				for n := 0; n < indent && strings.HasPrefix(codeLine, " "); n++ {
+					codeLine = codeLine[1:]
+				}
+				code = append(code, codeLine)
 				i++
 			}
 			output = append(output, codeBlock(code, language, width, len(output), &wraps)...)
 			continue
 		}
+		if horizontalRule.MatchString(trimmed) {
+			output = append(output, lipgloss.NewStyle().Foreground(colors.border).Render(strings.Repeat("─", width)))
+			continue
+		}
+		if strings.Contains(trimmed, "|") && i+1 < len(lines) && strings.Contains(lines[i+1], "|") && tableDivider.MatchString(strings.TrimSpace(lines[i+1])) {
+			end := i + 2
+			for end < len(lines) && strings.Contains(lines[end], "|") && strings.TrimSpace(lines[end]) != "" {
+				end++
+			}
+			if rows := markdownTable(append([]string{line}, lines[i+2:end]...), width, codeStyle); rows != nil {
+				output = append(output, rows...)
+				i = end - 1
+				continue
+			}
+		}
 		if strings.HasPrefix(trimmed, "#") {
 			content := strings.TrimLeft(trimmed, "#")
 			if strings.HasPrefix(content, " ") {
-				content = strings.TrimSpace(content)
+				// The heading is already bold in one color, so inline marks only lose their markers.
+				content = inlineMarkup.ReplaceAllStringFunc(strings.TrimSpace(content), func(s string) string {
+					if s[0] == '`' {
+						return s[1 : len(s)-1]
+					}
+					return s[2 : len(s)-2]
+				})
 				parts := strings.Split(ansi.Wrap(content, width, ""), "\n")
 				recordWordWrap(&wraps, len(output), 0, content, parts)
 				for _, part := range parts {
@@ -78,6 +117,9 @@ func markdown(text string, width int) (string, []transcriptWrap) {
 			}
 		}
 		prefix, continuation := "", ""
+		if trimmed == ">" {
+			trimmed = "> "
+		}
 		if text, ok := strings.CutPrefix(trimmed, "> "); ok && width >= 4 {
 			line = text
 			prefix = lipgloss.NewStyle().Foreground(colors.muted).Render("│ ")
@@ -92,12 +134,7 @@ func markdown(text string, width int) (string, []transcriptWrap) {
 				continuation = strings.Repeat(" ", indent)
 			}
 		}
-		line = inlineMarkup.ReplaceAllStringFunc(line, func(s string) string {
-			if s[0] == '`' {
-				return codeStyle.Render(s[1 : len(s)-1])
-			}
-			return lipgloss.NewStyle().Bold(true).Render(s[2 : len(s)-2])
-		})
+		line = inline(line, codeStyle)
 		parts := strings.Split(ansi.Wrap(line, width-ansi.StringWidth(prefix), ""), "\n")
 		// ponytail: search joins wrapped rows at one byte offset, so a "•" bullet (wider in bytes than its indent) skips cross-row matches.
 		if skip := len(ansi.Strip(prefix)); skip == len(ansi.Strip(continuation)) {
@@ -129,6 +166,108 @@ func codeBlock(lines []string, language string, width, row int, wraps *[]transcr
 	}
 	rows = append(rows, border.Render("╰"+strings.Repeat("─", width-2)+"╯"))
 	return rows
+}
+
+// markdownTable draws a pipe table in a box. Wide tables wrap inside their cells.
+// It returns nil when the columns cannot fit, so the caller keeps the raw lines.
+func markdownTable(lines []string, width int, codeStyle lipgloss.Style) []string {
+	var table [][]string
+	columns := 0
+	for _, line := range lines {
+		line = strings.TrimSpace(strings.ReplaceAll(line, `\|`, "\x00"))
+		line = strings.TrimSuffix(strings.TrimPrefix(line, "|"), "|")
+		var cells []string
+		for _, cell := range strings.Split(line, "|") {
+			cells = append(cells, inline(strings.TrimSpace(strings.ReplaceAll(cell, "\x00", "|")), codeStyle))
+		}
+		table = append(table, cells)
+		columns = max(columns, len(cells))
+	}
+	natural := make([]int, columns)
+	for _, cells := range table {
+		for j, cell := range cells {
+			natural[j] = max(natural[j], ansi.StringWidth(cell), 1)
+		}
+	}
+	// Borders take one cell before each column and three between and after them.
+	room := width - 3*columns - 1
+	if room < 4*columns {
+		return nil
+	}
+	widths := append([]int(nil), natural...)
+	if sumInts(natural) > room {
+		// Columns within an even share keep their width; the wider ones split what is left.
+		share, wide := room, 0
+		for _, w := range natural {
+			if w*columns <= room {
+				share -= w
+			} else {
+				wide++
+			}
+		}
+		for j, w := range natural {
+			if w*columns > room {
+				widths[j] = min(w, share/wide)
+			}
+		}
+	}
+	c := grooveColors()
+	border := lipgloss.NewStyle().Foreground(c.border)
+	line := func(left, middle, right string) string {
+		parts := make([]string, columns)
+		for j, w := range widths {
+			parts[j] = strings.Repeat("─", w+2)
+		}
+		return border.Render(left + strings.Join(parts, middle) + right)
+	}
+	var cellRows [][][]string
+	tall := false
+	for _, cells := range table {
+		wrapped := make([][]string, columns)
+		for j := range widths {
+			text := ""
+			if j < len(cells) {
+				text = cells[j]
+			}
+			wrapped[j] = strings.Split(ansi.Wrap(text, widths[j], ""), "\n")
+			tall = tall || len(wrapped[j]) > 1
+		}
+		cellRows = append(cellRows, wrapped)
+	}
+	header := lipgloss.NewStyle().Bold(true)
+	rows := []string{line("╭", "┬", "╮")}
+	for r, wrapped := range cellRows {
+		if r == 1 || r > 1 && tall {
+			rows = append(rows, line("├", "┼", "┤"))
+		}
+		height := 0
+		for _, cell := range wrapped {
+			height = max(height, len(cell))
+		}
+		for k := range height {
+			row := border.Render("│")
+			for j, cell := range wrapped {
+				text := ""
+				if k < len(cell) {
+					text = cell[k]
+				}
+				if r == 0 {
+					text = header.Render(text)
+				}
+				row += " " + padCells(text, widths[j]) + border.Render(" │")
+			}
+			rows = append(rows, row)
+		}
+	}
+	return append(rows, line("╰", "┴", "╯"))
+}
+
+func sumInts(values []int) int {
+	total := 0
+	for _, v := range values {
+		total += v
+	}
+	return total
 }
 
 func (m Model) renderUserMessage(message client.Message, width int, colors schemeColors) (string, []transcriptWrap) {
@@ -205,9 +344,11 @@ func (m *Model) renderConversation() {
 	}
 	m.renderCache = cache
 	if m.notice != "" {
-		rows = append(rows, lipgloss.NewStyle().Foreground(colors.accent).Width(width).Render(terminalSafe(m.notice)))
+		rows = append(rows, lipgloss.NewStyle().Foreground(m.noticeColor()).Width(width).Render(terminalSafe(m.notice)))
 	}
-	m.findTranscriptContent(strings.Join(rows, "\n\n"), false)
+	// Blank first and last rows keep messages off the header rule and the composer border.
+	// transcriptMatches starts counting rows after that first blank row.
+	m.findTranscriptContent("\n"+strings.Join(rows, "\n\n")+"\n", false)
 	if m.find == nil {
 		if follow {
 			m.chat.GotoBottom()
@@ -224,21 +365,17 @@ func routeLabel(model string) string {
 	if !ok || provider == "preview" || provider == "free" || provider == "model" {
 		return model
 	}
-	switch provider {
-	case "mcp":
-		provider = "MCP"
-	case "opencode":
-		provider = "OpenCode"
-	case "kilo":
-		provider = "Kilo"
-	case "openrouter":
-		provider = "OpenRouter"
-	case "groq":
-		provider = "Groq"
-	case "gemini_api":
-		provider = "Gemini"
+	return providerLabel(provider) + " · " + name
+}
+
+// providerLabel turns a gateway provider ID into the name people see in F4.
+func providerLabel(id string) string {
+	names := map[string]string{"mcp": "MCP", "opencode": "OpenCode", "kilo": "Kilo", "openrouter": "OpenRouter", "groq": "Groq",
+		"gemini_api": "Gemini", "zai": "Z.ai", "requesty": "Requesty", "nvidia": "NVIDIA", "cline": "Cline"}
+	if name, ok := names[id]; ok {
+		return name
 	}
-	return provider + " · " + name
+	return id
 }
 
 func (m Model) modelLabel(id string) string {
@@ -311,6 +448,15 @@ func sameRenderedMessage(a, b client.Message) bool {
 		}
 	}
 	return true
+}
+
+// noticeColor marks failures in the warning color and other notices in the accent.
+func (m Model) noticeColor() color.Color {
+	c := grooveColors()
+	if m.saveError != "" || m.status == "Connection needs attention" || m.status == "Ready to retry" {
+		return c.warn
+	}
+	return c.accent
 }
 
 func (m *Model) notify(text string) { m.toast, m.toastUntil = text, time.Now().Add(4*time.Second) }

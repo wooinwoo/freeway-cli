@@ -3,15 +3,20 @@ package tui
 
 import (
 	"image/color"
+	"strings"
 	"sync/atomic"
+	"unicode"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type schemeColors struct {
 	text, accent, border, active, code, muted, selected color.Color
 	userAccent, userPanel                               color.Color
+	warn                                                color.Color
 }
 
 var lightBackground atomic.Bool
@@ -45,6 +50,29 @@ func themedView(view tea.View, noColor bool) tea.View {
 	return view
 }
 
+// keyHints draws "Key action · Key action" help with each key brighter than its action.
+func keyHints(text string, width int) string {
+	c := grooveColors()
+	key, muted := lipgloss.NewStyle().Foreground(c.text), lipgloss.NewStyle().Foreground(c.muted)
+	parts := strings.Split(ansi.Truncate(text, width, ""), "·")
+	for i, part := range parts {
+		core := strings.TrimLeft(part, " ")
+		lead := part[:len(part)-len(core)]
+		first, rest, _ := strings.Cut(core, " ")
+		r, _ := utf8.DecodeRuneInString(first)
+		// Keys start with a capital, digit or symbol (Enter, F4, ↑↓, /models); words such as "type" do not.
+		if first == "" || unicode.IsLower(r) || unicode.Is(unicode.Hangul, r) {
+			parts[i] = muted.Render(part)
+			continue
+		}
+		if rest != "" {
+			rest = " " + rest
+		}
+		parts[i] = muted.Render(lead) + key.Render(first) + muted.Render(rest)
+	}
+	return strings.Join(parts, muted.Render("·"))
+}
+
 func grooveColors() schemeColors {
 	theme := themeOverride.Load()
 	lightMode := theme == themeLight || theme != themeDark && lightBackground.Load()
@@ -64,6 +92,7 @@ func grooveColors() schemeColors {
 		selected:   adaptive("#263E2C", "#E2EFE5"),
 		userAccent: adaptive("#B9D9FF", "#234F79"),
 		userPanel:  adaptive("#243447", "#E5F0FC"),
+		warn:       adaptive("#F08C7A", "#B23A2B"),
 	}
 	switch theme {
 	case themeIndigo:

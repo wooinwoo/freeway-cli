@@ -213,8 +213,8 @@ func (m Model) contextItems() []list.Item {
 	items := []list.Item{
 		modelItem{ID: "summary", Name: m.tr("Next request", "다음 요청"), Detail: fmt.Sprintf(
 			m.tr("%s · %d/%d earlier turns · %d earlier files · %d draft files", "%s · 이전 대화 %d/%d개 · 이전 파일 %d개 · 초안 파일 %d개"), m.modelLabel(m.selected), includedTurns, totalTurns, earlierFiles, draftFiles)},
-		modelItem{ID: "turns", Name: turns, Detail: m.tr("Enter cycles all, last 8, last 3, and no earlier turns. /context last N sets a custom count.", "Enter로 전체, 최근 8개, 최근 3개, 이전 대화 없음을 차례로 고릅니다. /context last N으로 개수를 직접 정합니다.")},
-		modelItem{ID: "attachments", Name: m.tr("Earlier attachments · ", "이전 첨부 · ") + attachmentMode, Detail: m.tr("Enter toggles earlier file contents. Draft attachments stay in the next request.", "Enter로 이전 파일 내용을 켜고 끕니다. 초안 첨부는 다음 요청에 그대로 포함됩니다.")},
+		modelItem{ID: "turns", Name: turns, Detail: m.tr("Enter: all → last 8 → last 3 → none · /context last N", "Enter: 전체 → 최근 8개 → 최근 3개 → 없음 · /context last N")},
+		modelItem{ID: "attachments", Name: m.tr("Earlier attachments · ", "이전 첨부 · ") + attachmentMode, Detail: m.tr("Enter turns earlier files on or off · draft attachments always go", "Enter로 이전 파일 켜고 끄기 · 초안 첨부는 항상 포함")},
 	}
 	if len(selection.ExcludedPriorFiles) > 0 {
 		items = append(items, modelItem{ID: "clear-file-exclusions", Name: m.tr("Clear file exclusions", "파일 제외 모두 해제"),

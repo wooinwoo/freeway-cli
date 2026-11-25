@@ -48,6 +48,8 @@ type reconnectMsg struct{}
 type actionResult struct {
 	text string
 	err  error
+	// clipboard is text that failed to reach the system clipboard; the terminal can still copy it.
+	clipboard string
 }
 
 func tick() tea.Cmd {
@@ -679,7 +681,7 @@ func (m Model) copyAnswer(codeOnly bool) (tea.Model, tea.Cmd) {
 		if codeOnly {
 			label = m.tr("Code copied.", "코드를 복사했습니다.")
 		}
-		return actionResult{text: label, err: err}
+		return actionResult{text: label, err: err, clipboard: content}
 	}
 }
 
@@ -735,7 +737,11 @@ func (m Model) export(name string) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		fmt.Fprintf(&b, "# %s\n\n", chat.Title)
+		title := chat.Title
+		if title == "" {
+			title = m.tr("New conversation", "새 대화")
+		}
+		fmt.Fprintf(&b, "# %s\n\n", title)
 		for _, message := range chat.Messages {
 			label := "You"
 			if message.Role == "assistant" {
@@ -785,7 +791,11 @@ func (m Model) openMenu(kind string) (tea.Model, tea.Cmd) {
 			modelItem{ID: "theme", Name: m.tr("Color theme", "색상 테마"), Detail: optionLabel(m.prefs.themeOptions(), m.prefs.Theme)})
 		lengths := []string{m.tr("Standard", "표준"), m.tr("Long", "길게"), m.tr("Extended", "더 길게")}
 		for i, n := range []int{4096, 8192, 16384} {
-			items = append(items, modelItem{ID: fmt.Sprint(n), Name: fmt.Sprintf(m.tr("Response length · %s", "응답 길이 · %s"), lengths[i]), Detail: fmt.Sprintf(m.tr("Up to %d output tokens", "최대 출력 %d토큰"), n)})
+			detail := fmt.Sprintf(m.tr("Up to %d output tokens", "최대 출력 %d토큰"), n)
+			if n == m.settings.MaxTokens {
+				detail = m.tr("✓ Current · ", "✓ 현재 · ") + detail
+			}
+			items = append(items, modelItem{ID: fmt.Sprint(n), Name: fmt.Sprintf(m.tr("Response length · %s", "응답 길이 · %s"), lengths[i]), Detail: detail})
 		}
 	case "language":
 		for _, option := range languageOptions() {
@@ -837,7 +847,7 @@ func (m Model) openMenu(kind string) (tea.Model, tea.Cmd) {
 		for i, item := range items {
 			entry := item.(modelItem)
 			if kind == "language" && entry.ID == m.prefs.Language || kind == "theme" && entry.ID == m.prefs.Theme {
-				entry.Detail = m.tr("Current", "현재 설정")
+				entry.Detail = m.tr("✓ Current", "✓ 현재")
 				items[i], selected = entry, i
 				break
 			}
@@ -903,7 +913,7 @@ func (m Model) chooseItem(item modelItem) (tea.Model, tea.Cmd) {
 		if item.ID != "clear" {
 			return m.changeFocus(false)
 		}
-		m.queue = nil
+		m.queue, m.queuePaused = nil, false
 		m.dirty = true
 		m.notify(m.tr("Queue cleared.", "예약을 비웠습니다."))
 		next, cmd := m.changeFocus(false)
@@ -985,7 +995,7 @@ func (m *Model) showModelSelection(name string) {
 func (m Model) menuTitle() string {
 	switch m.menu {
 	case "providers":
-		return m.tr("Gateway providers", "게이트웨이 공급처")
+		return m.tr("Providers", "공급처")
 	case "files":
 		return m.tr("Project files", "프로젝트 파일")
 	case "prompts":
@@ -1044,7 +1054,7 @@ func (m Model) menuDetail() string {
 			if preview := m.historyPreview(item.ID); preview != "" && m.menuPreviewHeight() == 0 {
 				return preview
 			}
-			return item.ID + " · " + item.Detail
+			return item.Detail
 		}
 	}
 	if m.menu == "models" && m.gateway != nil && len(m.availableModels) > 0 {

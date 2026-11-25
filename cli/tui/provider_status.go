@@ -220,10 +220,13 @@ func (m Model) providerSummary() string {
 		return ""
 	}
 	var connected, catalogReady []string
-	var unchecked int
+	var unchecked, unreachable int
 	for _, p := range m.providers {
 		if m.providerChecksPending[p.ID] {
 			continue
+		}
+		if p.State == "unreachable" {
+			unreachable++
 		}
 		if p.ID == m.providerCheckID && m.providersError != "" {
 			unchecked++
@@ -251,6 +254,9 @@ func (m Model) providerSummary() string {
 	}
 	if len(summary) == 0 {
 		label := m.tr("No providers ready", "사용 가능한 공급처 없음")
+		if unreachable > 0 {
+			label = m.tr("Can't reach providers · Check your internet", "공급처에 연결할 수 없음 · 인터넷 연결 확인")
+		}
 		if unchecked > 0 {
 			label = fmt.Sprintf(m.tr("%d keys saved · connection unchecked", "키 %d개 등록 · 연결 미확인"), unchecked)
 		}
@@ -290,7 +296,7 @@ func ProviderConnectionText(prefs Preferences, provider client.ProviderStatus) s
 	case "short_replies":
 		return auth + t(" · Short replies", " · 짧은 답변만 가능") + localTokensText(t, provider.LocalTokensRemaining)
 	case "needs_key":
-		return t("Key required · Disconnected", "API 키 필요 · 미연결")
+		return t("API key required", "API 키 필요")
 	case "confirm_free_account":
 		return t("Confirm free plan · Key set", "무료 플랜 확인 필요 · 키 등록됨")
 	case "connection_rejected":
@@ -305,10 +311,12 @@ func ProviderConnectionText(prefs Preferences, provider client.ProviderStatus) s
 		return t("Unavailable now · Auto skips it", "지금 사용 불가 · Auto는 건너뜀")
 	case "no_free_models":
 		return auth + t(" · No eligible free models", " · 사용 가능한 무료 모델 없음")
+	case "unreachable":
+		return t("Can't reach the server · Check your internet", "서버에 연결할 수 없음 · 인터넷 연결 확인")
 	case "credential_store_failed":
 		return t("Cannot read saved credentials", "저장된 인증 정보를 읽을 수 없음")
 	case "opencode_not_installed":
-		return t("CLI required · Disconnected", "CLI 설치 필요 · 미연결")
+		return t("CLI required", "CLI 설치 필요")
 	default:
 		return t("Connection check failed", "연결 확인 실패")
 	}

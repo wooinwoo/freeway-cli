@@ -5,6 +5,7 @@ import errno
 import http.server
 import json
 import os
+import re
 from pathlib import Path
 import select
 import signal
@@ -32,6 +33,12 @@ MCP_QUESTION = "What value does the lookup tool report?"
 MCP_ANSWER = "The MCP lookup produced 42."
 SESSION = "/v1/conversations/fixture-session"
 
+
+
+def shown(output, text):
+    """Reports text on screen even when color codes split it, such as a key drawn brighter than its action."""
+    wanted = text.encode()
+    return wanted in output or wanted in re.sub(rb"\x1b\[[0-9;:]*m", b"", bytes(output))
 
 class Terminal:
     def __init__(self, binary, args, environment, directory):
@@ -65,9 +72,9 @@ class Terminal:
 
     def wait_text(self, text):
         deadline = time.monotonic() + 12
-        while text.encode() not in self.output and self.child.poll() is None and time.monotonic() < deadline:
+        while not shown(self.output, text) and self.child.poll() is None and time.monotonic() < deadline:
             self.read()
-        assert text.encode() in self.output, f"missing {text!r} in terminal: {bytes(self.output[-1800:])!r}"
+        assert shown(self.output, text), f"missing {text!r} in terminal: {bytes(self.output[-1800:])!r}"
 
     def exit(self):
         self.send(b"/exit\r")

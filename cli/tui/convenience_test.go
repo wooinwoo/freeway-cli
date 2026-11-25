@@ -263,6 +263,13 @@ func TestCopyCodeAndExportPreserveRawText(t *testing.T) {
 	if copied != "  fmt.Println(\"안녕🌏\")" || m.toast != "코드를 복사했습니다." {
 		t.Fatalf("unexpected code copy: %q, %q", copied, m.toast)
 	}
+	m.copyText = func(string) error { return os.ErrNotExist }
+	_, cmd = m.copyAnswer(true)
+	next, osc := m.Update(cmd())
+	m = next.(Model)
+	if osc == nil || m.toast != "코드를 복사했습니다 (터미널 클립보드)." {
+		t.Fatalf("missing clipboard tool did not fall back to the terminal: %q", m.toast)
+	}
 	path := filepath.Join(t.TempDir(), "대화.md")
 	_, cmd = m.export(path)
 	m = update(m, cmd())

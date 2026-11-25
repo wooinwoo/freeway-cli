@@ -30,13 +30,7 @@ func setupConnections(ctx context.Context, gateway *client.HTTP, prefs *tui.Pref
 	t := prefs.Text
 	startup := startMode != ""
 	if startup {
-		if interactiveTerminal() {
-			// The line is only a wait indicator, so it should not stay behind after Freeway exits.
-			fmt.Fprint(os.Stderr, t("Checking provider connections…", "공급처 연결 확인 중…"))
-			defer fmt.Fprint(os.Stderr, "\r\x1b[2K")
-		} else {
-			fmt.Fprintln(os.Stderr, t("Checking provider connections…", "공급처 연결 확인 중…"))
-		}
+		defer waitLine(t("Checking provider connections…", "공급처 연결 확인 중…"))()
 	}
 	var selected, notice string
 	var statuses []client.ProviderStatus
@@ -44,8 +38,9 @@ func setupConnections(ctx context.Context, gateway *client.HTTP, prefs *tui.Pref
 	if providerID == "" {
 		statuses, err = gateway.ProviderStatuses(ctx)
 	} else {
-		fmt.Fprintln(os.Stderr, t("Checking the selected provider…", "선택한 공급처를 확인 중입니다…"))
+		done := waitLine(t("Checking the selected provider…", "선택한 공급처를 확인 중입니다…"))
 		status, checkErr := gateway.ProviderStatus(ctx, providerID)
+		done()
 		err = checkErr
 		if err == nil {
 			statuses = []client.ProviderStatus{status}
@@ -112,7 +107,7 @@ func setupConnections(ctx context.Context, gateway *client.HTTP, prefs *tui.Pref
 		if startup {
 			// Esc skips the guide instead of quitting. Ctrl+C still quits.
 			dialog.EscapeID = "skip"
-			dialog.Help = t("↑↓ move  ·  Enter select  ·  Esc chat  ·  Ctrl+C quit", "↑↓ 이동  ·  Enter 선택  ·  Esc 채팅으로  ·  Ctrl+C 종료")
+			dialog.Help = t("↑↓ move · Enter select · Esc chat · Ctrl+C quit", "↑↓ 이동 · Enter 선택 · Esc 채팅으로 · Ctrl+C 종료")
 			if ready {
 				dialog.EscapeID = "continue"
 			}
@@ -182,6 +177,17 @@ func setupConnections(ctx context.Context, gateway *client.HTTP, prefs *tui.Pref
 	}
 }
 
+// waitLine shows a wait message and returns a function that removes it again,
+// so finished checks do not pile up in the terminal after Freeway exits.
+func waitLine(text string) func() {
+	if !interactiveTerminal() {
+		fmt.Fprintln(os.Stderr, text)
+		return func() {}
+	}
+	fmt.Fprint(os.Stderr, text)
+	return func() { fmt.Fprint(os.Stderr, "\r\x1b[2K") }
+}
+
 func connectionReadiness(statuses []client.ProviderStatus) (ready, keyReady bool) {
 	for _, status := range statuses {
 		if status.State == "ready" && status.FreeModels > 0 {
@@ -219,6 +225,9 @@ func configureProvider(ctx context.Context, prefs tui.Preferences, options []tea
 		dialog.Options = append(dialog.Options, tui.SetupOption{ID: "login", Label: label})
 	default:
 		dialog.Detail = t("Open the provider's site to create a key, then paste it here.", "공급처 사이트에서 키를 발급받아 여기에 붙여넣으세요.")
+		if provider.ID == "kilo" && !status.KeyConfigured {
+			dialog.Detail = t("Kilo works without a key as a guest. To use your own key, create one on Kilo's site and paste it here.", "Kilo는 키 없이 게스트로 쓸 수 있습니다. 본인 키를 쓰려면 Kilo 사이트에서 발급받아 붙여넣으세요.")
+		}
 		if provider.ID == "openrouter" {
 			dialog.Detail = t("Approve Freeway in OpenRouter and your key is checked automatically.", "OpenRouter에서 승인하면 Freeway가 키를 받아 자동으로 확인합니다.")
 			label := t("Sign in in your browser", "브라우저로 로그인")
@@ -241,7 +250,10 @@ func configureProvider(ctx context.Context, prefs tui.Preferences, options []tea
 			dialog.Options = append(dialog.Options, tui.SetupOption{ID: "confirm", Label: t("Confirm the saved key's free plan", "등록된 키의 무료 플랜 확인")})
 		}
 	}
-	dialog.Detail += "\n" + tui.ProviderUsageText(prefs, status)
+	// Usage numbers mean nothing until the provider is connected.
+	if !tui.ProviderUnconnected(status) {
+		dialog.Detail += "\n" + tui.ProviderUsageText(prefs, status)
+	}
 	if status.State == "disconnected" {
 		dialog.Options = append(dialog.Options, tui.SetupOption{ID: "enable", Label: t("Enable in Freeway", "Freeway에서 다시 사용")})
 	} else if !tui.ProviderUnconnected(status) {
@@ -303,8 +315,10 @@ func configureProvider(ctx context.Context, prefs tui.Preferences, options []tea
 				dialog.Notice = t("OpenRouter sign-in was cancelled.", "OpenRouter 로그인을 취소했습니다.")
 				continue
 			}
-			fmt.Fprintln(os.Stderr, t("Checking your OpenRouter key…", "OpenRouter 키를 확인 중입니다…"))
-			if failed := providerGatewayError(gateway.ChangeProvider(ctx, provider.ID, "authenticate", key, false)); failed != "" {
+			done := waitLine(t("Checking your OpenRouter key…", "OpenRouter 키를 확인 중입니다…"))
+			failed := providerGatewayError(gateway.ChangeProvider(ctx, provider.ID, "authenticate", key, false))
+			done()
+			if failed != "" {
 				dialog.Notice = providerActionFailure(prefs, failed)
 				dialog.Detail = t("If an unused Freeway key appears at openrouter.ai/settings/keys, you can revoke it there.", "openrouter.ai/settings/keys에서 연결에 사용하지 못한 새 Freeway 키를 삭제할 수 있습니다.")
 				continue
@@ -367,8 +381,9 @@ func configureProvider(ctx context.Context, prefs tui.Preferences, options []tea
 				continue
 			}
 		}
-		fmt.Fprintln(os.Stderr, t("Checking the connection…", "연결 확인 중…"))
+		done := waitLine(t("Checking the connection…", "연결 확인 중…"))
 		failed := providerGatewayError(gateway.ChangeProvider(ctx, provider.ID, "authenticate", key, confirmFree))
+		done()
 		if failed == "" {
 			return nil
 		}

@@ -119,7 +119,7 @@ func (m Model) latestImage(copyPath bool) (tea.Model, tea.Cmd) {
 		}
 		return m, func() tea.Msg {
 			if copyPath {
-				return actionResult{text: m.tr("Image path copied.", "이미지 경로를 복사했습니다."), err: copyText(path)}
+				return actionResult{text: m.tr("Image path copied.", "이미지 경로를 복사했습니다."), err: copyText(path), clipboard: path}
 			}
 			ctx, cancel := context.WithTimeout(m.ctx, 10*time.Second)
 			defer cancel()
