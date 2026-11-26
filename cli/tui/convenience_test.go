@@ -280,6 +280,9 @@ func TestCopyCodeAndExportPreserveRawText(t *testing.T) {
 	if err != nil || !strings.Contains(string(data), raw) {
 		t.Fatalf("export changed code: %s %v", data, err)
 	}
+	if !strings.Contains(string(data), "## 답변\n") || strings.Contains(string(data), "## Freeway") {
+		t.Fatalf("export headings ignore the language in use:\n%s", data)
+	}
 	_, cmd = m.export(path)
 	if result := cmd().(actionResult); result.err == nil {
 		t.Fatal("export overwrote an existing file")

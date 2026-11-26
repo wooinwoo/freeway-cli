@@ -731,7 +731,7 @@ func (m Model) export(name string) (tea.Model, tea.Cmd) {
 		var b strings.Builder
 		writeFiles := func(files []client.Attachment) {
 			for _, file := range files {
-				fmt.Fprintf(&b, "\n### Attachment: %s\n\n", file.Path)
+				fmt.Fprintf(&b, "\n### %s%s\n\n", m.tr("Attachment: ", "첨부: "), file.Path)
 				for _, line := range strings.Split(file.Content, "\n") {
 					fmt.Fprintf(&b, "    %s\n", line)
 				}
@@ -739,23 +739,27 @@ func (m Model) export(name string) (tea.Model, tea.Cmd) {
 		}
 		fmt.Fprintf(&b, "# %s\n\n", m.titleOrDefault(chat.Title))
 		for _, message := range chat.Messages {
-			label := "You"
+			// Headings match the screen: the language in use, and the route that answered.
+			label := m.tr("Prompt", "질문")
 			if message.Role == "assistant" {
-				label = "Freeway"
+				label = m.tr("Answer", "답변")
+				if message.Model != "" {
+					label += " · " + routeLabel(message.Model)
+				}
 			}
 			fmt.Fprintf(&b, "## %s\n\n%s\n\n", label, message.Content)
 			writeFiles(message.Files)
 		}
 		if chat.Draft != "" {
-			fmt.Fprintf(&b, "## Draft\n\n%s\n", chat.Draft)
+			fmt.Fprintf(&b, "## %s\n\n%s\n", m.tr("Draft", "초안"), chat.Draft)
 		}
 		writeFiles(chat.DraftFiles)
 		if chat.Stash != nil {
-			fmt.Fprintf(&b, "\n## Stashed draft\n\n%s\n", chat.Stash.Text)
+			fmt.Fprintf(&b, "\n## %s\n\n%s\n", m.tr("Stashed draft", "보관한 초안"), chat.Stash.Text)
 			writeFiles(chat.Stash.Files)
 		}
 		for i, prompt := range chat.Queued {
-			fmt.Fprintf(&b, "\n## Queued follow-up %d\n\n%s\n", i+1, prompt.Text)
+			fmt.Fprintf(&b, "\n## %s %d\n\n%s\n", m.tr("Queued follow-up", "예약한 후속 질문"), i+1, prompt.Text)
 			writeFiles(prompt.Files)
 		}
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
