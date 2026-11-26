@@ -409,12 +409,13 @@ func TestStalledReplyEndsAfterTheIdleWaitAndKeepsPartialText(t *testing.T) {
 
 func TestSlowSteadyReplyIsNotCutByAFixedDeadline(t *testing.T) {
 	r, _ := stallFixture(t, func(ctx context.Context, req providers.Request, emit func(string)) (providers.Completion, error) {
-		for range 8 { // Each gap is shorter than idleWait, but the total is far longer.
+		for range 8 { // Each gap is shorter than idleWait, but the total is longer.
 			emit("x")
 			time.Sleep(80 * time.Millisecond)
 		}
 		return providers.Completion{Model: req.Model, Provider: req.Provider}, ctx.Err()
 	})
+	r.idleWait = 400 * time.Millisecond // Wide margin over each 80 ms gap for slow CI timers; 640 ms in total still outlasts it.
 	var text strings.Builder
 	_, err := r.Stream(t.Context(), contracts.CompletionRequest{Model: Auto}, func(delta contracts.TextDelta) error {
 		text.WriteString(delta.Text)
