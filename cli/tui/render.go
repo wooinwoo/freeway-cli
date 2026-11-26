@@ -379,7 +379,7 @@ func (m *Model) renderConversation() {
 				rendered = lipgloss.NewStyle().Foreground(colors.muted).Render(m.tr("Thinking…", "응답을 기다리는 중…"))
 			}
 			if message.Status == "stopped" {
-				rendered += "\n" + lipgloss.NewStyle().Foreground(colors.border).Render(m.tr("Stopped · Alt+R to regenerate", "응답 중지됨 · Alt+R로 다시 생성"))
+				rendered += "\n" + lipgloss.NewStyle().Foreground(colors.muted).Render(m.tr("Stopped · Alt+R to regenerate", "응답 중지됨 · Alt+R로 다시 생성"))
 			}
 			// The marker alone says this is an answer; the route appears with the first chunk,
 			// so Auto shows which free connection answered.

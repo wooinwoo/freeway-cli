@@ -101,9 +101,9 @@ func (m Model) workspaceView() tea.View {
 		view.AltScreen, view.MouseMode = true, tea.MouseModeCellMotion
 		return view
 	}
-	help := m.tr("Enter send · Ctrl+R prompts · F3 find · F4 providers · F8 context · ? help", "Enter 보내기 · Ctrl+R 기록 · F3 찾기 · F4 공급처 · F8 문맥 · ? 도움말")
+	help := m.tr("Enter send · Ctrl+R prompts · F3 find · F4 providers · F8 context · ? help", "Enter 보내기 · Ctrl+R 이전 질문 · F3 찾기 · F4 공급처 · F8 문맥 · ? 도움말")
 	if width < 76 {
-		help = m.tr("↑↓ history · F4 providers · F8 context · ? help", "↑↓ 기록 · F4 공급처 · F8 문맥 · ? 도움말")
+		help = m.tr("↑↓ prompts · F4 providers · F8 context · ? help", "↑↓ 이전 질문 · F4 공급처 · F8 문맥 · ? 도움말")
 	}
 	if m.commandPending() {
 		help = m.tr("↑↓ choose command · Tab complete · Enter run · Esc close", "↑↓ 명령 선택 · Tab 완성 · Enter 실행 · Esc 닫기")

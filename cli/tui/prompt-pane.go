@@ -11,7 +11,7 @@ func newPrompt() textarea.Model {
 	colors := grooveColors()
 	input := textarea.New()
 	input.SetVirtualCursor(false)
-	input.Placeholder = "Message…  / commands  ↑ history"
+	input.Placeholder = "Message…  / commands  ↑ prompts"
 	input.SetPromptFunc(2, func(info textarea.PromptInfo) string {
 		if info.LineNumber == 0 {
 			return "› "

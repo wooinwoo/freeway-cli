@@ -145,7 +145,7 @@ func (m Model) WithPreferences(prefs Preferences) Model {
 func (m *Model) applyPreferences() {
 	m.renderedTheme = m.activeTheme()
 	applyTheme(m.renderedTheme)
-	m.prompt.Placeholder = m.tr("Message…  / commands  ↑ history", "메시지…  / 명령  ↑ 기록")
+	m.prompt.Placeholder = m.tr("Message…  / commands  ↑ prompts", "메시지…  / 명령  ↑ 이전 질문")
 	applyPromptTheme(&m.prompt)
 	m.renderCache = nil
 	m.renderMessages()
