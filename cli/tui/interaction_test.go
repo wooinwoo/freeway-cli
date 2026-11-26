@@ -185,12 +185,30 @@ func TestDoubleEscapeEditPreservesOriginalUntilFork(t *testing.T) {
 		t.Fatal("double escape did not edit last prompt")
 	}
 	m.prompt.SetValue("revised")
+	if chat := m.snapshot(); chat.Draft != "" || len(chat.DraftFiles) > 0 {
+		t.Fatalf("the edit was saved as a draft of the original conversation: %q", chat.Draft)
+	}
 	m = update(m, press(tea.KeyEsc))
 	if m.editingAt != -1 || m.messages[0].Content != "original" {
 		t.Fatal("cancel changed original history")
 	}
 	if m.toast != "편집을 취소했습니다. 원래 대화를 유지합니다." {
 		t.Fatalf("unexpected edit cancellation notice: %q", m.toast)
+	}
+}
+
+func TestAForkIsMarkedAtTheStartOfItsTitle(t *testing.T) {
+	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.prefs.Language = "ko"
+	m.session.Title = "단위 만 원. 2027년 1~6회차 운영계획을 표로"
+	next, _ := m.performNavigation("fork")
+	m = next.(Model)
+	if m.session.Title != "분기 · 단위 만 원. 2027년 1~6회차 운영계획을 표로" {
+		t.Fatalf("fork title: %q", m.session.Title)
+	}
+	next, _ = m.performNavigation("fork")
+	if title := next.(Model).session.Title; title != m.session.Title {
+		t.Fatalf("a fork of a fork repeats the mark: %q", title)
 	}
 }
 

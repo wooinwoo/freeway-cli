@@ -457,8 +457,13 @@ func (m *Model) snapshot() client.Conversation {
 	if m.stash != nil {
 		chat.Stash = &client.PendingPrompt{Text: m.stash.Text, Files: append([]client.Attachment(nil), m.stash.Files...)}
 	}
-	if m.commandPending() {
+	// An edit of an earlier prompt belongs to the fork it will start. Editing begins on an
+	// empty input, so the original conversation keeps no draft.
+	if m.commandPending() || m.editingAt >= 0 {
 		chat.Draft = ""
+	}
+	if m.editingAt >= 0 {
+		chat.DraftFiles = nil
 	}
 	for i := range m.messages {
 		if m.messages[i].ID == "" {
@@ -692,11 +697,13 @@ func (m Model) performNavigation(action string) (tea.Model, tea.Cmd) {
 		return m, m.loadConversation(strings.TrimPrefix(action, "open:"))
 	case action == "fork" || action == "fork-edit":
 		original := m.session
-		title := []rune(original.Title)
+		// The mark goes in front, so a fork still differs from its original once the list cuts the title short.
+		mark := m.tr("Fork · ", "분기 · ")
+		title := []rune(strings.TrimPrefix(m.titleOrDefault(original.Title), mark))
 		if len(title) > 110 {
 			title = title[:110]
 		}
-		m.session = client.Conversation{Model: m.selected, SystemPrompt: original.SystemPrompt, Settings: m.settings, Context: original.Context, Title: string(title) + " (fork)"}
+		m.session = client.Conversation{Model: m.selected, SystemPrompt: original.SystemPrompt, Settings: m.settings, Context: original.Context, Title: mark + string(title)}
 		m.sessionEpoch++
 		m.renderCache = nil
 		m.queue = nil
