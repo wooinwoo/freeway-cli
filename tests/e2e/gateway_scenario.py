@@ -13,6 +13,7 @@ import struct
 import subprocess
 import threading
 import time
+import unicodedata
 
 if os.name != "nt":  # Windows runs use ConPTY through context_history_scenario.WindowsTerminal.
     import fcntl
@@ -36,9 +37,77 @@ SESSION = "/v1/conversations/fixture-session"
 
 
 def shown(output, text):
-    """Reports text on screen even when color codes split it, such as a key drawn brighter than its action."""
+    """Reports text on screen even when color codes split it, such as a key drawn brighter than its action,
+    or when the renderer rewrote only the changed cells of a row."""
     wanted = text.encode()
-    return wanted in output or wanted in re.sub(rb"\x1b\[[0-9;:]*m", b"", bytes(output))
+    if wanted in output or wanted in re.sub(rb"\x1b\[[0-9;:]*m", b"", bytes(output)):
+        return True
+    return any(text in row for row in screen_rows(output))
+
+
+CONTROL = re.compile(r"\x1b\[([?=>]?)([0-9;:]*)([ -/]*)([@-~])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[^\[\]]?|([\s\S])")
+
+
+def screen_rows(output):
+    """Replays cursor moves, erases and deletes, so a row drawn in pieces reads the way it looks."""
+    rows, row, col = {}, 0, 0
+
+    def line():
+        return rows.setdefault(row, [])
+
+    for match in CONTROL.finditer(bytes(output).decode("utf-8", "replace")):
+        private, params, intermediate, final, char = match.groups()
+        if char is not None:
+            if char == "\r":
+                col = 0
+            elif char == "\n":
+                row += 1
+            elif char == "\b":
+                col = max(0, col - 1)
+            elif char >= " ":
+                # Wide characters take two cells; the second holds nothing so the row joins back into text.
+                width = 2 if unicodedata.east_asian_width(char) in "WF" else 1
+                cells = line()
+                cells.extend(" " * (col + width - len(cells)))
+                cells[col:col + width] = [char] + [""] * (width - 1)
+                col += width
+            continue
+        if final is None or private or intermediate:
+            continue
+        numbers = [int(n) if n else 0 for n in params.split(";")] if params else []
+        n = max(1, numbers[0]) if numbers else 1
+        cells = line()
+        if final in "Hf":
+            row, col = max(1, numbers[0] if numbers else 1) - 1, max(1, numbers[1] if len(numbers) > 1 else 1) - 1
+        elif final == "G":
+            col = n - 1
+        elif final in "ABCD":
+            row, col = {"A": (max(0, row - n), col), "B": (row + n, col), "C": (row, col + n), "D": (row, max(0, col - n))}[final]
+        elif final == "J" and numbers[:1] == [2]:
+            rows.clear()
+        elif final == "J":
+            del cells[col:]
+            for key in [key for key in rows if key > row]:
+                del rows[key]
+        elif final == "K":
+            mode = numbers[0] if numbers else 0
+            end = len(cells) if mode == 2 else min(len(cells), col + 1)
+            if mode == 0:
+                del cells[col:]
+            else:
+                cells[:end] = [" "] * end
+        elif final == "X":
+            cells[col:col + n] = [" "] * len(cells[col:col + n])
+        elif final == "P":
+            del cells[col:col + n]
+        elif final == "@":
+            cells[col:col] = [" "] * n
+        elif final in "LM":
+            shift = n if final == "L" else -n
+            moved = {key + shift if key >= row else key: value for key, value in rows.items() if key < row or final == "L" or key >= row + n}
+            rows.clear()
+            rows.update(moved)
+    return ["".join(cells) for cells in rows.values()]
 
 class Terminal:
     def __init__(self, binary, args, environment, directory):
