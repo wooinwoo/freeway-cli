@@ -191,7 +191,7 @@ func (m setupModel) View() tea.View {
 		}
 		title += " · " + status
 	}
-	rows := []string{accent.Bold(true).Render(label("freeway")), "", text.Bold(true).Render(label(title))}
+	rows := []string{accent.Bold(true).Render(label("↗ freeway")), "", text.Bold(true).Render(label(title))}
 	if m.Detail != "" {
 		detail := strings.Split(ansi.Wrap(terminalSafe(m.Detail), width, ""), "\n")
 		rows = append(rows, muted.Render(strings.Join(detail[:min(len(detail), max(1, m.height-9))], "\n")))

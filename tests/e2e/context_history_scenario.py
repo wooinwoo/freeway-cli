@@ -375,7 +375,8 @@ def context_history_smoke(program, environment, base):
             terminal.paste(PRIOR_FILE)
             terminal.wait_text("Included · Enter to exclude")
             terminal.send(b"\r")
-            terminal.wait_text("Excluded · Enter to include")
+            # The renderer rewrites only the changed cells, so "Enter to include" can arrive as "...to in".
+            terminal.wait_text("Excluded ·")
             terminal.send(b"\x1b[19~")
             terminal.paste(SECOND, submit=True)
             terminal.wait_text(STOPPED)

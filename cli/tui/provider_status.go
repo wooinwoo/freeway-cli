@@ -268,6 +268,18 @@ func (m Model) providerSummary() string {
 	return strings.Join(summary, " · ") + " · F4"
 }
 
+// providersUnreachable reports that no provider is ready and at least one could not be reached.
+func (m Model) providersUnreachable() bool {
+	unreachable := false
+	for _, p := range m.providers {
+		if p.State == "ready" {
+			return false
+		}
+		unreachable = unreachable || p.State == "unreachable"
+	}
+	return unreachable
+}
+
 func ProviderConnectionText(prefs Preferences, provider client.ProviderStatus) string {
 	t := prefs.Text
 	auth := t("Guest", "게스트")

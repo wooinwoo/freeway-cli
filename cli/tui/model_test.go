@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -139,8 +140,11 @@ func TestModelCommandsOpenMenu(t *testing.T) {
 func TestSlashCompletion(t *testing.T) {
 	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = update(m, tea.KeyPressMsg{Code: '/', Text: "/"})
-	if !strings.Contains(m.View().Content, "/model  Choose a model") {
+	if !regexp.MustCompile(`/model +Choose a model`).MatchString(m.View().Content) {
 		t.Fatal("slash command suggestion is missing")
+	}
+	if closed := update(m, press(tea.KeyEscape)); closed.prompt.Value() != "" || len(closed.commandMatches()) != 0 {
+		t.Fatal("Esc did not close the command list")
 	}
 	m = update(m, press(tea.KeyTab))
 	if m.prompt.Value() != "/model" || m.modelsFocused {

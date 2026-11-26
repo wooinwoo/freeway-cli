@@ -165,7 +165,7 @@ func run() error {
 	}
 	final, err := tea.NewProgram(model.WithPreferences(prefs), options...).Run()
 	if chat, ok := final.(tui.Model); ok && err == nil && chat.Resumable() {
-		fmt.Fprintln(os.Stderr, prefs.Text("Conversation saved. Continue it with: freeway -c", "대화를 저장했습니다. 이어서 하려면: freeway -c"))
+		fmt.Fprintln(os.Stderr, chat.Preferences().Text("Conversation saved. Continue it with: freeway -c", "대화를 저장했습니다. 이어서 하려면: freeway -c"))
 	}
 	return err
 }

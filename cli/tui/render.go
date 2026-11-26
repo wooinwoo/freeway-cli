@@ -37,18 +37,49 @@ func terminalSafe(s string) string {
 	}, s)
 }
 
-var inlineMarkup = regexp.MustCompile("`([^`\\n]+)`|\\*\\*([^*\\n]+)\\*\\*")
+// inlineMarkup matches `code`, **bold**, [text](url) and *italic*.
+// An italic star must follow a space or punctuation, so 2*3*4 stays as typed.
+var inlineMarkup = regexp.MustCompile("`([^`\\n]+)`|\\*\\*([^*\\n]+)\\*\\*|\\[([^\\]\\n]+)\\]\\(([^)\\s]+)\\)|(^|[^\\w*])\\*([^*\\s](?:[^*\\n]*[^*\\s])?)\\*")
 var listMarker = regexp.MustCompile(`^( *)([-+*]|[0-9]{1,9}[.)]) +(.+)$`)
 var horizontalRule = regexp.MustCompile(`^(-{3,}|\*{3,}|_{3,})$`)
 var tableDivider = regexp.MustCompile(`^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$`)
 
-func inline(line string, codeStyle lipgloss.Style) string {
-	return inlineMarkup.ReplaceAllStringFunc(line, func(s string) string {
-		if s[0] == '`' {
-			return codeStyle.Render(s[1 : len(s)-1])
+// inline draws inline markup. With plain set it only removes the markers, as headings need.
+func inline(line string, codeStyle lipgloss.Style, plain bool) string {
+	var out strings.Builder
+	last := 0
+	for _, match := range inlineMarkup.FindAllStringSubmatchIndex(line, -1) {
+		group := func(i int) string {
+			if match[2*i] < 0 {
+				return ""
+			}
+			return line[match[2*i]:match[2*i+1]]
 		}
-		return lipgloss.NewStyle().Bold(true).Render(s[2 : len(s)-2])
-	})
+		style := func(s lipgloss.Style, text string) string {
+			if plain {
+				return text
+			}
+			return s.Render(text)
+		}
+		out.WriteString(line[last:match[0]])
+		last = match[1]
+		switch {
+		case match[2] >= 0:
+			out.WriteString(style(codeStyle, group(1)))
+		case match[4] >= 0:
+			out.WriteString(style(lipgloss.NewStyle().Bold(true), group(2)))
+		case match[6] >= 0:
+			text, url := group(3), group(4)
+			out.WriteString(style(lipgloss.NewStyle().Underline(true), text))
+			if !plain && text != url {
+				out.WriteString(lipgloss.NewStyle().Foreground(grooveColors().muted).Render(" (" + url + ")"))
+			}
+		default:
+			out.WriteString(group(5) + style(lipgloss.NewStyle().Italic(true), group(6)))
+		}
+	}
+	out.WriteString(line[last:])
+	return out.String()
 }
 
 func markdown(text string, width int) (string, []transcriptWrap) {
@@ -67,9 +98,6 @@ func markdown(text string, width int) (string, []transcriptWrap) {
 			// A fence nested in a list item is indented; its code lines carry the same indent.
 			indent := len(line) - len(strings.TrimLeft(line, " "))
 			language := strings.TrimSpace(trimmed[3:])
-			if language == "" {
-				language = "code"
-			}
 			var code []string
 			i++
 			for i < len(lines) && !strings.HasPrefix(strings.TrimSpace(lines[i]), fence) {
@@ -102,12 +130,11 @@ func markdown(text string, width int) (string, []transcriptWrap) {
 			content := strings.TrimLeft(trimmed, "#")
 			if strings.HasPrefix(content, " ") {
 				// The heading is already bold in one color, so inline marks only lose their markers.
-				content = inlineMarkup.ReplaceAllStringFunc(strings.TrimSpace(content), func(s string) string {
-					if s[0] == '`' {
-						return s[1 : len(s)-1]
-					}
-					return s[2 : len(s)-2]
-				})
+				content = inline(strings.TrimSpace(content), codeStyle, true)
+				// A blank row above a heading starts a new section, as in rendered Markdown.
+				if len(output) > 0 && output[len(output)-1] != "" {
+					output = append(output, "")
+				}
 				parts := strings.Split(ansi.Wrap(content, width, ""), "\n")
 				recordWordWrap(&wraps, len(output), 0, content, parts)
 				for _, part := range parts {
@@ -125,16 +152,23 @@ func markdown(text string, width int) (string, []transcriptWrap) {
 			prefix = lipgloss.NewStyle().Foreground(colors.muted).Render("│ ")
 			continuation = prefix
 		} else if match := listMarker.FindStringSubmatch(line); len(match) != 0 {
-			marker := match[2]
+			marker, item := match[2], match[3]
 			if len(marker) == 1 {
 				marker = "•"
+				// A task item shows its box in place of the bullet.
+				if box, rest, ok := strings.Cut(item, "] "); ok && (box == "[ " || box == "[x" || box == "[X") {
+					marker, item = "[ ]", rest
+					if box != "[ " {
+						marker = "[✓]"
+					}
+				}
 			}
 			if indent := len(match[1]) + ansi.StringWidth(marker) + 1; indent <= width-2 {
-				prefix, line = match[1]+marker+" ", match[3]
+				prefix, line = match[1]+marker+" ", item
 				continuation = strings.Repeat(" ", indent)
 			}
 		}
-		line = inline(line, codeStyle)
+		line = inline(line, codeStyle, false)
 		parts := strings.Split(ansi.Wrap(line, width-ansi.StringWidth(prefix), ""), "\n")
 		// ponytail: search joins wrapped rows at one byte offset, so a "•" bullet (wider in bytes than its indent) skips cross-row matches.
 		if skip := len(ansi.Strip(prefix)); skip == len(ansi.Strip(continuation)) {
@@ -155,8 +189,12 @@ func codeBlock(lines []string, language string, width, row int, wraps *[]transcr
 	c := grooveColors()
 	border := lipgloss.NewStyle().Foreground(c.border)
 	code := lipgloss.NewStyle().Foreground(c.code)
-	label := " " + ansi.Truncate(language, max(1, width-8), "…") + " "
-	rows := []string{border.Render("╭─") + code.Render(label) + border.Render(strings.Repeat("─", max(0, width-3-ansi.StringWidth(label)))+"╮")}
+	top := border.Render("╭" + strings.Repeat("─", max(0, width-2)) + "╮")
+	if language != "" {
+		label := " " + ansi.Truncate(language, max(1, width-8), "…") + " "
+		top = border.Render("╭─") + code.Render(label) + border.Render(strings.Repeat("─", max(0, width-3-ansi.StringWidth(label)))+"╮")
+	}
+	rows := []string{top}
 	for _, line := range lines {
 		parts := strings.Split(ansi.Hardwrap(line, width-4, true), "\n")
 		recordTranscriptWrap(wraps, row+len(rows), len("│ "), parts)
@@ -178,7 +216,7 @@ func markdownTable(lines []string, width int, codeStyle lipgloss.Style) []string
 		line = strings.TrimSuffix(strings.TrimPrefix(line, "|"), "|")
 		var cells []string
 		for _, cell := range strings.Split(line, "|") {
-			cells = append(cells, inline(strings.TrimSpace(strings.ReplaceAll(cell, "\x00", "|")), codeStyle))
+			cells = append(cells, inline(strings.TrimSpace(strings.ReplaceAll(cell, "\x00", "|")), codeStyle, false))
 		}
 		table = append(table, cells)
 		columns = max(columns, len(cells))
@@ -284,19 +322,29 @@ func (m Model) renderUserMessage(message client.Message, width int, colors schem
 	}
 	edge := lipgloss.NewStyle().Foreground(colors.selected)
 	panel := lipgloss.NewStyle().Background(colors.selected).Foreground(colors.text)
-	rows := []string{edge.Render(strings.Repeat("▄", width))}
+	top, bottom, lead := strings.Repeat("▄", width), strings.Repeat("▀", width), "  "
+	if m.prefs.NoColor {
+		// Without a tint the half blocks would draw two heavy bars, so a side rule marks the question.
+		top, bottom, lead = "", "", "│ "
+	}
+	var rows []string
+	if top != "" {
+		rows = append(rows, edge.Render(top))
+	}
 	var wraps []transcriptWrap
 	for i, parts := range lines {
-		recordWordWrap(&wraps, len(rows), 2, sources[i], parts)
+		recordWordWrap(&wraps, len(rows), len(lead), sources[i], parts)
 		for _, part := range parts {
-			rows = append(rows, panel.Render("  "+padCells(part, bodyWidth)+"  "))
+			rows = append(rows, panel.Render(lead+padCells(part, bodyWidth)+"  "))
 		}
 	}
 	for _, file := range message.Files {
 		label := ansi.Truncate(m.tr("[file] ", "[파일] ")+terminalSafe(file.Path), bodyWidth, "…")
-		rows = append(rows, panel.Foreground(colors.accent).Render("  "+padCells(label, bodyWidth)+"  "))
+		rows = append(rows, panel.Foreground(colors.accent).Render(lead+padCells(label, bodyWidth)+"  "))
 	}
-	rows = append(rows, edge.Render(strings.Repeat("▀", width)))
+	if bottom != "" {
+		rows = append(rows, edge.Render(bottom))
+	}
 	return strings.Join(rows, "\n"), wraps
 }
 
@@ -344,12 +392,22 @@ func (m *Model) renderConversation() {
 				}
 				identity += lipgloss.NewStyle().Foreground(colors.muted).Render(ansi.Truncate(route, width-ansi.StringWidth(identity), "…"))
 			}
-			rendered = identity + "\n  " + strings.ReplaceAll(rendered, "\n", "\n  ")
+			if message.Content == "" && m.busy {
+				// Waiting needs no body row: the label row says it.
+				rendered = identity + "  " + rendered
+			} else {
+				rendered = identity + "\n  " + strings.ReplaceAll(rendered, "\n", "\n  ")
+			}
 		}
 		cache[i] = renderedMessage{message: message, width: width, text: rendered, wraps: wraps}
 		rows = append(rows, rendered)
 	}
 	m.renderCache = cache
+	// A question left without an answer, as after a stop before the first word, keeps a way to retry.
+	// An error notice already says how to retry, so the row would only repeat it.
+	if last := len(m.messages) - 1; last >= 0 && m.messages[last].Role == "user" && !m.busy && m.notice == "" {
+		rows = append(rows, lipgloss.NewStyle().Foreground(colors.muted).Render(m.tr("✦  No reply · Alt+R to regenerate", "✦  답변 없음 · Alt+R로 다시 생성")))
+	}
 	if m.notice != "" {
 		rows = append(rows, lipgloss.NewStyle().Foreground(m.noticeColor()).Width(width).Render(terminalSafe(m.notice)))
 	}

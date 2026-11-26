@@ -249,6 +249,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.notify(m.tr("Edit cancelled. The original conversation is unchanged.", "편집을 취소했습니다. 원래 대화를 유지합니다."))
 				return m, nil
 			}
+			if len(m.commandMatches()) > 0 {
+				// Esc closes the command list, as its hint says; Ctrl+Z brings the typed command back.
+				m.recordUndo(m.captureDraft())
+				m.prompt.Reset()
+				m.markDraftChanged()
+				m.layout()
+				return m, nil
+			}
 			if time.Since(m.lastEscape) < 500*time.Millisecond {
 				m.lastEscape = time.Time{}
 				return m.doubleEscape()

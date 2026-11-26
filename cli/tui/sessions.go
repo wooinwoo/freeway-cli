@@ -44,6 +44,9 @@ type conversationSaved struct {
 	size        int
 }
 
+// Preferences returns the preferences in effect, including changes made during the session.
+func (m Model) Preferences() Preferences { return m.prefs }
+
 // Resumable reports a saved conversation that `freeway -c` reopens.
 func (m Model) Resumable() bool {
 	return m.saveEnabled && m.session.ID != "" && !m.dirty && m.saveError == "" && len(m.messages) > 0

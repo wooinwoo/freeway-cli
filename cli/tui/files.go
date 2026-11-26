@@ -12,6 +12,7 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/wooinwoo/freeway-cli/cli/client"
 )
 
@@ -46,7 +47,7 @@ func (m Model) fileToken() (fileQuery, bool) {
 	return fileQuery{Start: start, End: end, Text: string(runes[start+1 : end]), Original: string(runes), Inline: true}, true
 }
 
-func indexProjectFiles(root, detail string) ([]list.Item, error) {
+func indexProjectFiles(root string) ([]list.Item, error) {
 	items := []list.Item{}
 	visited := 0
 	skip := map[string]bool{"node_modules": true, ".git": true, ".data": true, "build": true, "dist": true, "target": true, "vendor": true, "AppData": true, "go": true}
@@ -87,7 +88,12 @@ func indexProjectFiles(root, detail string) ([]list.Item, error) {
 			return nil
 		}
 		rel = filepath.ToSlash(rel)
-		items = append(items, modelItem{ID: rel, Name: rel, Detail: detail})
+		// The size helps pick between similar files and spot one too large to attach.
+		size := ""
+		if info, err := entry.Info(); err == nil {
+			size = fileSize(info.Size())
+		}
+		items = append(items, modelItem{ID: rel, Name: rel, Detail: size})
 		return nil
 	})
 	return items, err
@@ -112,11 +118,21 @@ func (m Model) openFiles(query fileQuery) (tea.Model, tea.Cmd) {
 	m.filesLoading = true
 	m.fileEpoch++
 	epoch := m.fileEpoch
-	root, detail := m.workdir, m.tr("Attach text file from this project", "이 프로젝트의 텍스트 파일 첨부")
+	root := m.workdir
 	return m, func() tea.Msg {
-		items, err := indexProjectFiles(root, detail)
+		items, err := indexProjectFiles(root)
 		return filesIndexed{items: items, epoch: epoch, err: err, query: query}
 	}
+}
+
+func fileSize(bytes int64) string {
+	switch {
+	case bytes < 1024:
+		return fmt.Sprintf("%d B", bytes)
+	case bytes < 1024*1024:
+		return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
+	}
+	return fmt.Sprintf("%.1f MB", float64(bytes)/(1024*1024))
 }
 
 func (m Model) inlineFilePicker() bool {
@@ -250,13 +266,17 @@ func (m Model) composerExtraRows(width int) []string {
 	}
 	if matches := m.commandMatches(); len(matches) > 0 {
 		start := max(0, min(m.commandIndex-3, len(matches)-4))
-		for j, item := range matches[start:min(start+4, len(matches))] {
-			i := start + j
+		shown := matches[start:min(start+4, len(matches))]
+		nameWidth := 0
+		for _, item := range shown {
+			nameWidth = max(nameWidth, ansi.StringWidth(item.Name))
+		}
+		for j, item := range shown {
 			marker := "  "
-			if i == m.commandIndex {
+			if start+j == m.commandIndex {
 				marker = "› "
 			}
-			rows = append(rows, marker+item.Name+"  "+m.tr(item.Description, item.Korean))
+			rows = append(rows, marker+padCells(item.Name, nameWidth)+"  "+m.tr(item.Description, item.Korean))
 		}
 	}
 	if hint := m.replyBudgetHint(); hint != "" {

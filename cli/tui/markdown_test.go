@@ -78,3 +78,56 @@ func TestConversationUsesTheFullWidthOfAWideTerminal(t *testing.T) {
 		t.Fatal("the answer does not start right under its label in the answer column")
 	}
 }
+
+func TestMarkdownDrawsInlineLinksItalicsTasksAndSections(t *testing.T) {
+	rendered, _ := markdown("intro\n## Part\nsee [docs](https://x.dev) and *this*, but 2*3*4 stays\n- [ ] todo\n- [x] done\n```\nplain\n```", 60)
+	plain := ansi.Strip(rendered)
+	for _, want := range []string{"intro\n\nPart", "see docs (https://x.dev) and this, but 2*3*4 stays", "[ ] todo", "[✓] done", "╭──"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("missing %q in\n%s", want, plain)
+		}
+	}
+	for _, raw := range []string{"[docs]", "*this*", "• [", "─ code ─"} {
+		if strings.Contains(plain, raw) {
+			t.Fatalf("raw markup %q left in\n%s", raw, plain)
+		}
+	}
+}
+
+func TestConversationRowsForWaitingUnansweredAndNoColor(t *testing.T) {
+	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.messages = []client.Message{newMessage("user", "질문"), newMessage("assistant", "")}
+	m.busy = true
+	m.renderMessages()
+	if !strings.Contains(ansi.Strip(m.chat.View()), "✦  Thinking…") {
+		t.Fatal("the waiting answer does not fit on its label row")
+	}
+	m.busy = false
+	m.messages = m.messages[:1]
+	m.renderMessages()
+	if !strings.Contains(ansi.Strip(m.chat.View()), "No reply · Alt+R to regenerate") {
+		t.Fatal("a question without an answer gives no way to retry")
+	}
+	m.prefs.NoColor = true
+	out, _ := m.renderUserMessage(newMessage("user", "질문"), 40, grooveColors())
+	if ansi.Strip(out) != "│ 질문"+strings.Repeat(" ", 34) {
+		t.Fatalf("NO_COLOR question is not a single ruled row: %q", ansi.Strip(out))
+	}
+}
+
+func TestComposerShowsTheLineCountOfALongPaste(t *testing.T) {
+	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = update(m, tea.PasteMsg{Content: strings.Repeat("줄\n", 19) + "끝"})
+	if !strings.Contains(m.View().Content, "Message · 20 lines") {
+		t.Fatal("the composer does not say how long a pasted draft is")
+	}
+}
+
+func TestOfflineWelcomeBlamesTheNetwork(t *testing.T) {
+	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.providers = map[string]client.ProviderStatus{"kilo": {ID: "kilo", Name: "Kilo", State: "unreachable"}}
+	m.status, m.notice = "Connection needs attention", "No free connection is ready for this model."
+	if view := ansi.Strip(m.View().Content); !strings.Contains(view, "Check your internet connection") || strings.Contains(view, "No free connection") {
+		t.Fatal("the offline welcome does not match the header's internet hint")
+	}
+}

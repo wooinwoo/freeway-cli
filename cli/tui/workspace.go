@@ -106,7 +106,7 @@ func (m Model) workspaceView() tea.View {
 		help = m.tr("↑↓ history · F4 providers · F8 context · ? help", "↑↓ 기록 · F4 공급처 · F8 문맥 · ? 도움말")
 	}
 	if m.commandPending() {
-		help = m.tr("↑↓ choose command · Tab complete · Enter run", "↑↓ 명령 선택 · Tab 완성 · Enter 실행")
+		help = m.tr("↑↓ choose command · Tab complete · Enter run · Esc close", "↑↓ 명령 선택 · Tab 완성 · Enter 실행 · Esc 닫기")
 	}
 	if m.busy {
 		// The status line and the composer title already say Esc stops the reply.
@@ -238,7 +238,7 @@ func (m Model) workspaceView() tea.View {
 				if m.menu == "history" {
 					text = m.historyPreview(item.ID)
 				}
-				preview = append(preview, strings.Split(ansi.Hardwrap(terminalSafe(text), max(1, width-2), true), "\n")...)
+				preview = append(preview, strings.Split(ansi.Wrap(terminalSafe(text), max(1, width-2), ""), "\n")...)
 			}
 			rows = append(rows, muted.Height(height).MaxHeight(height).Render(strings.Join(preview[:min(height, len(preview))], "\n")))
 		}
@@ -308,9 +308,14 @@ func (m Model) welcomeView(width, height int) string {
 		lines = []string{lipgloss.NewStyle().Foreground(c.text).Bold(true).Render(m.tr("What would you like to make?", "무엇을 만들어 볼까요?")), "", muted.Render(m.tr("/models choose · /history resume", "/models 모델 선택 · /history 대화 기록"))}
 	}
 	// Startup problems, such as no reachable provider, would otherwise hide behind the welcome.
-	if m.notice != "" {
+	notice := m.notice
+	if notice != "" && m.status == "Connection needs attention" && m.providersUnreachable() {
+		// Say the same as the header: the cause is the network, not the model choice.
+		notice = m.tr("Can't reach the providers. Check your internet connection, then refresh in F4.", "공급처 서버에 연결할 수 없습니다. 인터넷 연결을 확인한 뒤 F4에서 새로고침하세요.")
+	}
+	if notice != "" {
 		lines = append(lines, "")
-		for _, line := range strings.Split(ansi.Wrap(terminalSafe(m.notice), min(width, 72), ""), "\n") {
+		for _, line := range strings.Split(ansi.Wrap(terminalSafe(notice), min(width, 72), ""), "\n") {
 			lines = append(lines, lipgloss.NewStyle().Foreground(m.noticeColor()).Render(line))
 		}
 	}
@@ -334,6 +339,10 @@ func (m Model) composerView(width int) string {
 	}
 	if m.commandPending() {
 		label = m.tr(" Command ", " 명령 ")
+	}
+	// Past the visible rows, the count tells how much of a long paste is out of view.
+	if lines := m.prompt.LineCount(); lines > m.prompt.Height() {
+		label = strings.TrimSuffix(label, " ") + fmt.Sprintf(m.tr(" · %d lines ", " · %d줄 "), lines)
 	}
 	button, buttonWidth := "", 0
 	rightBorder := "╮"
