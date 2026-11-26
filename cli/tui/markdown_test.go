@@ -61,25 +61,20 @@ func TestUserMessageIsABandInTheAnswerColumn(t *testing.T) {
 	}
 }
 
-func TestConversationColumnStaysReadableOnWideTerminals(t *testing.T) {
+func TestConversationUsesTheFullWidthOfAWideTerminal(t *testing.T) {
 	m := update(New(), tea.WindowSizeMsg{Width: 200, Height: 40})
-	m.messages = []client.Message{newMessage("user", "질문"), newMessage("assistant", strings.Repeat("긴 답변 ", 80)+"\n\n---\n```go\nx := 1\n```")}
+	m.messages = []client.Message{newMessage("user", "질문"), newMessage("assistant", strings.Repeat("긴 답변 ", 80))}
 	m.renderMessages()
-	lines := strings.Split(ansi.Strip(m.chat.View()), "\n")
-	for _, line := range lines {
-		if w := ansi.StringWidth(strings.TrimRight(line, " ")); w > 100 {
-			t.Fatalf("a conversation row is %d cells wide, over 100: %q", w, line)
-		}
+	view := ansi.Strip(m.View().Content)
+	if !strings.HasPrefix(view, "  ↗ freeway") || !strings.Contains(view, "  "+strings.Repeat("▄", 196)) {
+		t.Fatal("a wide terminal left empty margins instead of using its full width")
 	}
+	lines := strings.Split(ansi.Strip(m.chat.View()), "\n")
 	labelled := false
 	for i, line := range lines {
 		labelled = labelled || strings.HasPrefix(line, "✦ FREEWAY") && i+1 < len(lines) && strings.HasPrefix(lines[i+1], "  긴 답변")
 	}
 	if !labelled {
 		t.Fatal("the answer does not start right under its label in the answer column")
-	}
-	view := m.View()
-	if !strings.HasPrefix(ansi.Strip(view.Content), strings.Repeat(" ", 50)+"↗ freeway") || view.Cursor == nil || view.Cursor.X < 50 {
-		t.Fatal("the screen is not centered on a wide terminal")
 	}
 }

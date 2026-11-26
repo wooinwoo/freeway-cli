@@ -20,7 +20,7 @@ type Model struct {
 	interactionState
 	prefs                                                                   Preferences
 	renderedTheme                                                           string
-	width, height, screenWidth                                              int
+	width, height                                                           int
 	chat                                                                    viewport.Model
 	find                                                                    *transcriptSearch
 	prompt                                                                  textarea.Model
@@ -172,7 +172,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mcpToolFinished:
 		return m.receiveMCPToolResult(msg)
 	case tea.WindowSizeMsg:
-		m.screenWidth, m.width, m.height = msg.Width, min(msg.Width, maxWidth), msg.Height
+		m.width, m.height = msg.Width, msg.Height
 		m.resize()
 		if m.find == nil && !m.modelsFocused && m.usable() {
 			return m, m.prompt.Focus()
@@ -296,7 +296,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		if m.showLatestButton() && msg.Button == tea.MouseLeft {
 			x, y := m.latestButtonPosition()
-			if X := msg.X - m.leftOffset(); msg.Y == y && X >= x && X < m.width-4 {
+			if msg.Y == y && msg.X >= x && msg.X < m.width-4 {
 				m.chat.GotoBottom()
 				return m, nil
 			}
@@ -469,24 +469,9 @@ func (m *Model) renderMessages() {
 	m.renderConversation()
 }
 
-// maxWidth keeps lines readable on wide terminals: a 100-cell conversation column plus margins.
-// That fits about 50 Korean syllables, or an 88-character line of code in a frame.
-const maxWidth = 104
-
-// leftOffset centers the screen when the terminal is wider than maxWidth.
-func (m Model) leftOffset() int { return max(0, (m.screenWidth-m.width)/2) }
-
 func (m Model) View() tea.View {
-	view := m.workspaceView()
 	if m.mcpApproval != nil {
-		view = m.mcpApprovalView()
+		return themedView(m.mcpApprovalView(), m.prefs.NoColor)
 	}
-	if offset := m.leftOffset(); offset > 0 {
-		pad := strings.Repeat(" ", offset)
-		view.Content = pad + strings.ReplaceAll(view.Content, "\n", "\n"+pad)
-		if view.Cursor != nil {
-			view.Cursor.X += offset
-		}
-	}
-	return themedView(view, m.prefs.NoColor)
+	return themedView(m.workspaceView(), m.prefs.NoColor)
 }
