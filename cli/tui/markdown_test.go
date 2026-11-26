@@ -131,3 +131,12 @@ func TestOfflineWelcomeBlamesTheNetwork(t *testing.T) {
 		t.Fatal("the offline welcome does not match the header's internet hint")
 	}
 }
+
+func TestFilePickerInAnEmptyFolderSaysSoInsteadOfNoMatches(t *testing.T) {
+	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.menu, m.fileItems, m.filesLoading = "files", nil, false
+	m.models.list.SetItems(nil)
+	if got := ansi.Strip(m.menuItemsView()); !strings.Contains(got, "No text files to attach in this folder.") {
+		t.Fatalf("empty folder message: %q", got)
+	}
+}

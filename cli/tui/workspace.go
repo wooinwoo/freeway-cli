@@ -423,8 +423,13 @@ func (m Model) menuItemsView() string {
 			message = m.tr("No saved prompts in this scope.", "이 범위에 저장된 질문이 없습니다.")
 		}
 	}
-	if m.menu == "files" && m.filesLoading {
-		message = m.tr("Scanning project files…", "프로젝트 파일 검색 중…")
+	if m.menu == "files" {
+		switch {
+		case m.filesLoading:
+			message = m.tr("Scanning project files…", "프로젝트 파일 검색 중…")
+		case m.menuQuery == "" && len(m.fileItems) == 0:
+			message = m.tr("No text files to attach in this folder.", "이 폴더에는 첨부할 텍스트 파일이 없습니다.")
+		}
 	}
 	if m.menu == "providers" && m.menuQuery == "" {
 		message = m.menuDetail()
