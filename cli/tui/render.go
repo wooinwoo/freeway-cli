@@ -128,6 +128,15 @@ func markdown(text string, width int) (string, []transcriptWrap) {
 		}
 		if strings.HasPrefix(trimmed, "#") {
 			content := strings.TrimLeft(trimmed, "#")
+			// Levels differ the way rendered Markdown does: # is underlined, ## is accented, ### and below are plain bold.
+			style := heading
+			switch len(trimmed) - len(content) {
+			case 1:
+				style = heading.Underline(true)
+			case 2:
+			default:
+				style = lipgloss.NewStyle().Foreground(colors.text).Bold(true)
+			}
 			if strings.HasPrefix(content, " ") {
 				// The heading is already bold in one color, so inline marks only lose their markers.
 				content = inline(strings.TrimSpace(content), codeStyle, true)
@@ -138,7 +147,7 @@ func markdown(text string, width int) (string, []transcriptWrap) {
 				parts := strings.Split(ansi.Wrap(content, width, ""), "\n")
 				recordWordWrap(&wraps, len(output), 0, content, parts)
 				for _, part := range parts {
-					output = append(output, heading.Render(part))
+					output = append(output, style.Render(part))
 				}
 				continue
 			}

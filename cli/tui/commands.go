@@ -737,11 +737,7 @@ func (m Model) export(name string) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		title := chat.Title
-		if title == "" {
-			title = m.tr("New conversation", "새 대화")
-		}
-		fmt.Fprintf(&b, "# %s\n\n", title)
+		fmt.Fprintf(&b, "# %s\n\n", m.titleOrDefault(chat.Title))
 		for _, message := range chat.Messages {
 			label := "You"
 			if message.Role == "assistant" {

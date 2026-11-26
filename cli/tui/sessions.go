@@ -44,6 +44,14 @@ type conversationSaved struct {
 	size        int
 }
 
+// titleOrDefault names a chat without a usable title, including ones saved as a bare "@" by older versions.
+func (m Model) titleOrDefault(title string) string {
+	if strings.Trim(title, "@ ") == "" {
+		return m.tr("New conversation", "새 대화")
+	}
+	return title
+}
+
 // Preferences returns the preferences in effect, including changes made during the session.
 func (m Model) Preferences() Preferences { return m.prefs }
 
@@ -465,7 +473,8 @@ func (m *Model) snapshot() client.Conversation {
 	if chat.Title == "" {
 		title := ""
 		for _, message := range m.messages {
-			if message.Role == "user" && strings.TrimSpace(message.Content) != "" {
+			// A bare "@" left from the file picker is not a question.
+			if message.Role == "user" && strings.Trim(message.Content, "@ \t\n") != "" {
 				title = message.Content
 				break
 			}

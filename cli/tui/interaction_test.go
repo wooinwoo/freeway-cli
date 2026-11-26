@@ -276,8 +276,15 @@ func TestStatusLineStaysVisibleWhenComposerRowsAppear(t *testing.T) {
 
 func TestTitleSkipsAnAttachmentOnlyFirstQuestion(t *testing.T) {
 	m := connectedFixture(&burstGateway{})
-	m.messages = []client.Message{newMessage("user", ""), newMessage("assistant", "hi"), newMessage("user", "second question")}
+	m.messages = []client.Message{newMessage("user", ""), newMessage("assistant", "hi"), newMessage("user", " @ "), newMessage("assistant", "hi"), newMessage("user", "second question")}
 	if title := m.snapshot().Title; title != "second question" {
 		t.Fatalf("title = %q", title)
+	}
+}
+
+func TestABareAtTitleFromOlderVersionsShowsAsNewConversation(t *testing.T) {
+	m := New()
+	if m.titleOrDefault("@") != "New conversation" || m.titleOrDefault("@src/main.go") != "@src/main.go" {
+		t.Fatal("a bare @ title is shown as is, or a file title is hidden")
 	}
 }

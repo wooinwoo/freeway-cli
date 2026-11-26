@@ -45,11 +45,7 @@ func (m Model) workspaceView() tea.View {
 	if m.projectLabel != "" {
 		brand = accent.Bold(true).Render("↗ freeway") + muted.Render("  /  "+terminalSafe(m.projectLabel))
 	}
-	title := m.session.Title
-	if title == "" {
-		title = m.tr("New conversation", "새 대화")
-	}
-	title = terminalSafe(title)
+	title := terminalSafe(m.titleOrDefault(m.session.Title))
 	if width >= 70 {
 		caption := ansi.Truncate(title, min(36, width/3), "…")
 		brand = padCells(brand, width-ansi.StringWidth(caption)) + muted.Render(caption)
@@ -104,6 +100,10 @@ func (m Model) workspaceView() tea.View {
 	help := m.tr("Enter send · Ctrl+R prompts · F3 find · F4 providers · F8 context · ? help", "Enter 보내기 · Ctrl+R 이전 질문 · F3 찾기 · F4 공급처 · F8 문맥 · ? 도움말")
 	if width < 76 {
 		help = m.tr("↑↓ prompts · F4 providers · F8 context · ? help", "↑↓ 이전 질문 · F4 공급처 · F8 문맥 · ? 도움말")
+		if ansi.StringWidth(help) > width {
+			// The smallest windows drop F8 rather than cut the help key in half.
+			help = m.tr("↑↓ prompts · F4 providers · ? help", "↑↓ 이전 질문 · F4 공급처 · ? 도움말")
+		}
 	}
 	if m.commandPending() {
 		help = m.tr("↑↓ choose command · Tab complete · Enter run · Esc close", "↑↓ 명령 선택 · Tab 완성 · Enter 실행 · Esc 닫기")
@@ -237,6 +237,9 @@ func (m Model) workspaceView() tea.View {
 				text := item.Detail
 				if m.menu == "history" {
 					text = m.historyPreview(item.ID)
+					if text == "" {
+						text = m.tr("No question saved yet.", "아직 저장된 질문이 없습니다.")
+					}
 				}
 				preview = append(preview, strings.Split(ansi.Wrap(terminalSafe(text), max(1, width-2), ""), "\n")...)
 			}

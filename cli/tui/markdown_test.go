@@ -140,3 +140,19 @@ func TestFilePickerInAnEmptyFolderSaysSoInsteadOfNoMatches(t *testing.T) {
 		t.Fatalf("empty folder message: %q", got)
 	}
 }
+
+func TestHeadingLevelsLookDifferent(t *testing.T) {
+	rendered, _ := markdown("# One\n## Two\n### Three", 40)
+	rows := strings.Split(rendered, "\n")
+	one, two, three := rows[0], rows[2], rows[4]
+	if ansi.Strip(one) != "One" || ansi.Strip(two) != "Two" || ansi.Strip(three) != "Three" || one == two || two == three || one == three {
+		t.Fatalf("heading levels are drawn alike: %q", rows)
+	}
+}
+
+func TestSmallestWindowKeepsTheWholeHelpHint(t *testing.T) {
+	m := update(New(), tea.WindowSizeMsg{Width: 44, Height: 12})
+	if !strings.Contains(ansi.Strip(m.View().Content), "? help") {
+		t.Fatal("the help hint is cut off in a 44-column window")
+	}
+}

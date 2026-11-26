@@ -86,10 +86,7 @@ func (m Model) historyItems() []list.Item {
 		if chat.Preview != "" {
 			detail += " · " + oneLine(chat.Preview)
 		}
-		title := chat.Title
-		if title == "" {
-			title = m.tr("New conversation", "새 대화")
-		}
+		title := m.titleOrDefault(chat.Title)
 		items = append(items, modelItem{ID: chat.ID, Name: title, Detail: detail})
 	}
 	if m.historyPage.cursor != "" {
