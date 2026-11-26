@@ -120,7 +120,7 @@ func markdown(text string, width int) (string, []transcriptWrap) {
 			for end < len(lines) && strings.Contains(lines[end], "|") && strings.TrimSpace(lines[end]) != "" {
 				end++
 			}
-			if rows := markdownTable(append([]string{line}, lines[i+2:end]...), width, codeStyle); rows != nil {
+			if rows := markdownTable(lines[i:end], width, codeStyle); rows != nil {
 				output = append(output, rows...)
 				i = end - 1
 				continue
@@ -215,20 +215,39 @@ func codeBlock(lines []string, language string, width, row int, wraps *[]transcr
 	return rows
 }
 
-// markdownTable draws a pipe table in a box. Wide tables wrap inside their cells.
-// It returns nil when the columns cannot fit, so the caller keeps the raw lines.
+// markdownTable draws a pipe table in a box, aligning columns by the divider's colons.
+// Wide tables wrap inside their cells. It returns nil when the columns cannot fit,
+// so the caller keeps the raw lines.
 func markdownTable(lines []string, width int, codeStyle lipgloss.Style) []string {
+	split := func(line string) []string {
+		line = strings.TrimSpace(strings.ReplaceAll(line, `\|`, "\x00"))
+		cells := strings.Split(strings.TrimSuffix(strings.TrimPrefix(line, "|"), "|"), "|")
+		for j, cell := range cells {
+			cells[j] = strings.TrimSpace(strings.ReplaceAll(cell, "\x00", "|"))
+		}
+		return cells
+	}
 	var table [][]string
 	columns := 0
-	for _, line := range lines {
-		line = strings.TrimSpace(strings.ReplaceAll(line, `\|`, "\x00"))
-		line = strings.TrimSuffix(strings.TrimPrefix(line, "|"), "|")
-		var cells []string
-		for _, cell := range strings.Split(line, "|") {
-			cells = append(cells, inline(strings.TrimSpace(strings.ReplaceAll(cell, "\x00", "|")), codeStyle, false))
+	for i, line := range lines {
+		if i == 1 {
+			continue
+		}
+		cells := split(line)
+		for j, cell := range cells {
+			cells[j] = inline(cell, codeStyle, false)
 		}
 		table = append(table, cells)
 		columns = max(columns, len(cells))
+	}
+	align := make([]lipgloss.Position, columns)
+	for j, spec := range split(lines[1]) {
+		if j < columns && strings.HasSuffix(spec, ":") {
+			align[j] = lipgloss.Right
+			if strings.HasPrefix(spec, ":") {
+				align[j] = lipgloss.Center
+			}
+		}
 	}
 	natural := make([]int, columns)
 	for _, cells := range table {
@@ -238,7 +257,7 @@ func markdownTable(lines []string, width int, codeStyle lipgloss.Style) []string
 	}
 	// Borders take one cell before each column and three between and after them.
 	room := width - 3*columns - 1
-	if room < 4*columns {
+	if sumInts(natural) > room && room < 4*columns {
 		return nil
 	}
 	widths := append([]int(nil), natural...)
@@ -301,7 +320,7 @@ func markdownTable(lines []string, width int, codeStyle lipgloss.Style) []string
 				if r == 0 {
 					text = header.Render(text)
 				}
-				row += " " + padCells(text, widths[j]) + border.Render(" │")
+				row += " " + padCells(lipgloss.PlaceHorizontal(widths[j], align[j], text), widths[j]) + border.Render(" │")
 			}
 			rows = append(rows, row)
 		}

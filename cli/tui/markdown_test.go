@@ -53,6 +53,19 @@ func TestMarkdownDrawsTablesRulesAndNestedCode(t *testing.T) {
 	}
 }
 
+func TestTablesFollowTheDividerAlignmentAndFitShortColumns(t *testing.T) {
+	rendered, _ := markdown("| 회차 | 매출 | 메모 |\n|---|--:|:-:|\n| 1회 | 1,120 | a |\n| 10회 | 21,268.8 | bbb |", 60)
+	plain := ansi.Strip(rendered)
+	for _, want := range []string{"│ 1회  │    1,120 │  a   │", "│ 10회 │ 21,268.8 │ bbb  │"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("columns ignore the divider's alignment, missing %q in\n%s", want, plain)
+		}
+	}
+	if narrow, _ := markdown("| a | b | c | d | e | f | g | h |\n|---|---|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |", 40); strings.Contains(narrow, "|---") {
+		t.Fatalf("a table of short cells that fits was left as raw text:\n%s", narrow)
+	}
+}
+
 func TestUserMessageIsABandInTheAnswerColumn(t *testing.T) {
 	out, _ := New().renderUserMessage(newMessage("user", "hi there"), 40, grooveColors())
 	lines := strings.Split(ansi.Strip(out), "\n")
