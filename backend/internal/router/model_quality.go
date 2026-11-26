@@ -12,6 +12,7 @@ import (
 
 // Picker priority for benchmarked models, based on the Artificial Analysis Intelligence
 // Index and published model comparisons. Keep exact revisions and leave unscored models below.
+// Scores from Intelligence Index v5.0.2, checked 2026-11-26, follow each later entry.
 // https://artificialanalysis.ai/leaderboards/models/
 // https://artificialanalysis.ai/models/comparisons/minimax-m3-1-flash-vs-deepseek-v4-1-flash
 var modelQualityOrder = []string{
@@ -19,12 +20,18 @@ var modelQualityOrder = []string{
 	"model/minimax/minimax-m3.1-flash",
 	"model/deepseek/deepseek-v4.1-flash",
 	"model/zai/glm-5.3-flash",
+	"opencode/mimo-v2.6-flash-free", // 26.8
 	"model/deepseek/deepseek-v4-pro-0813",
 	"model/reflection/beam-1.0",
 	"model/nvidia/nemotron-3.5-super-vl",
 	"model/nvidia/nemotron-3-ultra-550b-a55b",
 	"model/nvidia/nemotron-3-ultra",
+	"model/nvidia/muse-glimmer-30b", // 6.3
+	"model/liquid/lfm-3-1.7b",       // 6.0
 	"model/nvidia/nemotron-3.5-lightning",
+	// Requesty's full name for the same model, 5.5.
+	"model/nvidia/nemotron-3.5-lightning-30b-a3b",
+	"model/google/gemma-4-31b-it", // 4.4, reasoning
 	"model/openai/gpt-oss-120b",
 }
 
