@@ -340,7 +340,8 @@ func indexEntry(item record) entry {
 	return entry{revision: chat.Revision, createDigest: item.CreateDigest, receipts: item.Receipts, hasContext: chat.Context != nil, summary: contracts.ConversationSummary{
 		ID: chat.ID, Title: chat.Title, Model: chat.Model, UpdatedAt: item.UpdatedAt.UTC().Format(timestamp),
 		MessageCount: len(chat.Messages), Preview: preview, Workspace: chat.Workspace,
-		HasDraft: chat.Draft != "" || len(chat.DraftFiles) > 0 || chat.Stash != nil, QueuedCount: len(chat.Queued),
+		// A stash is input the user cleared on purpose; only text left in the composer counts as a draft.
+		HasDraft: chat.Draft != "" || len(chat.DraftFiles) > 0, QueuedCount: len(chat.Queued),
 	}}
 }
 

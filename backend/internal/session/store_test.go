@@ -51,6 +51,19 @@ func TestOversizedWireResponseDoesNotAdvanceRevision(t *testing.T) {
 	}
 }
 
+func TestAClearedDraftIsNotListedAsADraft(t *testing.T) {
+	s, vault := openStore(t, filepath.Join(t.TempDir(), "state"))
+	t.Cleanup(func() { _ = vault.Close() })
+	chat := testChat()
+	chat.Draft = ""
+	if _, err := s.Create(chat, ""); err != nil {
+		t.Fatal(err)
+	}
+	if summaries := s.List(); len(summaries) != 1 || summaries[0].HasDraft {
+		t.Fatalf("a conversation whose input was cleared is listed as having a draft: %+v", summaries)
+	}
+}
+
 func testChat() contracts.Conversation {
 	return contracts.Conversation{
 		Title: "테스트", Model: "fixture/model", Workspace: "/test/project",
