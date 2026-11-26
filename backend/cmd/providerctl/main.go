@@ -73,7 +73,7 @@ func modelCommands(id string, models []providers.Model) []cliModel {
 }
 
 func parse(args []string) (options, error) {
-	o := options{command: "help", id: "all", root: providers.ProviderHome(), timeout: 120, maxTokens: 256}
+	o := options{command: "help", id: "all", root: providers.ProviderHome(), timeout: 120, maxTokens: 1024}
 	if len(args) == 0 {
 		return o, nil
 	}
@@ -122,7 +122,8 @@ func parse(args []string) (options, error) {
 		f.StringVar(&o.model, "model", "", "")
 		f.StringVar(&o.effort, "reasoning-effort", "", "")
 		f.IntVar(&o.timeout, "timeout", 120, "")
-		f.IntVar(&o.maxTokens, "max-tokens", 256, "")
+		// Reasoning models spend part of the budget thinking, so a small one returns no text.
+		f.IntVar(&o.maxTokens, "max-tokens", 1024, "")
 	}
 	if err := f.Parse(args); err != nil {
 		return o, errors.New("invalid option; use --help")
@@ -316,7 +317,8 @@ func run(args []string) (int, error) {
 				if err == nil {
 					result["completion"] = completion
 					result["inferenceVerified"] = true
-					if o.command == "probe" && strings.TrimSpace(completion.Content) != marker {
+					// Some models quote the marker or add a period; the round trip still works.
+					if o.command == "probe" && !strings.Contains(completion.Content, marker) {
 						err = &providers.Error{Code: "unexpected_probe_response", Status: 502}
 						result["inferenceVerified"] = false
 					}
