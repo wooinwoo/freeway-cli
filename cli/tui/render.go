@@ -333,10 +333,11 @@ func (m *Model) renderConversation() {
 			if message.Status == "stopped" {
 				rendered += "\n" + lipgloss.NewStyle().Foreground(colors.border).Render(m.tr("Stopped · Alt+R to regenerate", "응답 중지됨 · Alt+R로 다시 생성"))
 			}
-			// The route appears with the first chunk, so Auto shows which free connection answered.
-			identity := label.Render("✦ FREEWAY")
+			// The marker alone says this is an answer; the route appears with the first chunk,
+			// so Auto shows which free connection answered.
+			identity := label.Render("✦")
 			if message.Model != "" {
-				route := " · " + routeLabel(message.Model)
+				route := " " + routeLabel(message.Model)
 				// Keep provider detail the model ID lacks, such as which image server answered.
 				if prefix, _, _ := strings.Cut(message.Model, "/"); message.Provider != "" && !strings.EqualFold(message.Provider, prefix) {
 					route += " · " + oneLine(message.Provider)

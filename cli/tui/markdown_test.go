@@ -72,7 +72,7 @@ func TestConversationUsesTheFullWidthOfAWideTerminal(t *testing.T) {
 	lines := strings.Split(ansi.Strip(m.chat.View()), "\n")
 	labelled := false
 	for i, line := range lines {
-		labelled = labelled || strings.HasPrefix(line, "✦ FREEWAY") && i+1 < len(lines) && strings.HasPrefix(lines[i+1], "  긴 답변")
+		labelled = labelled || strings.HasPrefix(line, "✦") && i+1 < len(lines) && strings.HasPrefix(lines[i+1], "  긴 답변")
 	}
 	if !labelled {
 		t.Fatal("the answer does not start right under its label in the answer column")
