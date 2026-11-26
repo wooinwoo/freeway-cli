@@ -112,6 +112,10 @@ func (m Model) workspaceView() tea.View {
 	}
 	if m.commandPending() {
 		help = m.tr("↑↓ choose command · Tab complete · Enter run · Esc close", "↑↓ 명령 선택 · Tab 완성 · Enter 실행 · Esc 닫기")
+		if ansi.StringWidth(help) > width {
+			// Narrow windows drop Tab, since Enter runs the chosen command anyway.
+			help = m.tr("↑↓ choose · Enter run · Esc close", "↑↓ 선택 · Enter 실행 · Esc 닫기")
+		}
 	}
 	if m.busy {
 		// The status line and the composer title already say Esc stops the reply.
@@ -346,7 +350,8 @@ func (m Model) composerView(width int) string {
 		label = m.tr(" Next message · Esc to stop response ", " 다음 메시지 · Esc로 응답 중지 ")
 	}
 	if m.commandPending() {
-		label = m.tr(" Command ", " 명령 ")
+		// The position tells how many commands lie past the rows shown.
+		label = fmt.Sprintf(m.tr(" Command %d/%d ", " 명령 %d/%d "), min(m.commandIndex, len(m.commandMatches())-1)+1, len(m.commandMatches()))
 	}
 	// Past the visible rows, the count tells how much of a long paste is out of view.
 	if lines := m.prompt.LineCount(); lines > m.prompt.Height() {

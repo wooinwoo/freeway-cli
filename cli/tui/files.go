@@ -261,11 +261,16 @@ func (m Model) composerExtraRows(width int) []string {
 		}
 		rows = append(rows, m.tr("Attached: ", "첨부: ")+strings.Join(names, "  ")+" · /detach")
 	}
+	limit := 6
 	if matches := m.commandMatches(); len(matches) > 0 {
-		start := max(0, min(m.commandIndex-3, len(matches)-4))
-		shown := matches[start:min(start+4, len(matches))]
+		// A bare slash lists every command, so the list takes the rows the transcript can spare.
+		limit = max(limit, m.height-12)
+		size := max(4, limit-len(rows))
+		start := max(0, min(m.commandIndex-size+1, len(matches)-size))
+		shown := matches[start:min(start+size, len(matches))]
+		// Measured over every match, so the descriptions stay put while the list scrolls.
 		nameWidth := 0
-		for _, item := range shown {
+		for _, item := range matches {
 			nameWidth = max(nameWidth, ansi.StringWidth(item.Name))
 		}
 		for j, item := range shown {
@@ -282,5 +287,5 @@ func (m Model) composerExtraRows(width int) []string {
 	if hint := m.contextHint(); hint != "" {
 		rows = append(rows, hint)
 	}
-	return rows[:min(len(rows), max(0, min(6, m.height-9)))]
+	return rows[:min(len(rows), max(0, min(limit, m.height-9)))]
 }
