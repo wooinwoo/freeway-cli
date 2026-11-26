@@ -366,7 +366,7 @@ func TestEnglishWorkspaceHasRoleLabelsAndNativeCursor(t *testing.T) {
 	m.prompt.SetValue("Next question")
 	view := m.View()
 	plain := ansi.Strip(view.Content)
-	if !strings.Contains(plain, "● YOU") || !strings.Contains(plain, "✦ FREEWAY") || !strings.Contains(plain, "╭─ go") {
+	if !strings.Contains(plain, "Review this function") || !strings.Contains(plain, "✦ FREEWAY") || !strings.Contains(plain, "╭─ go") {
 		t.Fatal("conversation roles or code frame are missing")
 	}
 	if view.Cursor == nil || view.Cursor.Y < 0 || view.Cursor.Y >= m.height || m.prompt.VirtualCursor() {

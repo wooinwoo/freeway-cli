@@ -327,7 +327,7 @@ func (m Model) composerView(width int) string {
 	c := grooveColors()
 	border := lipgloss.NewStyle().Foreground(c.border)
 	muted := lipgloss.NewStyle().Foreground(c.muted)
-	title := lipgloss.NewStyle().Foreground(c.userAccent).Bold(true)
+	title := lipgloss.NewStyle().Foreground(c.accent).Bold(true)
 	label := m.tr(" Message ", " 메시지 ")
 	if m.busy {
 		label = m.tr(" Next message · Esc to stop response ", " 다음 메시지 · Esc로 응답 중지 ")

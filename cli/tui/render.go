@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -271,26 +272,39 @@ func sumInts(values []int) int {
 }
 
 func (m Model) renderUserMessage(message client.Message, width int, colors schemeColors) (string, []transcriptWrap) {
-	inset := min(16, max(2, width/8))
-	panelWidth := width - inset - 1
-	gutter := strings.Repeat(" ", inset)
-	edge := lipgloss.NewStyle().Foreground(colors.userAccent).Background(colors.userPanel).Render("▎")
-	panel := lipgloss.NewStyle().Background(colors.userPanel).Foreground(colors.text)
-	title := panel.Foreground(colors.userAccent).Bold(true)
-	rows := []string{gutter + edge + title.Render(padCells(m.tr(" ● YOU", " ● 나"), panelWidth))}
-	bodyWidth := panelWidth - 2
-	var wraps []transcriptWrap
-	for _, line := range strings.Split(terminalSafe(message.Content), "\n") {
-		parts := strings.Split(ansi.Wrap(line, bodyWidth, ""), "\n")
-		recordWordWrap(&wraps, len(rows), inset+len("▎ "), line, parts)
-		for _, part := range parts {
-			rows = append(rows, gutter+edge+panel.Render(padCells(" "+part, panelWidth)))
+	// A right-aligned bubble as wide as its text. Half blocks above and below pad it by half a row.
+	bodyWidth := max(1, width-min(16, max(2, width/8))-4)
+	var lines [][]string
+	var sources []string
+	if message.Content != "" || len(message.Files) == 0 {
+		for _, line := range strings.Split(terminalSafe(message.Content), "\n") {
+			lines = append(lines, strings.Split(ansi.Wrap(line, bodyWidth, ""), "\n"))
+			sources = append(sources, line)
 		}
 	}
+	var files []string
 	for _, file := range message.Files {
-		label := ansi.Truncate(m.tr("[file] ", "[파일] ")+terminalSafe(file.Path), bodyWidth, "…")
-		rows = append(rows, gutter+edge+title.Bold(false).Render(padCells(" "+label, panelWidth)))
+		files = append(files, ansi.Truncate(m.tr("[file] ", "[파일] ")+terminalSafe(file.Path), bodyWidth, "…"))
 	}
+	textWidth := 0
+	for _, part := range append(slices.Concat(lines...), files...) {
+		textWidth = max(textWidth, ansi.StringWidth(part))
+	}
+	gutter := strings.Repeat(" ", max(0, width-textWidth-4))
+	edge := lipgloss.NewStyle().Foreground(colors.selected)
+	panel := lipgloss.NewStyle().Background(colors.selected).Foreground(colors.text)
+	rows := []string{gutter + edge.Render(strings.Repeat("▄", textWidth+4))}
+	var wraps []transcriptWrap
+	for i, parts := range lines {
+		recordWordWrap(&wraps, len(rows), len(gutter)+2, sources[i], parts)
+		for _, part := range parts {
+			rows = append(rows, gutter+panel.Render("  "+padCells(part, textWidth)+"  "))
+		}
+	}
+	for _, file := range files {
+		rows = append(rows, gutter+panel.Foreground(colors.accent).Render("  "+padCells(file, textWidth)+"  "))
+	}
+	rows = append(rows, gutter+edge.Render(strings.Repeat("▀", textWidth+4)))
 	return strings.Join(rows, "\n"), wraps
 }
 

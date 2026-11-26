@@ -50,3 +50,11 @@ func TestMarkdownDrawsTablesRulesAndNestedCode(t *testing.T) {
 		}
 	}
 }
+
+func TestUserMessageIsARightAlignedBubbleAsWideAsItsText(t *testing.T) {
+	out, _ := New().renderUserMessage(newMessage("user", "hi there"), 40, grooveColors())
+	lines := strings.Split(ansi.Strip(out), "\n")
+	if len(lines) != 3 || lines[0] != strings.Repeat(" ", 28)+strings.Repeat("▄", 12) || lines[1] != strings.Repeat(" ", 28)+"  hi there  " {
+		t.Fatalf("bubble is not right-aligned to its text: %q", lines)
+	}
+}

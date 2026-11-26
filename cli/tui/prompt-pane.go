@@ -19,7 +19,7 @@ func newPrompt() textarea.Model {
 		return "  "
 	})
 	styles := input.Styles()
-	styles.Focused.Prompt = lipgloss.NewStyle().Foreground(colors.userAccent)
+	styles.Focused.Prompt = lipgloss.NewStyle().Foreground(colors.accent)
 	styles.Focused.CursorLine = styles.Focused.CursorLine.Background(lipgloss.NoColor{})
 	styles.Focused.EndOfBuffer = lipgloss.NewStyle().Foreground(colors.active)
 	styles.Focused.LineNumber = lipgloss.NewStyle().Foreground(colors.accent)
@@ -38,7 +38,7 @@ func newPrompt() textarea.Model {
 func applyPromptTheme(input *textarea.Model) {
 	c := grooveColors()
 	styles := input.Styles()
-	styles.Focused.Prompt = lipgloss.NewStyle().Foreground(c.userAccent)
+	styles.Focused.Prompt = lipgloss.NewStyle().Foreground(c.accent)
 	styles.Focused.CursorLine = styles.Focused.CursorLine.Background(lipgloss.NoColor{})
 	styles.Focused.EndOfBuffer = lipgloss.NewStyle().Foreground(c.muted)
 	input.SetStyles(styles)
