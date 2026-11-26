@@ -105,6 +105,11 @@ func (m Model) workspaceView() tea.View {
 			help = m.tr("↑↓ prompts · F4 providers · ? help", "↑↓ 이전 질문 · F4 공급처 · ? 도움말")
 		}
 	}
+	if m.editingAt >= 0 {
+		// Enter forks while editing, so the hint line must not still say it sends.
+		// Short enough for the smallest 44-column window.
+		help = m.tr("Editing · Enter forks · Esc cancels", "이전 질문 편집 · Enter 분기 · Esc 취소")
+	}
 	if m.commandPending() {
 		help = m.tr("↑↓ choose command · Tab complete · Enter run · Esc close", "↑↓ 명령 선택 · Tab 완성 · Enter 실행 · Esc 닫기")
 	}

@@ -247,9 +247,6 @@ func (m Model) reviewQueue(action string) (tea.Model, tea.Cmd) {
 
 func (m Model) composerExtraRows(width int) []string {
 	rows := []string{}
-	if m.editingAt >= 0 {
-		rows = append(rows, m.tr("Editing previous prompt · Enter forks · Esc cancels", "이전 질문 편집 중 · Enter 분기 · Esc 취소"))
-	}
 	if len(m.queue) > 0 {
 		state := m.tr("waiting", "대기")
 		if m.queuePaused {

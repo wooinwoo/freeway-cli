@@ -184,6 +184,12 @@ func TestDoubleEscapeEditPreservesOriginalUntilFork(t *testing.T) {
 	if m.editingAt != 0 || m.prompt.Value() != "original" {
 		t.Fatal("double escape did not edit last prompt")
 	}
+	for _, width := range []int{80, 44} {
+		m = update(m, tea.WindowSizeMsg{Width: width, Height: 24})
+		if view := ansi.Strip(m.View().Content); !strings.Contains(view, "이전 질문 편집 · Enter 분기 · Esc 취소") || strings.Contains(view, "Enter 보내기") {
+			t.Fatalf("the hint line does not say Enter forks while editing at %d columns:\n%s", width, view)
+		}
+	}
 	m.prompt.SetValue("revised")
 	if chat := m.snapshot(); chat.Draft != "" || len(chat.DraftFiles) > 0 {
 		t.Fatalf("the edit was saved as a draft of the original conversation: %q", chat.Draft)
@@ -209,6 +215,10 @@ func TestAForkIsMarkedAtTheStartOfItsTitle(t *testing.T) {
 	next, _ = m.performNavigation("fork")
 	if title := next.(Model).session.Title; title != m.session.Title {
 		t.Fatalf("a fork of a fork repeats the mark: %q", title)
+	}
+	m.session.Title = "옛 대화 (fork)"
+	if next, _ = m.performNavigation("fork"); next.(Model).session.Title != "분기 · 옛 대화" {
+		t.Fatalf("a fork made by an older version keeps both marks: %q", next.(Model).session.Title)
 	}
 }
 

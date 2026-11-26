@@ -699,7 +699,8 @@ func (m Model) performNavigation(action string) (tea.Model, tea.Cmd) {
 		original := m.session
 		// The mark goes in front, so a fork still differs from its original once the list cuts the title short.
 		mark := m.tr("Fork · ", "분기 · ")
-		title := []rune(strings.TrimPrefix(m.titleOrDefault(original.Title), mark))
+		// Older versions marked forks with " (fork)" at the end; one mark is enough.
+		title := []rune(strings.TrimSuffix(strings.TrimPrefix(m.titleOrDefault(original.Title), mark), " (fork)"))
 		if len(title) > 110 {
 			title = title[:110]
 		}
