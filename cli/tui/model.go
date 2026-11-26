@@ -20,7 +20,7 @@ type Model struct {
 	interactionState
 	prefs                                                                   Preferences
 	renderedTheme                                                           string
-	width, height                                                           int
+	width, height, screenWidth                                              int
 	chat                                                                    viewport.Model
 	find                                                                    *transcriptSearch
 	prompt                                                                  textarea.Model
@@ -172,7 +172,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mcpToolFinished:
 		return m.receiveMCPToolResult(msg)
 	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
+		m.screenWidth, m.width, m.height = msg.Width, min(msg.Width, maxWidth), msg.Height
 		m.resize()
 		if m.find == nil && !m.modelsFocused && m.usable() {
 			return m, m.prompt.Focus()
@@ -296,7 +296,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		if m.showLatestButton() && msg.Button == tea.MouseLeft {
 			x, y := m.latestButtonPosition()
-			if msg.Y == y && msg.X >= x && msg.X < m.width-4 {
+			if X := msg.X - m.leftOffset(); msg.Y == y && X >= x && X < m.width-4 {
 				m.chat.GotoBottom()
 				return m, nil
 			}
@@ -424,13 +424,8 @@ func (m *Model) layout() {
 	// The textarea keeps unlimited content; only its visible height is capped.
 	extra := len(m.composerExtraRows(max(1, m.width-4)))
 	visibleLimit := min(8, max(1, m.height-11-extra))
-	minimum := 1
-	if m.height >= 22 {
-		minimum = 3
-	} else if m.height >= 16 {
-		minimum = 2
-	}
-	m.prompt.MinHeight = min(minimum, visibleLimit)
+	// The composer starts at one row and grows with its text, as in most terminal chat tools.
+	m.prompt.MinHeight = 1
 	promptHeight := min(visibleLimit, max(m.prompt.MinHeight, m.prompt.Height()))
 	if m.prompt.Height() != promptHeight {
 		m.prompt.SetHeight(promptHeight)
@@ -474,9 +469,24 @@ func (m *Model) renderMessages() {
 	m.renderConversation()
 }
 
+// maxWidth keeps lines readable on wide terminals: a 100-cell conversation column plus margins.
+// That fits about 50 Korean syllables, or an 88-character line of code in a frame.
+const maxWidth = 104
+
+// leftOffset centers the screen when the terminal is wider than maxWidth.
+func (m Model) leftOffset() int { return max(0, (m.screenWidth-m.width)/2) }
+
 func (m Model) View() tea.View {
+	view := m.workspaceView()
 	if m.mcpApproval != nil {
-		return themedView(m.mcpApprovalView(), m.prefs.NoColor)
+		view = m.mcpApprovalView()
 	}
-	return themedView(m.workspaceView(), m.prefs.NoColor)
+	if offset := m.leftOffset(); offset > 0 {
+		pad := strings.Repeat(" ", offset)
+		view.Content = pad + strings.ReplaceAll(view.Content, "\n", "\n"+pad)
+		if view.Cursor != nil {
+			view.Cursor.X += offset
+		}
+	}
+	return themedView(view, m.prefs.NoColor)
 }

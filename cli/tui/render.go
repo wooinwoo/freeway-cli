@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image/color"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -272,8 +271,9 @@ func sumInts(values []int) int {
 }
 
 func (m Model) renderUserMessage(message client.Message, width int, colors schemeColors) (string, []transcriptWrap) {
-	// A right-aligned bubble as wide as its text. Half blocks above and below pad it by half a row.
-	bodyWidth := max(1, width-min(16, max(2, width/8))-4)
+	// A tinted band across the conversation column, with text in the same column as answers.
+	// Half blocks above and below pad it by half a row.
+	bodyWidth := max(1, width-4)
 	var lines [][]string
 	var sources []string
 	if message.Content != "" || len(message.Files) == 0 {
@@ -282,29 +282,21 @@ func (m Model) renderUserMessage(message client.Message, width int, colors schem
 			sources = append(sources, line)
 		}
 	}
-	var files []string
-	for _, file := range message.Files {
-		files = append(files, ansi.Truncate(m.tr("[file] ", "[파일] ")+terminalSafe(file.Path), bodyWidth, "…"))
-	}
-	textWidth := 0
-	for _, part := range append(slices.Concat(lines...), files...) {
-		textWidth = max(textWidth, ansi.StringWidth(part))
-	}
-	gutter := strings.Repeat(" ", max(0, width-textWidth-4))
 	edge := lipgloss.NewStyle().Foreground(colors.selected)
 	panel := lipgloss.NewStyle().Background(colors.selected).Foreground(colors.text)
-	rows := []string{gutter + edge.Render(strings.Repeat("▄", textWidth+4))}
+	rows := []string{edge.Render(strings.Repeat("▄", width))}
 	var wraps []transcriptWrap
 	for i, parts := range lines {
-		recordWordWrap(&wraps, len(rows), len(gutter)+2, sources[i], parts)
+		recordWordWrap(&wraps, len(rows), 2, sources[i], parts)
 		for _, part := range parts {
-			rows = append(rows, gutter+panel.Render("  "+padCells(part, textWidth)+"  "))
+			rows = append(rows, panel.Render("  "+padCells(part, bodyWidth)+"  "))
 		}
 	}
-	for _, file := range files {
-		rows = append(rows, gutter+panel.Foreground(colors.accent).Render("  "+padCells(file, textWidth)+"  "))
+	for _, file := range message.Files {
+		label := ansi.Truncate(m.tr("[file] ", "[파일] ")+terminalSafe(file.Path), bodyWidth, "…")
+		rows = append(rows, panel.Foreground(colors.accent).Render("  "+padCells(label, bodyWidth)+"  "))
 	}
-	rows = append(rows, gutter+edge.Render(strings.Repeat("▀", textWidth+4)))
+	rows = append(rows, edge.Render(strings.Repeat("▀", width)))
 	return strings.Join(rows, "\n"), wraps
 }
 
@@ -325,15 +317,15 @@ func (m *Model) renderConversation() {
 		}
 		var rendered string
 		var wraps []transcriptWrap
-		bodyWidth := max(1, width-4)
+		bodyWidth := max(1, width-2)
 		label := lipgloss.NewStyle().Foreground(colors.accent).Bold(true)
 		if message.Role == "user" {
 			rendered, wraps = m.renderUserMessage(message, width, colors)
 		} else {
 			rendered, wraps = markdown(message.Content, bodyWidth)
 			for i := range wraps {
-				wraps[i].row += 2
-				wraps[i].prefix += 4
+				wraps[i].row++
+				wraps[i].prefix += 2
 			}
 			if message.Content == "" && m.busy {
 				rendered = lipgloss.NewStyle().Foreground(colors.muted).Render(m.tr("Thinking…", "응답을 기다리는 중…"))
@@ -351,7 +343,7 @@ func (m *Model) renderConversation() {
 				}
 				identity += lipgloss.NewStyle().Foreground(colors.muted).Render(ansi.Truncate(route, width-ansi.StringWidth(identity), "…"))
 			}
-			rendered = identity + "\n\n    " + strings.ReplaceAll(rendered, "\n", "\n    ")
+			rendered = identity + "\n  " + strings.ReplaceAll(rendered, "\n", "\n  ")
 		}
 		cache[i] = renderedMessage{message: message, width: width, text: rendered, wraps: wraps}
 		rows = append(rows, rendered)
