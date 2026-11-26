@@ -263,9 +263,9 @@ func (m Model) composerExtraRows(width int) []string {
 	}
 	limit := 6
 	if matches := m.commandMatches(); len(matches) > 0 {
-		// A bare slash lists every command, so the list takes the rows the transcript can spare.
-		limit = max(limit, m.height-12)
-		size := max(4, limit-len(rows))
+		// Six commands at a time keep the conversation in view; Up and Down scroll the rest.
+		size := 6
+		limit = len(rows) + size
 		start := max(0, min(m.commandIndex-size+1, len(matches)-size))
 		shown := matches[start:min(start+size, len(matches))]
 		// Measured over every match, so the descriptions stay put while the list scrolls.

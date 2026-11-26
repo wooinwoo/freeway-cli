@@ -139,18 +139,15 @@ func TestModelCommandsOpenMenu(t *testing.T) {
 	}
 }
 
-func TestABareSlashListsAsManyCommandsAsTheWindowAllows(t *testing.T) {
+func TestABareSlashShowsSixCommandsAndItsPlaceInTheList(t *testing.T) {
+	// Only rows under the composer count; the welcome screen also names /models.
+	listed := regexp.MustCompile(`(?m)^ *(› )?/[a-z-]+ {2,}\S`)
+	below := func(view string) string { return view[strings.LastIndex(view, "╯"):] }
 	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 60})
 	m = update(m, tea.KeyPressMsg{Code: '/', Text: "/"})
 	view := ansi.Strip(m.View().Content)
-	for _, c := range commands {
-		// A long description is cut at the window edge, so its first word is enough.
-		if !regexp.MustCompile(regexp.QuoteMeta(c.Name) + ` {2,}` + regexp.QuoteMeta(strings.Fields(c.Description)[0])).MatchString(view) {
-			t.Fatalf("a tall window left %s out of the command list", c.Name)
-		}
-	}
-	if !strings.Contains(view, fmt.Sprintf("Command 1/%d", len(commands))) || lipgloss.Height(m.View().Content) != 60 {
-		t.Fatal("the command list hid its position or pushed the footer out of the window")
+	if shown := len(listed.FindAllString(below(view), -1)); shown != 6 || !strings.Contains(view, fmt.Sprintf("Command 1/%d", len(commands))) {
+		t.Fatalf("a tall window showed %d commands or hid the position:\n%s", shown, view)
 	}
 	m = update(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = update(m, press(tea.KeyUp))
@@ -159,7 +156,7 @@ func TestABareSlashListsAsManyCommandsAsTheWindowAllows(t *testing.T) {
 	if !regexp.MustCompile(`› `+regexp.QuoteMeta(last.Name)+` {2,}`+last.Description).MatchString(view) || !strings.Contains(view, fmt.Sprintf("Command %d/%d", len(commands), len(commands))) {
 		t.Fatalf("moving up from the first command did not show the last one and its position:\n%s", view)
 	}
-	if shown := strings.Count(view, "  /"); shown < 10 || lipgloss.Height(m.View().Content) != 24 {
+	if shown := len(listed.FindAllString(below(view), -1)); shown != 6 || lipgloss.Height(m.View().Content) != 24 {
 		t.Fatalf("a 24-row window showed %d commands or pushed the footer out", shown)
 	}
 	m = update(m, tea.WindowSizeMsg{Width: 44, Height: 24})
