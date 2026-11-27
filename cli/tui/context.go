@@ -22,6 +22,7 @@ type requestContext struct {
 	system             string
 	includeAttachments bool
 	excludedFiles      map[string]bool
+	auto               bool
 }
 
 func (m Model) contextSelection() client.ContextSelection {
@@ -31,9 +32,29 @@ func (m Model) contextSelection() client.ContextSelection {
 	return defaultContext
 }
 
-func planContext(history []client.Message, current *client.Message, system string, selection client.ContextSelection) requestContext {
+// autoHistoryBudget is how much earlier conversation Auto resends, in the gateway's byte
+// estimate. The latest exchange always goes whole; older turns go while they fit.
+const autoHistoryBudget = 24000
+
+func planContext(history []client.Message, current *client.Message, system string, selection client.ContextSelection, auto bool) requestContext {
 	start := 0
 	switch {
+	case auto && selection.RecentTurns == -1 && selection.IncludePriorAttachments && len(selection.ExcludedPriorFiles) == 0:
+		// A long conversation would otherwise spend free quota resending its beginning on every turn.
+		// A model chosen by hand keeps the whole conversation, and so does a context set with F8.
+		start = len(history)
+		used := 0
+		for i := len(history) - 1; i >= 0; i-- {
+			if includesModelContext(history[i]) {
+				used += client.InputTokenEstimate(history[i])
+			}
+			if history[i].Role == "user" {
+				if start < len(history) && used > autoHistoryBudget {
+					break
+				}
+				start = i
+			}
+		}
 	case selection.RecentTurns == 0:
 		start = len(history)
 	case selection.RecentTurns > 0:
@@ -48,7 +69,7 @@ func planContext(history []client.Message, current *client.Message, system strin
 			}
 		}
 	}
-	plan := requestContext{history: history, start: start, current: current, system: system, includeAttachments: selection.IncludePriorAttachments}
+	plan := requestContext{history: history, start: start, current: current, system: system, includeAttachments: selection.IncludePriorAttachments, auto: auto}
 	if len(selection.ExcludedPriorFiles) > 0 {
 		plan.excludedFiles = make(map[string]bool, len(selection.ExcludedPriorFiles))
 		for _, path := range selection.ExcludedPriorFiles {
@@ -137,16 +158,16 @@ func (m Model) nextRequestContext() requestContext {
 	if text := strings.TrimSpace(m.prompt.Value()); text != "" || len(m.files) > 0 {
 		current = &client.Message{Role: "user", Content: text, Files: m.files}
 	}
-	return planContext(m.messages, current, m.session.SystemPrompt, m.contextSelection())
+	return planContext(m.messages, current, m.session.SystemPrompt, m.contextSelection(), m.selected == "free/auto")
 }
 
 func (m Model) responseContext() requestContext {
 	for i := len(m.messages) - 1; i >= 0; i-- {
 		if m.messages[i].Role == "user" {
-			return planContext(m.messages[:i], &m.messages[i], m.session.SystemPrompt, m.responseTarget.context)
+			return planContext(m.messages[:i], &m.messages[i], m.session.SystemPrompt, m.responseTarget.context, m.responseTarget.model == "free/auto")
 		}
 	}
-	return planContext(m.messages, nil, m.session.SystemPrompt, m.responseTarget.context)
+	return planContext(m.messages, nil, m.session.SystemPrompt, m.responseTarget.context, m.responseTarget.model == "free/auto")
 }
 
 func (m Model) contextHint() string {
@@ -154,7 +175,7 @@ func (m Model) contextHint() string {
 		return ""
 	}
 	selection := m.contextSelection()
-	plan := planContext(m.messages, nil, "", selection)
+	plan := planContext(m.messages, nil, "", selection, m.selected == "free/auto")
 	included, excluded := 0, 0
 	for _, message := range plan.history[plan.start:] {
 		if includesModelContext(message) {
@@ -176,6 +197,9 @@ func (m Model) contextHint() string {
 	if len(plan.history) > 0 && (selection.RecentTurns != -1 || !selection.IncludePriorAttachments || len(selection.ExcludedPriorFiles) > 0) {
 		return m.tr("Context restricted for this conversation · F8 to review", "이 대화의 문맥이 제한됨 · F8로 확인")
 	}
+	if plan.auto && plan.start > 0 {
+		return m.tr("Context · Auto sends only recent turns to save tokens · F8", "문맥 · Auto가 토큰을 아끼려고 최근 대화만 보냄 · F8")
+	}
 	return ""
 }
 
@@ -183,6 +207,9 @@ func (m Model) contextItems() []list.Item {
 	selection := m.contextSelection()
 	plan := m.nextRequestContext()
 	turns := m.tr("All earlier turns", "이전 대화 전체")
+	if plan.auto && plan.start > 0 && selection.RecentTurns == -1 {
+		turns = m.tr("Earlier turns · recent ones, chosen by Auto", "이전 대화 · Auto가 고른 최근 대화")
+	}
 	if selection.RecentTurns >= 0 {
 		turns = fmt.Sprintf(m.tr("Earlier turns · last %d", "이전 대화 · 최근 %d개"), selection.RecentTurns)
 	}

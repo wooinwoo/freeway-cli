@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -16,7 +17,7 @@ func TestContextKeepsWholeRecentTurnsAndOnlyCurrentAttachments(t *testing.T) {
 		{Role: "assistant", Content: "incomplete response", Status: "stopped"},
 	}
 	current := client.Message{Role: "user", Content: "current question", Files: []client.Attachment{{Path: "new.txt", Content: "new attachment"}}}
-	plan := planContext(history, &current, "system instructions", client.ContextSelection{RecentTurns: 1})
+	plan := planContext(history, &current, "system instructions", client.ContextSelection{RecentTurns: 1}, false)
 	messages := plan.messages()
 	if len(messages) != 4 || messages[0].Role != "system" || messages[1].Content != "recent question" ||
 		len(messages[1].Files) != 0 || messages[2].Content != "recent answer" ||
@@ -45,7 +46,7 @@ func TestContextMarksAQuestionWhoseReplyWasStopped(t *testing.T) {
 	}
 	current := client.Message{Role: "user", Content: "say hi"}
 	var got []string
-	for _, message := range planContext(history, &current, "", client.ContextSelection{RecentTurns: -1}).messages() {
+	for _, message := range planContext(history, &current, "", client.ContextSelection{RecentTurns: -1}, false).messages() {
 		got = append(got, message.Role+": "+message.Content)
 	}
 	want := []string{"user: answered question", "assistant: answer",
@@ -153,5 +154,32 @@ func TestAttachmentDoesNotRewriteTheDraftOutsideAnUnchangedInlineToken(t *testin
 	m = update(m, fileAttached{file: client.Attachment{Path: "explicit.txt"}, epoch: m.sessionEpoch})
 	if m.prompt.Value() != "New text typed while a file was loading" || len(m.files) != 2 {
 		t.Fatalf("attachment changed the draft: %q %+v", m.prompt.Value(), m.files)
+	}
+}
+
+func TestAutoResendsOnlyRecentTurnsThatFitItsBudget(t *testing.T) {
+	var history []client.Message
+	for i := range 12 {
+		history = append(history,
+			client.Message{Role: "user", Content: fmt.Sprintf("질문 %d %s", i, strings.Repeat("가", 1000))},
+			client.Message{Role: "assistant", Content: strings.Repeat("답", 1000)})
+	}
+	history[len(history)-2].Files = []client.Attachment{{Path: "big.txt", Content: strings.Repeat("x", 100000)}}
+	current := client.Message{Role: "user", Content: "그 파일 다시 설명해줘"}
+	plan := planContext(history, &current, "", defaultContext, true)
+	sent := plan.messages()
+	if first := sent[0].Content; !strings.HasPrefix(first, "질문 11 ") || len(sent[0].Files) != 1 {
+		t.Fatalf("Auto dropped the latest exchange or its file; first message: %.20q", first)
+	}
+	if whole := planContext(history, &current, "", defaultContext, false).messages(); len(whole) != len(history)+1 {
+		t.Fatalf("a chosen model got %d of %d messages", len(whole), len(history)+1)
+	}
+	history[len(history)-2].Files = nil
+	sent = planContext(history, &current, "", defaultContext, true).messages()
+	if kept := (len(sent) - 1) / 2; kept < 2 || kept >= 12 {
+		t.Fatalf("Auto kept %d of 12 earlier turns under its budget", kept)
+	}
+	if limited := planContext(history, &current, "", client.ContextSelection{RecentTurns: 8, IncludePriorAttachments: true}, true).messages(); len(limited) != 17 {
+		t.Fatalf("a context set with F8 was overridden by Auto: %d messages", len(limited))
 	}
 }
