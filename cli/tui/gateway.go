@@ -201,6 +201,11 @@ func (m Model) beginTextStream(model string, request []client.Message, prefix st
 	events := make(chan client.Event, 16)
 	backend, settings, prefs := m.gateway, m.responseTarget.settings, m.prefs
 	mcpRunning := m.mcpRunning
+	var box *toolbox
+	if model == "free/auto" && !mcpRunning && prefix == "" {
+		// Auto can look things up itself; a model chosen by hand answers alone.
+		box = newToolbox(m.workdir, prefs)
+	}
 	go func() {
 		defer close(events)
 		// The gateway ends stalled routes after 90 seconds of silence and caps a reply at 15 minutes.
@@ -230,13 +235,19 @@ func (m Model) beginTextStream(model string, request []client.Message, prefix st
 					emit(event)
 				}
 			}
+			stream := func(messages []client.Message, callback func(client.Event)) error {
+				if configured, ok := backend.(interface {
+					StreamWithSettings(context.Context, string, []client.Message, client.Settings, func(client.Event)) error
+				}); ok {
+					return configured.StreamWithSettings(requestCtx, model, messages, settings, callback)
+				}
+				return backend.Stream(requestCtx, model, messages, callback)
+			}
 			var err error
-			if configured, ok := backend.(interface {
-				StreamWithSettings(context.Context, string, []client.Message, client.Settings, func(client.Event)) error
-			}); ok {
-				err = configured.StreamWithSettings(requestCtx, model, request, settings, callback)
+			if box != nil {
+				err = streamWithTools(requestCtx, stream, request, box, callback)
 			} else {
-				err = backend.Stream(requestCtx, model, request, callback)
+				err = stream(request, callback)
 			}
 			if err != nil {
 				event := client.Event{Type: "error", Error: friendlyError(err, prefs)}
@@ -353,6 +364,8 @@ func (m Model) receiveResponse(msg responseEvent) (tea.Model, tea.Cmd) {
 		m.dirty = true
 		m.status = "Writing response"
 		m.renderPending = true
+	case "tool":
+		m.status = "Using tools · " + oneLine(msg.event.Text)
 	case "done":
 		m.responseElapsed = time.Since(m.startedAt)
 		if msg.event.Usage != nil {

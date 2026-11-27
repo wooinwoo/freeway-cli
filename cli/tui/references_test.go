@@ -14,8 +14,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-func english(en, _ string) string { return en }
-
 func TestPromptReferencesDropTrailingParticlesAndPunctuation(t *testing.T) {
 	links := promptLinks("이 영상 https://youtu.be/abc를 요약하고 (https://example.com/a). 도 봐줘")
 	if want := []string{"https://youtu.be/abc", "https://example.com/a"}; !slices.Equal(links, want) {

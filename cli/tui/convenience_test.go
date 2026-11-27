@@ -53,7 +53,7 @@ func (g *burstGateway) Models(context.Context) ([]client.Model, error) {
 }
 func (g *burstGateway) Stream(_ context.Context, model string, messages []client.Message, emit func(client.Event)) error {
 	g.calls = append(g.calls, model)
-	g.requests = append(g.requests, messages)
+	g.requests = append(g.requests, withoutToolRules(messages))
 	if g.failFirst && len(g.calls) == 1 {
 		if g.partial {
 			emit(client.Event{Type: "text", Text: "부분 답변"})

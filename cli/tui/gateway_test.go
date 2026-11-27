@@ -19,7 +19,7 @@ func (f fixtureGateway) Models(context.Context) ([]client.Model, error) {
 }
 
 func (f fixtureGateway) Stream(_ context.Context, _ string, messages []client.Message, emit func(client.Event)) error {
-	f.requests <- messages
+	f.requests <- withoutToolRules(messages)
 	emit(client.Event{Type: "text", Text: "안녕"})
 	emit(client.Event{Type: "done", Text: "안녕 🌏", Model: "fixture/free", Provider: "fixture"})
 	return nil

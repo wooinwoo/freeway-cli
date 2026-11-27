@@ -534,6 +534,7 @@ var koreanStatus = map[string]string{
 	"Image tool configured": "이미지 도구 설정됨",
 	"Ready to retry":        "다시 시도 가능", "Stopped": "중지됨",
 	"Reading links and files": "링크와 파일 읽는 중",
+	"Using tools":             "도구 사용 중",
 }
 
 func sameRenderedMessage(a, b client.Message) bool {
