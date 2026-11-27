@@ -90,7 +90,7 @@ func (m Model) rankingEvidence(item modelItem) string {
 	}
 	switch m.modelRanking {
 	case codingRanking:
-		return "Terminal-Bench 4.0 · Artificial Analysis"
+		return "Terminal-Bench · Artificial Analysis"
 	case reasoningRanking:
 		return "HLE-Diamond · Artificial Analysis"
 	default:

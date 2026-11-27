@@ -139,7 +139,7 @@ func TestModelPickerSwitchesRanksWithoutChangingCursorOrDraft(t *testing.T) {
 		m.models.list.SelectedItem().(modelItem).ID != "general-first" || m.prompt.Value() != "Unsent draft" {
 		t.Fatal("coding view must reorder benchmarked slots while keeping the cursor and draft")
 	}
-	if view := ansi.Strip(m.View().Content); !strings.Contains(view, "Ctrl+T rank") || !strings.Contains(view, "Terminal-Bench 4.0") || !strings.Contains(view, "Kilo · OpenRouter") || lipgloss.Height(view) > 12 {
+	if view := ansi.Strip(m.View().Content); !strings.Contains(view, "Ctrl+T rank") || !strings.Contains(view, "Terminal-Bench · Artificial Analysis") || !strings.Contains(view, "Kilo · OpenRouter") || lipgloss.Height(view) > 12 {
 		t.Fatalf("narrow picker hid the benchmark or keyboard controls:\n%s", view)
 	}
 	m = update(m, ctrl('t'))

@@ -52,19 +52,33 @@ func modelQualityRank(id string) int {
 // https://artificialanalysis.ai/models/comparisons/deepseek-v4-1-flash-vs-deepseek-v4-1-flash-1017
 // https://artificialanalysis.ai/models/comparisons/minimax-m3-1-flash-vs-deepseek-v4-1-flash
 // https://artificialanalysis.ai/models/comparisons/deepseek-v4-1-flash-vs-deepseek-v4-pro
+// Later entries use Terminal-Bench 4.1 / FrontierCode 2.0 from the Intelligence Index v5.0.2
+// leaderboard, checked 2026-11-27. Free models scoring near zero on both are left unranked.
+// https://artificialanalysis.ai/leaderboards/models
 var codingQualityOrder = []string{
 	"model/deepseek/deepseek-v4.1-flash-1017",
 	"model/deepseek/deepseek-v4.1-flash",
 	"model/minimax/minimax-m3.1-flash",
+	"opencode/mimo-v2.6-flash-free", // 23.7 / 21.6
 	"model/deepseek/deepseek-v4-pro-0813",
+	"model/reflection/beam",              // 3.0 / 5.1; the catalog groups Beam 1.0 under this ID
+	"model/nvidia/nemotron-3.5-super-vl", // 0.0 / 6.1
 }
 
-// HLE-Diamond scores in the same Artificial Analysis comparisons above.
+// HLE-Diamond scores in the same Artificial Analysis comparisons above, then the
+// v5.0.2 leaderboard for the free models added on 2026-11-27.
 var reasoningQualityOrder = []string{
 	"model/minimax/minimax-m3.1-flash",
 	"model/deepseek/deepseek-v4.1-flash-1017",
 	"model/deepseek/deepseek-v4-pro-0813",
 	"model/deepseek/deepseek-v4.1-flash",
+	"opencode/mimo-v2.6-flash-free",           // 13.7
+	"model/reflection/beam",                   // 12.8
+	"model/nvidia/muse-glimmer-30b",           // 9.1
+	"model/nvidia/nemotron-3.5-super-vl",      // 8.8
+	"model/nvidia/nemotron-3-ultra-550b-a55b", // 8.5
+	"model/nvidia/nemotron-3-ultra",
+	"model/google/gemma-4-31b-it", // 7.2
 }
 
 const codingFilename = `[\p{L}\w/-]+\.(?:go|py|rs|tsx|ts|jsx|js|kt|swift|java|cpp|cs|rb|sh|sql)\b`
