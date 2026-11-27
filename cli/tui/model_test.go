@@ -165,6 +165,15 @@ func TestABareSlashShowsSixCommandsAndItsPlaceInTheList(t *testing.T) {
 	}
 }
 
+func TestDraggingExplainsHowToSelectText(t *testing.T) {
+	m := update(New(), tea.WindowSizeMsg{Width: 100, Height: 24})
+	m = update(m, tea.MouseClickMsg{Button: tea.MouseLeft, X: 10, Y: 5})
+	m = update(m, tea.MouseMotionMsg{Button: tea.MouseLeft, X: 20, Y: 5})
+	if view := ansi.Strip(m.View().Content); !strings.Contains(view, "hold Shift while dragging") {
+		t.Fatalf("a drag gave no hint about selecting text:\n%s", view)
+	}
+}
+
 func TestSlashCompletion(t *testing.T) {
 	m := update(New(), tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = update(m, tea.KeyPressMsg{Code: '/', Text: "/"})

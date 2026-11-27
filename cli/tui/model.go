@@ -309,6 +309,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+	case tea.MouseMotionMsg:
+		if msg.Button == tea.MouseLeft {
+			// Freeway takes the mouse for scrolling, so a plain drag cannot select text.
+			m.notify(m.tr("To select text, hold Shift while dragging · /copy copies the reply", "글자를 선택하려면 Shift를 누른 채 드래그하세요 · /copy는 답변 복사"))
+			return m, nil
+		}
 	case tea.MouseWheelMsg:
 		if m.modelsFocused {
 			var cmd tea.Cmd
