@@ -125,6 +125,9 @@ func (a *httpAdapter) Stream(ctx context.Context, model Model, key string, input
 	if err := a.validateModel(model, input); err != nil {
 		return Completion{}, err
 	}
+	if ImageBytes(input.Messages) > 0 && !model.Vision {
+		return Completion{}, failure("unsupported_capability", 400)
+	}
 	if err := a.validateKey(key); err != nil {
 		return Completion{}, err
 	}
@@ -147,7 +150,7 @@ func (a *httpAdapter) Stream(ctx context.Context, model Model, key string, input
 		}
 	}
 	encoded, err := json.Marshal(body)
-	if err != nil || len(encoded) > 2*1024*1024 {
+	if err != nil || len(encoded) > 2*1024*1024+ImageBytes(input.Messages) {
 		return Completion{}, failure("invalid_request", 400)
 	}
 	ctx, cancel := context.WithTimeout(ctx, MaxStreamDuration)

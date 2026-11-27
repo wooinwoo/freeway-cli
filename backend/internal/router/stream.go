@@ -68,8 +68,23 @@ func (r *Router) Stream(ctx context.Context, input contracts.CompletionRequest, 
 		policy := policies[candidate.source.ID]
 		return !policy.enabled || (auto && !policy.auto)
 	})
+	images := false
+	for _, message := range input.Messages {
+		images = images || len(message.Images) > 0
+	}
+	if images {
+		// Only routes whose catalog lists image input can answer about a picture.
+		catalog = slices.DeleteFunc(catalog, func(candidate route) bool { return !candidate.model.Vision })
+		if len(catalog) == 0 {
+			return contracts.Completion{}, &contracts.Problem{Code: "no_vision_route", Message: "No connected free model can read images. Choose Auto or a model that accepts images.", Status: http.StatusServiceUnavailable}
+		}
+	}
 	hard := false
-	if auto {
+	if auto && images {
+		// Measured image models go first; other image routes follow in their general order.
+		slices.SortStableFunc(catalog, func(a, b route) int { return visionRank(a.groupID) - visionRank(b.groupID) })
+		catalog = prioritizeDistinctProviders(catalog)
+	} else if auto {
 		if order := taskBenchmark(input.Messages); len(order) != 0 {
 			r.prioritizeBenchmark(catalog, order)
 			hard = true
@@ -256,7 +271,7 @@ func providerRequest(input contracts.CompletionRequest) providers.Request {
 		request.MaxTokens = *input.MaxTokens
 	}
 	for _, message := range input.Messages {
-		request.Messages = append(request.Messages, providers.Message{Role: message.Role, Content: message.Content})
+		request.Messages = append(request.Messages, providers.Message{Role: message.Role, Content: message.Content, Images: message.Images})
 	}
 	return request
 }
@@ -265,7 +280,8 @@ func estimatedTokens(request providers.Request) int {
 	result := request.MaxTokens
 	for _, message := range request.Messages {
 		// Bytes plus framing is a conservative local estimate, not provider tokenization.
-		result += len(message.Content) + 16
+		// Providers bill an image by its pixels, not its file size; 1,500 tokens covers a large one.
+		result += len(message.Content) + 16 + 1500*len(message.Images)
 	}
 	return result
 }

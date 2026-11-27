@@ -412,6 +412,10 @@ func (a *openCodeAdapter) Stream(ctx context.Context, model Model, _ string, inp
 			return Completion{}, failure("unsupported_reasoning", 400)
 		}
 	}
+	if ImageBytes(input.Messages) > 0 {
+		// Prompts reach OpenCode as text, so its routes cannot be given images.
+		return Completion{}, failure("unsupported_capability", 400)
+	}
 	var system, history []string
 	for _, message := range input.Messages {
 		switch message.Role {

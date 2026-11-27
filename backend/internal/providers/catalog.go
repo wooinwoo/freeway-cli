@@ -3,6 +3,7 @@ package providers
 import (
 	"embed"
 	"encoding/json"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -130,7 +131,7 @@ func NormalizeModel(d Definition, raw map[string]any) (Model, bool) {
 	if name == "" {
 		name = id
 	}
-	m := Model{ID: d.ID + "/" + id, Provider: d.ID, UpstreamID: id, Name: name, Free: true, Ready: true, DiscoveredAt: time.Now().UTC()}
+	m := Model{ID: d.ID + "/" + id, Provider: d.ID, UpstreamID: id, Name: name, Free: true, Ready: true, DiscoveredAt: time.Now().UTC(), Vision: readsImages(raw)}
 	if n, ok := numeric(raw["context_length"]); ok {
 		m.Context = int(n)
 	}
@@ -175,6 +176,18 @@ func NormalizeModel(d Definition, raw map[string]any) (Model, bool) {
 		}
 	}
 	return m, true
+}
+
+// readsImages reports whether a catalog entry lists images among its inputs.
+func readsImages(raw map[string]any) bool {
+	architecture, _ := raw["architecture"].(map[string]any)
+	modalities, _ := raw["modalities"].(map[string]any)
+	for _, value := range []any{architecture["input_modalities"], modalities["input"]} {
+		if types, ok := value.([]any); ok && slices.Contains(types, any("image")) {
+			return true
+		}
+	}
+	return false
 }
 
 func supportsTextChat(raw map[string]any) bool {

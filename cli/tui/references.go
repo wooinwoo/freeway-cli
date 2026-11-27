@@ -7,6 +7,7 @@ package tui
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -159,7 +160,11 @@ func (m Model) readReferences(index int, links, paths []string) (tea.Model, tea.
 				result.problems = append(result.problems, label+": "+full)
 				continue
 			}
-			content, err := readReferenceFile(path, tr)
+			read := readReferenceFile
+			if isImagePath(path) {
+				read = imageMarker
+			}
+			content, err := read(path, tr)
 			if err != nil {
 				result.problems = append(result.problems, label+": "+err.Error())
 				continue
@@ -371,4 +376,68 @@ func youtubeText(source string) string {
 	return fmt.Sprintf("YouTube video\nTitle: %s\nChannel: %s\nLength: %d:%02d\n\nDescription:\n%s\n\n"+
 		"[Freeway could read only the title, channel and description. It cannot hear the video or read its captions, so say so if the question needs what is said in the video.]",
 		video.Title, video.Author, seconds/60, seconds%60, strings.TrimSpace(video.Description))
+}
+
+// imageAttachment stands in for an image in a saved conversation. The picture itself is read
+// from disk for the question it belongs to, so saves stay small and earlier images are not resent.
+const imageAttachment = "[Image file. Freeway sends the picture only with the question it was attached to.]"
+
+// Most vision routes accept pictures of a few megabytes; two fit the gateway's 8 MiB request.
+const maxImageBytes = 2560 * 1024
+
+var imageTypes = map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
+
+func isImagePath(path string) bool { return imageTypes[strings.ToLower(filepath.Ext(path))] != "" }
+
+func imageMarker(path string, tr func(string, string) string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.Size() > maxImageBytes {
+		return "", errors.New(tr("images can be at most 2.5 MB", "이미지는 2.5 MB까지 보낼 수 있음"))
+	}
+	return imageAttachment, nil
+}
+
+// withImages reads the pictures attached to the newest question and sends them as images.
+// Earlier questions keep only the note that an image was there.
+func withImages(request []client.Message, root string) []client.Message {
+	last := -1
+	for i := range request {
+		if request[i].Role == "user" {
+			last = i
+		}
+	}
+	if last < 0 {
+		return request
+	}
+	message := request[last]
+	var files []client.Attachment
+	var images []string
+	total := 0
+	for _, file := range message.Files {
+		if file.Content != imageAttachment {
+			files = append(files, file)
+			continue
+		}
+		path := file.Path
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, filepath.FromSlash(path))
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || len(data) > maxImageBytes || total+len(data) > 2*maxImageBytes {
+			files = append(files, client.Attachment{Path: file.Path, Content: "[Freeway could not send this image: the file is missing, changed or too large.]"})
+			continue
+		}
+		total += len(data)
+		images = append(images, "data:"+imageTypes[strings.ToLower(filepath.Ext(path))]+";base64,"+base64.StdEncoding.EncodeToString(data))
+	}
+	if len(images) == 0 {
+		return request
+	}
+	request = append([]client.Message(nil), request...)
+	message.Files, message.Images = files, images
+	request[last] = message
+	return request
 }

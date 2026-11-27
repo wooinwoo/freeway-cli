@@ -49,14 +49,16 @@ type ProviderChange struct {
 }
 
 type InputMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string   `json:"role"`
+	Content string   `json:"content"`
+	Images  []string `json:"images,omitempty"`
 }
 
 func (m *InputMessage) UnmarshalJSON(data []byte) error {
 	var input struct {
-		Role    *string `json:"role"`
-		Content *string `json:"content"`
+		Role    *string  `json:"role"`
+		Content *string  `json:"content"`
+		Images  []string `json:"images"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -66,7 +68,7 @@ func (m *InputMessage) UnmarshalJSON(data []byte) error {
 	if input.Role == nil || input.Content == nil {
 		return errors.New("completion messages require role and content")
 	}
-	*m = InputMessage{Role: *input.Role, Content: *input.Content}
+	*m = InputMessage{Role: *input.Role, Content: *input.Content, Images: input.Images}
 	return nil
 }
 

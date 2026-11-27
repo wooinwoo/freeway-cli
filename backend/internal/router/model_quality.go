@@ -81,6 +81,21 @@ var reasoningQualityOrder = []string{
 	"model/google/gemma-4-31b-it", // 7.2
 }
 
+// MMMU-Pro on the Artificial Analysis v5.0.2 leaderboard, checked 2026-11-27, for the free
+// routes that take images. MiMo-V2.6-Flash scores 73.1 but is offered only through OpenCode,
+// which receives prompts as text.
+var visionQualityOrder = []string{
+	"model/nvidia/muse-glimmer-30b", // 74.3
+	"model/google/gemma-4-31b-it",   // 73.4
+}
+
+func visionRank(id string) int {
+	if index := slices.Index(visionQualityOrder, id); index >= 0 {
+		return index
+	}
+	return len(visionQualityOrder)
+}
+
 const codingFilename = `[\p{L}\w/-]+\.(?:go|py|rs|tsx|ts|jsx|js|kt|swift|java|cpp|cs|rb|sh|sql)\b`
 
 var (

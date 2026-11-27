@@ -195,6 +195,7 @@ func (m Model) beginGeneration() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) beginTextStream(model string, request []client.Message, prefix string) (tea.Model, tea.Cmd) {
+	request = withImages(request, m.workdir)
 	m.generation++
 	ctx, cancel := context.WithCancel(m.ctx)
 	m.cancel = cancel

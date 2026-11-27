@@ -370,6 +370,8 @@ func (m Model) renderUserMessage(message client.Message, width int, colors schem
 		kind := m.tr("[file] ", "[파일] ")
 		if strings.HasPrefix(file.Path, "http://") || strings.HasPrefix(file.Path, "https://") {
 			kind = m.tr("[link] ", "[링크] ")
+		} else if file.Content == imageAttachment {
+			kind = m.tr("[image] ", "[이미지] ")
 		}
 		label := ansi.Truncate(kind+terminalSafe(file.Path), bodyWidth, "…")
 		rows = append(rows, panel.Foreground(colors.accent).Render(lead+padCells(label, bodyWidth)+"  "))

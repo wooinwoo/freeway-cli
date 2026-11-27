@@ -79,6 +79,7 @@ type Model struct {
 	Ready        bool      `json:"ready"`
 	Reason       string    `json:"reason"`
 	Reasoning    Reasoning `json:"reasoning"`
+	Vision       bool      `json:"vision,omitempty"`
 }
 
 type Bucket struct {
@@ -109,6 +110,34 @@ type Quota struct {
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// Images are data URLs, sent only to routes whose catalog says they read images.
+	Images []string `json:"images,omitempty"`
+}
+
+// MarshalJSON writes images as OpenAI content parts, the form vision routes accept.
+func (m Message) MarshalJSON() ([]byte, error) {
+	if len(m.Images) == 0 {
+		return json.Marshal(struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		}{m.Role, m.Content})
+	}
+	parts := []any{map[string]string{"type": "text", "text": m.Content}}
+	for _, image := range m.Images {
+		parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}})
+	}
+	return json.Marshal(map[string]any{"role": m.Role, "content": parts})
+}
+
+// ImageBytes is the size of a request's images, which a request may add to its text limit.
+func ImageBytes(messages []Message) int {
+	total := 0
+	for _, message := range messages {
+		for _, image := range message.Images {
+			total += len(image)
+		}
+	}
+	return total
 }
 
 // MaxStreamDuration caps one reply. Routes that stop producing output end sooner.

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -214,15 +215,26 @@ func validCompletion(input contracts.CompletionRequest) bool {
 	if input.Temperature != nil && (*input.Temperature < 0 || *input.Temperature > 2) {
 		return false
 	}
+	images := 0
 	for _, message := range input.Messages {
 		switch message.Role {
 		case "system", "developer", "user", "assistant":
 		default:
 			return false
 		}
+		if len(message.Images) > 0 && message.Role != "user" {
+			return false
+		}
+		for _, image := range message.Images {
+			if images++; images > 4 || len(image) > 4*1024*1024 || !imageData.MatchString(image[:min(len(image), 64)]) {
+				return false
+			}
+		}
 	}
 	return true
 }
+
+var imageData = regexp.MustCompile(`^data:image/(png|jpeg|webp|gif);base64,`)
 
 func writeEvent(w http.ResponseWriter, controller *http.ResponseController, value any) error {
 	data, err := json.Marshal(value)

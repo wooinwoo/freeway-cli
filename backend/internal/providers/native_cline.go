@@ -147,6 +147,9 @@ func (a *clineAdapter) Stream(ctx context.Context, model Model, key string, requ
 	if len(request.Messages) == 0 || len(request.Messages) > 200 {
 		return Completion{}, failure("invalid_messages", 400)
 	}
+	if ImageBytes(request.Messages) > 0 {
+		return Completion{}, failure("unsupported_capability", 400)
+	}
 	for _, message := range request.Messages {
 		if message.Role != "user" && message.Role != "assistant" && message.Role != "system" && message.Role != "developer" {
 			return Completion{}, failure("invalid_role", 400)

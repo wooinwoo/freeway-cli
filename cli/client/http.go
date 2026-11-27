@@ -64,6 +64,8 @@ type Message struct {
 	Provider string       `json:"provider,omitempty"`
 	Error    string       `json:"error,omitempty"`
 	Files    []Attachment `json:"files,omitempty"`
+	// Images are data URLs read from disk for one request. They are never saved.
+	Images []string `json:"-"`
 }
 
 type Event struct {
@@ -514,8 +516,9 @@ func InputTokenEstimate(message Message) int {
 
 func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []Message, settings Settings, emit func(Event)) error {
 	type prompt struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role    string   `json:"role"`
+		Content string   `json:"content"`
+		Images  []string `json:"images,omitempty"`
 	}
 	prompts := make([]prompt, 0, len(messages))
 	for _, message := range messages {
@@ -523,7 +526,7 @@ func (c *HTTP) StreamWithSettings(ctx context.Context, model string, messages []
 		for _, file := range message.Files {
 			content += attachmentPrefix + file.Path + attachmentDivider + file.Content + attachmentEnd
 		}
-		prompts = append(prompts, prompt{message.Role, content})
+		prompts = append(prompts, prompt{message.Role, content, message.Images})
 	}
 	body := struct {
 		Model       string   `json:"model"`

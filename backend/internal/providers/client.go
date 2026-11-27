@@ -494,7 +494,7 @@ func validate(request Request) error {
 	if err != nil {
 		return failure("invalid_request", 400)
 	}
-	if len(data) > 2*1024*1024 {
+	if len(data) > 2*1024*1024+ImageBytes(request.Messages) {
 		return failure("request_too_large", 413)
 	}
 	return nil

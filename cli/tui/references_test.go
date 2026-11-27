@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestPromptReferencesDropTrailingParticlesAndPunctuation(t *testing.T) {
@@ -98,5 +99,30 @@ func TestPageTextKeepsWhatAReaderSees(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("video text lacks %q:\n%s", want, text)
 		}
+	}
+}
+
+func TestAnImageNamedInThePromptGoesAsAPictureButIsSavedAsANote(t *testing.T) {
+	root := t.TempDir()
+	png := []byte("\x89PNG\r\n\x1a\nfake")
+	if err := os.WriteFile(filepath.Join(root, "shot.png"), png, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g := &burstGateway{}
+	m := connectedFixture(g)
+	m.workdir = root
+	m.prompt.SetValue("shot.png 이 화면 뭐가 문제야?")
+	next, cmd := m.Update(press(tea.KeyEnter))
+	m, _ = drainResponse(t, next.(Model), cmd)
+	sent := g.requests[0][len(g.requests[0])-1]
+	if len(sent.Images) != 1 || sent.Images[0] != "data:image/png;base64,iVBORw0KGgpmYWtl" || len(sent.Files) != 0 {
+		t.Fatalf("the image was not sent as a picture: images %q files %+v", sent.Images, sent.Files)
+	}
+	saved := m.messages[len(m.messages)-2]
+	if len(saved.Files) != 1 || saved.Files[0].Content != imageAttachment || len(saved.Images) != 0 {
+		t.Fatalf("the saved question holds %+v", saved.Files)
+	}
+	if !strings.Contains(ansi.Strip(m.View().Content), "[image] shot.png") {
+		t.Fatal("the conversation does not show the attached image")
 	}
 }
