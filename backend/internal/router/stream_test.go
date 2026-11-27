@@ -426,3 +426,46 @@ func TestSlowSteadyReplyIsNotCutByAFixedDeadline(t *testing.T) {
 		t.Fatalf("a steady reply was cut off: %q %v", text.String(), err)
 	}
 }
+
+type effortUpstream struct {
+	fakeUpstream
+	efforts []string
+}
+
+func (f *effortUpstream) Models(_ context.Context, id string) ([]providers.Model, error) {
+	return []providers.Model{{ID: id + "/deepseek/deepseek-v4.1-flash", Provider: id, UpstreamID: "deepseek/deepseek-v4.1-flash", Free: true, Ready: true,
+		Reasoning: providers.Reasoning{Parameter: "variant", Efforts: []string{"high", "low", "max"}}}}, nil
+}
+
+func (f *effortUpstream) Stream(ctx context.Context, req providers.Request, emit func(string)) (providers.Completion, error) {
+	f.efforts = append(f.efforts, req.ReasoningEffort)
+	return f.fakeUpstream.Stream(ctx, req, emit)
+}
+
+func TestAutoThinksHarderOnlyForCodingAndProofs(t *testing.T) {
+	vault, err := storage.Open(filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer vault.Close()
+	ledger, err := quota.Open(vault, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := &effortUpstream{}
+	r := New(upstream, ledger, []Source{{ID: "deepseek", Priority: 1}}, nil, nil)
+	for _, tc := range []struct{ model, prompt, want string }{
+		{Auto, "Implement a Python function to sort a list.", "high"},
+		{Auto, "이 명제를 증명해줘", "high"},
+		{Auto, "What is the capital of France?", ""},
+		{"model/deepseek/deepseek-v4.1-flash", "Implement a Python function to sort a list.", ""},
+	} {
+		upstream.efforts = nil
+		if _, err := r.Stream(t.Context(), contracts.CompletionRequest{Model: tc.model, Messages: []contracts.InputMessage{{Role: "user", Content: tc.prompt}}}, nil); err != nil {
+			t.Fatalf("%s %q: %v", tc.model, tc.prompt, err)
+		}
+		if len(upstream.efforts) != 1 || upstream.efforts[0] != tc.want {
+			t.Fatalf("%s %q used effort %q, want %q", tc.model, tc.prompt, upstream.efforts, tc.want)
+		}
+	}
+}

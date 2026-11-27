@@ -68,9 +68,11 @@ func (r *Router) Stream(ctx context.Context, input contracts.CompletionRequest, 
 		policy := policies[candidate.source.ID]
 		return !policy.enabled || (auto && !policy.auto)
 	})
+	hard := false
 	if auto {
 		if order := taskBenchmark(input.Messages); len(order) != 0 {
 			r.prioritizeBenchmark(catalog, order)
+			hard = true
 		}
 		catalog = prioritizeDistinctProviders(catalog)
 	}
@@ -118,6 +120,12 @@ func (r *Router) Stream(ctx context.Context, input contracts.CompletionRequest, 
 			tried[candidate.source.ID] = true
 		}
 		request.Provider, request.Model = candidate.source.ID, candidate.model.ID
+		request.ReasoningEffort = ""
+		if hard && slices.Contains(candidate.model.Reasoning.Efforts, "high") {
+			// Coding and proofs gain the most from more thinking. The extra tokens
+			// are spent only there, so other questions keep the route's default.
+			request.ReasoningEffort = "high"
+		}
 		var firstTextWait time.Duration
 		if attempts < attemptLimit && r.hasFallbackProvider(catalog[i+1:], candidate.source.ID, estimate, tried) {
 			firstTextWait = r.firstTextWait
