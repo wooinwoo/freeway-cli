@@ -174,21 +174,29 @@ func readProjectAttachment(root, path string) (client.Attachment, error) {
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return client.Attachment{}, fmt.Errorf("choose a file inside the current project")
 	}
-	info, err := os.Stat(absolute)
+	content, err := readTextFile(absolute)
 	if err != nil {
 		return client.Attachment{}, err
+	}
+	return client.Attachment{Path: filepath.ToSlash(rel), Content: content}, nil
+}
+
+func readTextFile(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
 	}
 	if !info.Mode().IsRegular() || info.Size() > 128*1024 {
-		return client.Attachment{}, fmt.Errorf("choose a text file no larger than 128 KB")
+		return "", fmt.Errorf("choose a text file no larger than 128 KB")
 	}
-	data, err := os.ReadFile(absolute)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return client.Attachment{}, err
+		return "", err
 	}
 	if !utf8.Valid(data) || strings.ContainsRune(string(data), 0) {
-		return client.Attachment{}, fmt.Errorf("only UTF-8 text files are supported")
+		return "", fmt.Errorf("only UTF-8 text files are supported")
 	}
-	return client.Attachment{Path: filepath.ToSlash(rel), Content: strings.ReplaceAll(string(data), "\r\n", "\n")}, nil
+	return strings.ReplaceAll(string(data), "\r\n", "\n"), nil
 }
 
 func (m Model) attachPath(path string, query fileQuery) (tea.Model, tea.Cmd) {

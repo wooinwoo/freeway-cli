@@ -167,6 +167,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, m.modelLoad(true, false))
 	case responseEvent:
 		return m.receiveResponse(msg)
+	case referencesRead:
+		return m.finishReferences(msg)
 	case mcpPlanLoaded:
 		return m.receiveMCPPlan(msg)
 	case mcpToolFinished:

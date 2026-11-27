@@ -367,7 +367,11 @@ func (m Model) renderUserMessage(message client.Message, width int, colors schem
 		}
 	}
 	for _, file := range message.Files {
-		label := ansi.Truncate(m.tr("[file] ", "[파일] ")+terminalSafe(file.Path), bodyWidth, "…")
+		kind := m.tr("[file] ", "[파일] ")
+		if strings.HasPrefix(file.Path, "http://") || strings.HasPrefix(file.Path, "https://") {
+			kind = m.tr("[link] ", "[링크] ")
+		}
+		label := ansi.Truncate(kind+terminalSafe(file.Path), bodyWidth, "…")
 		rows = append(rows, panel.Foreground(colors.accent).Render(lead+padCells(label, bodyWidth)+"  "))
 	}
 	if bottom != "" {
@@ -529,6 +533,7 @@ var koreanStatus = map[string]string{
 	"Generating image":      "이미지 생성 중",
 	"Image tool configured": "이미지 도구 설정됨",
 	"Ready to retry":        "다시 시도 가능", "Stopped": "중지됨",
+	"Reading links and files": "링크와 파일 읽는 중",
 }
 
 func sameRenderedMessage(a, b client.Message) bool {

@@ -187,6 +187,9 @@ func (m Model) beginGeneration() (tea.Model, tea.Cmd) {
 		if question, ok := mcpQuestion(m.messages[len(m.messages)-2].Content); ok {
 			return m.beginMCPPlan(question)
 		}
+		if links, paths := pendingReferences(m.messages[len(m.messages)-2], m.workdir); len(links)+len(paths) > 0 {
+			return m.readReferences(len(m.messages)-2, links, paths)
+		}
 	}
 	return m.beginTextStream(m.responseTarget.model, m.responseContext().messages(), "")
 }
