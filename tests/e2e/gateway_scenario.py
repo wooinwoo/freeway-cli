@@ -375,7 +375,7 @@ def connected_smoke(program, environment, base):
             terminal.send(b"\x14")  # Ctrl+T switches the active comparison immediately.
             terminal.wait_text("Coding")
             terminal.send(b"\x1b[B")
-            terminal.wait_text("Terminal-Bench 4.0")
+            terminal.wait_text("Terminal-Bench · Artificial Analysis")
             terminal.output.clear()
             terminal.send(b"\x14")
             terminal.wait_text("HLE-Diamond")
